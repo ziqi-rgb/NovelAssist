@@ -8,7 +8,9 @@ import json
 import os
 import re
 import sys
+import threading
 import urllib.parse
+import webbrowser
 import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -24,6 +26,9 @@ from openai import AsyncOpenAI
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
+
+import uvicorn
+import multiprocessing
 
 load_dotenv()
 
@@ -1438,3 +1443,15 @@ if getattr(sys, "frozen", False):
 else:
     frontend_path = str(Path(__file__).resolve().parent.parent / "frontend")
 app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+
+
+# ═══════════ Entry Point ═══════════
+
+def open_browser():
+    webbrowser.open("http://127.0.0.1:8000")
+
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    threading.Timer(1.5, open_browser).start()
+    uvicorn.run(app, host="127.0.0.1", port=8000)
