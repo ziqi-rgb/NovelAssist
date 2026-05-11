@@ -1292,7 +1292,7 @@ async function loadChainList() {
 }
 
 function clearGraph() {
-    document.getElementById("reasoning-canvas").querySelectorAll(".node-card").forEach(n => n.remove());
+    document.getElementById("chain-canvas").querySelectorAll(".node-card").forEach(n => n.remove());
     document.getElementById("canvas-lines").innerHTML = "";
 }
 
@@ -1306,7 +1306,7 @@ async function loadGraph() {
 }
 
 function renderAllNodes() {
-    const canvas = document.getElementById("reasoning-canvas");
+    const canvas = document.getElementById("chain-canvas");
     canvas.querySelectorAll(".node-card").forEach(n => n.remove());
     (currentChain.nodes || []).forEach((node, idx) => {
         if (!node.id) node.id = "n" + (idx + 1);
@@ -1925,42 +1925,45 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 /* ═══════════ Canvas Pan & Zoom ═══════════ */
 (function setupCanvasPanZoom() {
-    var canvasEl = document.getElementById("reasoning-canvas");
-    if (!canvasEl) return;
-    canvasEl.style.overflow = "hidden";
-    canvasEl.style.transformOrigin = "0 0";
+    var canvasLayer = document.getElementById("chain-canvas");
+    var canvasViewport = document.getElementById("reasoning-canvas");
+    if (!canvasLayer || !canvasViewport) return;
     // Wheel zoom
-    canvasEl.addEventListener("wheel", function(e) {
+    canvasViewport.addEventListener("wheel", function(e) {
         if (!document.getElementById("ws-reasoning") || document.getElementById("ws-reasoning").classList.contains("hidden")) return;
         e.preventDefault();
         var zoomAmount = e.deltaY > 0 ? 0.9 : 1.1;
         var newScale = Math.min(Math.max(0.2, window.canvasScale * zoomAmount), 3);
-        var rect = canvasEl.getBoundingClientRect();
+        var rect = canvasViewport.getBoundingClientRect();
         var mouseX = e.clientX - rect.left;
         var mouseY = e.clientY - rect.top;
         window.canvasPanX = mouseX - (mouseX - window.canvasPanX) * (newScale / window.canvasScale);
         window.canvasPanY = mouseY - (mouseY - window.canvasPanY) * (newScale / window.canvasScale);
         window.canvasScale = newScale;
-        canvasEl.style.transform = "translate(" + window.canvasPanX + "px, " + window.canvasPanY + "px) scale(" + window.canvasScale + ")";
+        canvasLayer.style.transform = "translate(" + window.canvasPanX + "px, " + window.canvasPanY + "px) scale(" + window.canvasScale + ")";
+        canvasViewport.style.backgroundPosition = window.canvasPanX + "px " + window.canvasPanY + "px";
+        canvasViewport.style.backgroundSize = (20 * window.canvasScale) + "px " + (20 * window.canvasScale) + "px";
     }, {passive: false});
     // Right-click pan
-    canvasEl.addEventListener("contextmenu", function(e) { e.preventDefault(); });
-    canvasEl.addEventListener("mousedown", function(e) {
+    canvasViewport.addEventListener("contextmenu", function(e) { e.preventDefault(); });
+    canvasViewport.addEventListener("mousedown", function(e) {
         if (e.button === 2) {
             isCanvasPanning = true;
             canvasPanStartX = e.clientX - window.canvasPanX;
             canvasPanStartY = e.clientY - window.canvasPanY;
-            canvasEl.style.cursor = "grabbing";
+            canvasViewport.style.cursor = "grabbing";
         }
     });
     document.addEventListener("mousemove", function(e) {
         if (isCanvasPanning) {
             window.canvasPanX = e.clientX - canvasPanStartX;
             window.canvasPanY = e.clientY - canvasPanStartY;
-            canvasEl.style.transform = "translate(" + window.canvasPanX + "px, " + window.canvasPanY + "px) scale(" + window.canvasScale + ")";
+            canvasLayer.style.transform = "translate(" + window.canvasPanX + "px, " + window.canvasPanY + "px) scale(" + window.canvasScale + ")";
+            canvasViewport.style.backgroundPosition = window.canvasPanX + "px " + window.canvasPanY + "px";
+            canvasViewport.style.backgroundSize = (20 * window.canvasScale) + "px " + (20 * window.canvasScale) + "px";
         }
     });
-    var stopPan = function(e) { if (e.button === 2 || e.type === "mouseleave") { isCanvasPanning = false; canvasEl.style.cursor = ""; } };
+    var stopPan = function(e) { if (e.button === 2 || e.type === "mouseleave") { isCanvasPanning = false; canvasViewport.style.cursor = ""; } };
     document.addEventListener("mouseup", stopPan);
-    canvasEl.addEventListener("mouseleave", stopPan);
+    canvasViewport.addEventListener("mouseleave", stopPan);
 })();

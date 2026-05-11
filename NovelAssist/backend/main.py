@@ -777,25 +777,32 @@ def export_novel_zip(novel_id: int, db: Session = Depends(get_db)):
     novel = db.get(Novel, novel_id)
     if novel is None:
         raise HTTPException(404, "小说不存在")
-    chapters = db.scalars(select(Chapter).where(Chapter.novel_id == novel_id).order_by(Chapter.order_index)).all()
-    volumes = db.scalars(select(Volume).where(Volume.novel_id == novel_id).order_by(Volume.order_index)).all()
-    vol_map: dict[int, str] = {}
-    for idx, v in enumerate(volumes, start=1):
-        safe_v = "".join(c for c in v.title if c not in r'\/:*?"<>|') or "未命名"
-        vol_map[v.id] = f"第{idx}卷_{safe_v}"
 
-    safe_novel = "".join(c for c in novel.title if c not in r'\/:*?"<>|') or "未命名小说"
+    volumes = db.query(Volume).filter(Volume.novel_id == novel_id).order_by(Volume.id).all()
+    chapters = db.query(Chapter).filter(Chapter.novel_id == novel_id).order_by(Chapter.id).all()
 
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        chapter_counts: dict[int, int] = {}
+        safe_novel = "".join(c for c in novel.title if c not in r'\/:*?"<>|') or "未命名小说"
+
+        vol_map: dict[int, str] = {}
+        ch_counters: dict[Optional[int], int] = {None: 1}
+
+        for idx, v in enumerate(volumes, start=1):
+            safe_v = "".join(c for c in v.title if c not in r'\/:*?"<>|') or "未命名"
+            vol_map[v.id] = f"第{idx}卷_{safe_v}"
+            ch_counters[v.id] = 1
+
         for ch in chapters:
-            vid = ch.volume_id or 0
-            chapter_counts[vid] = chapter_counts.get(vid, 0) + 1
-            vol_folder = vol_map.get(vid, "未分卷")
+            vid = ch.volume_id
+            vol_folder = vol_map.get(vid, "00_未分卷")
+            current_ch_num = ch_counters.get(vid, 1)
+            ch_counters[vid] = current_ch_num + 1
+
             safe_ch = "".join(c for c in (ch.title or "无标题") if c not in r'\/:*?"<>|') or "无标题"
-            file_path = f"{safe_novel}/{vol_folder}/第{chapter_counts[vid]}章_{safe_ch}.txt"
+            file_path = f"{safe_novel}/{vol_folder}/第{current_ch_num}章_{safe_ch}.txt"
             zf.writestr(file_path, ch.content or "")
+
     mem_zip.seek(0)
     encoded_name = urllib.parse.quote(f"{safe_novel}的底稿.zip")
     return StreamingResponse(
