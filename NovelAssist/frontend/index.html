@@ -189,11 +189,15 @@
                         <button id="map-grid-btn" class="map-mode-btn sys-btn sys-btn-secondary">🗺️ 25x25 战略地图</button>
                         <button id="loc-tmpl-btn" class="map-mode-btn sys-btn sys-btn-secondary" style="margin-left:auto;">⚙️ 地点模板设置</button>
                     </div>
-                    <div id="map-list-mode">
+                    <div id="map-list-mode" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
                         <div class="editor-toolbar"><span class="info">地点编辑</span><button id="save-location-btn" class="sys-btn sys-btn-primary">保存</button></div>
-                        <input type="text" id="loc-name-input" placeholder="地点名称...">
-                        <textarea id="loc-desc-input" placeholder="描述..."></textarea>
-                        <div id="loc-attrs-editor" class="loc-attrs-section"></div>
+                        <div class="loc-editor-split">
+                            <div class="loc-left-pane">
+                                <input type="text" id="loc-name-input" placeholder="地点名称...">
+                                <textarea id="loc-desc-input" placeholder="详细描述..."></textarea>
+                            </div>
+                            <div id="loc-attrs-editor" class="loc-right-pane"></div>
+                        </div>
                     </div>
                     <div id="map-grid-mode" class="hidden">
                         <div class="map-breadcrumbs" id="map-breadcrumbs"></div>
