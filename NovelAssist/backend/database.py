@@ -35,7 +35,6 @@ def get_db() -> Generator[Session, None, None]:
 
 def run_migration() -> None:
     """创建默认小说项目，并迁移旧数据"""
-    from .models import Novel
     from sqlalchemy import inspect
 
     db = SessionLocal()

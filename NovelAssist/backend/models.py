@@ -8,7 +8,10 @@ from typing import Optional
 from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .database import Base
+try:
+    from .database import Base
+except ImportError:
+    from database import Base
 
 
 class EventType(enum.Enum):

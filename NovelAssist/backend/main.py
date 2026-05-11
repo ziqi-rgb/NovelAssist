@@ -32,12 +32,20 @@ import multiprocessing
 
 load_dotenv()
 
-from .database import Base, engine, get_db, run_migration  # noqa: E402
-from .models import (  # noqa: E402
-    Chapter, Character, Outline, Location,
-    WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
-    DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
-)
+try:
+    from .database import Base, engine, get_db, run_migration  # noqa: E402
+    from .models import (  # noqa: E402
+        Chapter, Character, Outline, Location,
+        WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
+        DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
+    )
+except ImportError:
+    from database import Base, engine, get_db, run_migration  # noqa: E402
+    from models import (  # noqa: E402
+        Chapter, Character, Outline, Location,
+        WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
+        DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
+    )
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
@@ -49,7 +57,10 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     run_migration()
     # Data healing: normalize timeline_events event_type to uppercase
-    from .database import SessionLocal
+    try:
+        from .database import SessionLocal
+    except ImportError:
+        from database import SessionLocal
     db = SessionLocal()
     try:
         db.execute(text("UPDATE timeline_events SET event_type = 'MAIN_STORY' WHERE event_type = 'main_story'"))
