@@ -74,8 +74,10 @@ This project uses a strict **Architect → Execution Agent** workflow. Read the 
 3. Read relevant existing code before editing
 4. Implement step by step
 5. Run lint + type check + tests
-6. Write execution report in the exact format specified
-7. List any issues or decisions needed
+6. **Run `git add -A && git commit -m "[#T{id}] {type}: {描述}"`** (MANDATORY)
+7. Verify `git status` shows clean working tree
+8. Write execution report in the exact format specified
+9. List any issues or decisions needed
 
 ## When Blocked
 
