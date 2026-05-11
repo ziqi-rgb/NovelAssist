@@ -1,0 +1,173 @@
+:root {
+    --bg: #faf9f7;
+    --sidebar-bg: #f0ede8;
+    --text: #2c2c2c;
+    --text-muted: #888;
+    --accent: #c7512e;
+    --accent-hover: #a34022;
+    --border: #e0dcd5;
+    --active-bg: #ffffff;
+    --editor-bg: #ffffff;
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+}
+
+#app {
+    display: flex;
+    height: 100vh;
+}
+
+/* ── 侧边栏 ── */
+#sidebar {
+    width: 260px;
+    min-width: 260px;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+#sidebar h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 14px;
+    letter-spacing: 0.5px;
+}
+
+#new-btn {
+    width: 100%;
+    padding: 10px 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 16px;
+    transition: background 0.2s;
+}
+
+#new-btn:hover {
+    background: var(--accent-hover);
+}
+
+#chapter-list {
+    list-style: none;
+    flex: 1;
+}
+
+#chapter-list li {
+    padding: 10px 12px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+    cursor: pointer;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.15s;
+}
+
+#chapter-list li:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+#chapter-list li.active {
+    background: var(--active-bg);
+    box-shadow: var(--shadow);
+    font-weight: 600;
+}
+
+/* ── 编辑器 ── */
+#editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--editor-bg);
+}
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 28px;
+    border-bottom: 1px solid var(--border);
+}
+
+.editor-toolbar .info {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+#save-btn {
+    padding: 8px 22px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#save-btn:hover {
+    background: var(--accent-hover);
+}
+
+#title-input {
+    font-size: 1.8rem;
+    font-weight: 700;
+    padding: 28px 28px 10px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    width: 100%;
+}
+
+#title-input::placeholder {
+    color: #ccc;
+}
+
+#content-input {
+    flex: 1;
+    font-size: 1.05rem;
+    line-height: 1.85;
+    padding: 14px 28px 40px;
+    border: none;
+    outline: none;
+    resize: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+}
+
+#content-input::placeholder {
+    color: #ccc;
+}
+
+.empty-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+}

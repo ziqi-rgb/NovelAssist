@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 小说辅助引擎</title>
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/app.js"></script>
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar">
+            <h2>章节列表</h2>
+            <button id="new-btn">+ 新建章节</button>
+            <ul id="chapter-list"></ul>
+        </aside>
+        <main id="editor">
+            <div class="editor-toolbar">
+                <span class="info">Ctrl+S 保存</span>
+                <button id="save-btn">保存</button>
+            </div>
+            <input type="text" id="title-input" placeholder="输入章节标题...">
+            <textarea id="content-input" placeholder="开始写作..."></textarea>
+        </main>
+    </div>
+</body>
+</html>
