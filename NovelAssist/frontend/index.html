@@ -8,20 +8,268 @@
     <script defer src="/app.js"></script>
 </head>
 <body>
-    <div id="app">
-        <aside id="sidebar">
-            <h2>章节列表</h2>
-            <button id="new-btn">+ 新建章节</button>
-            <ul id="chapter-list"></ul>
-        </aside>
-        <main id="editor">
-            <div class="editor-toolbar">
-                <span class="info">Ctrl+S 保存</span>
-                <button id="save-btn">保存</button>
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box">
+            <h3>API 设置</h3>
+            <label>API Key</label>
+            <input type="password" id="settings-apikey" placeholder="sk-...">
+            <label>Base URL <span class="hint">(可选)</span></label>
+            <input type="text" id="settings-baseurl" placeholder="https://api.openai.com/v1">
+            <label>模型</label>
+            <input type="text" id="settings-model" placeholder="gpt-3.5-turbo">
+            <div class="modal-actions"><button id="settings-save" class="btn-primary">保存</button><button id="settings-cancel">取消</button></div>
+        </div>
+    </div>
+
+    <!-- 提示词模板设置 -->
+    <div id="prompt-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:640px;max-height:85vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="margin:0;">提示词模板设置</h3>
+                <button id="cheat-prompt-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">💡 说明</button>
             </div>
-            <input type="text" id="title-input" placeholder="输入章节标题...">
-            <textarea id="content-input" placeholder="开始写作..."></textarea>
-        </main>
+            <div id="prompt-templates"></div>
+            <div class="modal-actions"><button id="prompt-save" class="btn-primary">保存</button><button id="prompt-cancel">取消</button></div>
+        </div>
+    </div>
+
+    <div id="cheat-sheet-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:720px;max-height:85vh;overflow-y:auto;">
+            <h3 style="margin:0 0 12px;">💡 占位符速查表</h3>
+            <table style="width:100%;font-size:.75rem;border-collapse:collapse;">
+                <tr style="background:var(--bg);"><th style="text-align:left;padding:5px 8px;border:1px solid var(--border);">语法</th><th style="text-align:left;padding:5px 8px;border:1px solid var(--border);">用途</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{lore}</td><td style="padding:4px 8px;border:1px solid var(--border);">全部常驻上下文（大纲+人物+地点+时间线）</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{content}</td><td style="padding:4px 8px;border:1px solid var(--border);">当前模块编辑器全部文本</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{selection}</td><td style="padding:4px 8px;border:1px solid var(--border);">用户选中的文本</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{instruction}</td><td style="padding:4px 8px;border:1px solid var(--border);">用户输入的指令文本</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{outlines_list}</td><td style="padding:4px 8px;border:1px solid var(--border);">列出全部大纲条目</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{characters_list}</td><td style="padding:4px 8px;border:1px solid var(--border);">列出全部人物完整档案</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{locations_list}</td><td style="padding:4px 8px;border:1px solid var(--border);">列出全部地点+继承属性</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{timeline_history}</td><td style="padding:4px 8px;border:1px solid var(--border);">历史时间线事件列表</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{timeline_world}</td><td style="padding:4px 8px;border:1px solid var(--border);">世界时间线事件列表</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{timeline_main}</td><td style="padding:4px 8px;border:1px solid var(--border);">正文时间线事件列表</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{character:姓名}</td><td style="padding:4px 8px;border:1px solid var(--border);">精准检索某人完整档案</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{outline:标题}</td><td style="padding:4px 8px;border:1px solid var(--border);">根据标题检索大纲内容</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{location:名称}</td><td style="padding:4px 8px;border:1px solid var(--border);">精准检索某地点+继承属性</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{chain_data}</td><td style="padding:4px 8px;border:1px solid var(--border);">推演链所有节点输出拼接</td></tr>
+            </table>
+            <p style="font-size:.68rem;color:var(--muted);margin-top:8px;">点击任意占位符语法可复制到剪贴板</p>
+            <div class="modal-actions"><button id="cheat-sheet-close" class="btn-primary">关闭</button></div>
+        </div>
+    </div>
+
+    <div id="app-root">
+        <nav class="nav-sidebar">
+            <div class="nav-novel-select"><select id="novel-select"></select><button id="novel-add-btn">+</button></div>
+            <button class="nav-btn active" data-module="writing"><span class="nav-icon">&#9997;</span><span class="nav-label">正文创作</span></button>
+            <button class="nav-btn" data-module="outline"><span class="nav-icon">&#128196;</span><span class="nav-label">设定大纲</span></button>
+            <button class="nav-btn" data-module="characters"><span class="nav-icon">&#127917;</span><span class="nav-label">人物档案</span></button>
+            <button class="nav-btn" data-module="map"><span class="nav-icon">&#128506;</span><span class="nav-label">微观地图</span></button>
+            <button class="nav-btn" data-module="sandbox"><span class="nav-icon">&#9876;</span><span class="nav-label">沙盘演武</span></button>
+            <button class="nav-btn" data-module="reasoning"><span class="nav-icon">&#129504;</span><span class="nav-label">推演画布</span></button>
+            <div class="nav-spacer"></div>
+            <button class="nav-btn" id="prompt-settings-btn"><span class="nav-icon">&#9965;</span><span class="nav-label">提示词</span></button>
+            <button class="nav-btn" id="export-btn"><span class="nav-icon">&#128229;</span><span class="nav-label">导出设定集</span></button>
+            <button class="nav-btn" id="settings-btn"><span class="nav-icon">&#9881;</span><span class="nav-label">设置</span></button>
+        </nav>
+
+        <div class="content-area">
+            <!-- 左栏 -->
+            <aside id="left-sidebar">
+                <!-- 写作模块 -->
+                <div id="module-writing" class="module-panel">
+                    <div class="sidebar-header"><h2>分卷</h2><div class="sidebar-actions"><button id="new-volume-btn" class="sys-btn sys-btn-secondary">+ 分卷</button><button id="new-chapter-btn" class="sys-btn sys-btn-secondary">+ 章节</button><button id="export-zip-btn" class="sys-btn sys-btn-primary" style="flex:0 0 auto;padding:5px 10px;font-size:.75rem;" title="导出全书 ZIP">📦 导出全书</button></div></div>
+                    <ul id="volume-list"></ul>
+                </div>
+                <!-- 大纲模块：分类导航 -->
+                <div id="module-outline" class="module-panel hidden">
+                    <div class="sidebar-header"><h2>大纲分类</h2></div>
+                    <ul id="outline-category-nav" class="category-nav">
+                        <li data-cat="世界观" class="active">世界观</li>
+                        <li data-cat="世界势力">世界势力</li>
+                        <li data-cat="地理">地理</li>
+                        <li data-cat="人物设定">人物设定</li>
+                        <li data-cat="能力体系设定">能力体系设定</li>
+                        <li data-cat="剧情大纲">剧情大纲</li>
+                    </ul>
+                </div>
+                <!-- 人物模块 -->
+                <div id="module-characters" class="module-panel hidden">
+                    <div class="sidebar-header"><h2>人物列表</h2><button id="new-char-btn" class="sys-btn sys-btn-secondary">+ 新建</button></div>
+                    <ul id="char-list"></ul>
+                </div>
+                <!-- 地图模块 -->
+                <div id="module-map" class="module-panel hidden"><div class="sidebar-header"><h2>地点</h2></div><ul id="location-list-tree"></ul></div>
+                <div id="module-sandbox" class="module-panel hidden">
+                    <div class="sandbox-setup">
+                        <h3 style="margin:0 0 8px;font-size:.9rem;">⚔️ 沙盘设定</h3>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">场地：</label>
+                        <select id="sandbox-location" style="width:100%;padding:4px 6px;font-size:.75rem;margin-bottom:8px;"><option value="">-- 选择场地 --</option></select>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">参战人员：</label>
+                        <div id="sandbox-characters" style="max-height:200px;overflow-y:auto;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:4px;"></div>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">推演情景：</label>
+                        <textarea id="sandbox-scenario" placeholder="例：张三在暗处伏击李四..." style="width:100%;height:80px;font-size:.75rem;padding:6px 8px;border:1px solid var(--border);border-radius:4px;resize:vertical;margin-bottom:8px;"></textarea>
+                        <button id="sandbox-start-btn" class="sys-btn sys-btn-primary" style="width:100%;padding:8px 0;">▶️ 开始兵棋推演</button>
+                    </div>
+                </div>
+                <div id="module-reasoning" class="module-panel hidden">
+                    <div class="sidebar-header"><h2>推演方案</h2><button id="new-chain-btn" class="sys-btn sys-btn-secondary">+ 新建方案</button></div>
+                    <ul id="chain-list"></ul>
+                </div>
+            </aside>
+
+            <!-- 中栏 -->
+            <main id="center-workspace">
+                <!-- 写作 -->
+                <div id="ws-writing" class="ws-panel">
+                    <div id="editor-workspace" class="ws-inner">
+                        <div class="editor-toolbar"><span class="info">Ctrl+S 保存</span><div class="toolbar-actions"><button id="continue-btn" class="sys-btn sys-btn-primary">&#10024; 续写</button><button id="save-btn" class="sys-btn sys-btn-primary">保存</button></div></div>
+                        <input type="text" id="title-input" placeholder="章节标题...">
+                        <div id="archived-content-viewer" class="readonly-text hidden"></div>
+                        <textarea id="content-input" placeholder="开始写作..."></textarea>
+                        <div class="editor-status">字数: <span id="word-count">0</span> | 状态: <span id="save-status">未保存</span><button id="archive-selected-btn" class="archive-btn sys-btn sys-btn-primary" title="选中正文后点击归档">📦 智能归档选中正文</button></div>
+                    </div>
+                </div>
+
+                <!-- 大纲：双栏 -->
+                <div id="ws-outline" class="ws-panel hidden">
+                    <div class="outline-split">
+                        <div class="outline-list-pane">
+                            <div class="pane-header"><span id="outline-pane-title">条目列表</span><div style="display:flex;gap:4px;"><button id="new-outline-note-btn" class="sys-btn sys-btn-secondary">+ 根条目</button><button id="new-outline-child-btn" class="sys-btn sys-btn-secondary hidden" title="在选中条目下创建子节点">+ 子条目</button></div></div>
+                            <div id="outline-note-list"></div>
+                        </div>
+                        <div class="outline-editor-pane">
+                            <div class="editor-toolbar"><span class="info">大纲编辑</span><button id="save-outline-btn" class="sys-btn sys-btn-primary">保存</button></div>
+                            <input type="text" id="outline-title-input" placeholder="大纲标题...">
+                            <div style="padding:0 24px;display:flex;gap:24px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
+                                <label style="font-size:0.82rem;font-weight:600;">分类：<input type="text" id="outline-category-input" placeholder="剧情" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;width:120px;margin-left:4px;"></label>
+                                <label style="font-size:0.82rem;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="outline-context-toggle"> 🧠 常驻生效</label>
+                            </div>
+                            <div class="md-tabs">
+                                <button class="md-tab active" data-view="edit">&#9997; 编辑</button>
+                                <button class="md-tab" data-view="preview">&#128065; 预览</button>
+                            </div>
+                            <textarea id="outline-content-input" placeholder="支持 Markdown 语法..."></textarea>
+                            <div id="outline-md-preview" class="md-preview hidden"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 人物 -->
+                <div id="ws-characters" class="ws-panel hidden">
+                    <div class="editor-toolbar" style="gap:12px;">
+                        <span class="info">人物档案</span>
+                        <button class="mode-tab active" data-mode="card">&#128196; 人物资料</button>
+                        <button class="mode-tab" data-mode="template">&#9881; 模板设置</button>
+                        <button class="mode-tab" data-mode="snapshot">&#128338; 历史快照</button>
+                    </div>
+                    <div id="char-card-mode">
+                        <div id="char-dynamic-form" style="padding:16px 24px;overflow-y:auto;flex:1;"></div>
+                        <div class="editor-toolbar"><span></span><div style="display:flex;gap:8px;"><button id="archive-btn" class="sys-btn sys-btn-secondary">&#128230; 保存并归档新版本</button><button id="save-char-btn" class="sys-btn sys-btn-primary">保存人物</button></div></div>
+                    </div>
+                    <div id="char-template-mode" class="hidden">
+                        <div id="template-editor" style="padding:16px 24px;overflow-y:auto;flex:1;"></div>
+                        <div class="editor-toolbar"><span></span><button id="save-template-btn" class="sys-btn sys-btn-primary">保存模板</button></div>
+                    </div>
+                    <div id="char-snapshot-mode" class="hidden">
+                        <div style="display:flex;flex:1;overflow:hidden;">
+                            <div id="snapshot-list" style="width:200px;border-right:1px solid var(--border);overflow-y:auto;padding:8px;"></div>
+                            <div id="snapshot-preview" style="flex:1;overflow-y:auto;padding:16px 24px;"></div>
+                        </div>
+                        <div class="editor-toolbar"><span></span><button id="restore-snapshot-btn" class="sys-btn sys-btn-secondary hidden">&#128260; 恢复至此版本</button></div>
+                    </div>
+                </div>
+                <!-- 地图 -->
+                <div id="ws-map" class="ws-panel hidden">
+                    <div class="map-toolbar">
+                        <button id="map-list-btn" class="map-mode-btn sys-btn sys-btn-secondary active">📄 列表模式</button>
+                        <button id="map-grid-btn" class="map-mode-btn sys-btn sys-btn-secondary">🗺️ 25x25 战略地图</button>
+                        <button id="loc-tmpl-btn" class="map-mode-btn sys-btn sys-btn-secondary" style="margin-left:auto;">⚙️ 地点模板设置</button>
+                    </div>
+                    <div id="map-list-mode">
+                        <div class="editor-toolbar"><span class="info">地点编辑</span><button id="save-location-btn" class="sys-btn sys-btn-primary">保存</button></div>
+                        <input type="text" id="loc-name-input" placeholder="地点名称...">
+                        <textarea id="loc-desc-input" placeholder="描述..."></textarea>
+                        <div id="loc-attrs-editor" class="loc-attrs-section"></div>
+                    </div>
+                    <div id="map-grid-mode" class="hidden">
+                        <div class="map-breadcrumbs" id="map-breadcrumbs"></div>
+                        <div class="fractal-map-container" id="fractal-map-container"></div>
+                    </div>
+                </div>
+                <!-- 沙盘演武 -->
+                <div id="ws-sandbox" class="ws-panel hidden">
+                    <div class="sandbox-log-header">
+                        <span style="font-weight:600;font-size:.85rem;">📜 战报</span>
+                        <div style="display:flex;gap:4px;">
+                            <button id="sandbox-copy-btn" class="cp-quick-btn" style="font-size:.68rem;" disabled>💾 复制到正文</button>
+                            <button id="sandbox-next-btn" class="cp-quick-btn" style="font-size:.68rem;" disabled>⏭️ 下一回合</button>
+                        </div>
+                    </div>
+                    <div class="sandbox-log-content" id="sandbox-log-content"></div>
+                </div>
+                    <!-- 推演：2D 节点图 -->
+                <div id="ws-reasoning" class="ws-panel hidden">
+                    <div style="display:flex;justify-content:flex-end;padding:4px 6px;background:var(--bg);border-bottom:1px solid var(--border);">
+                        <button id="placeholder-ref-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">💡 占位符速查表</button>
+                    </div>
+                    <div class="canvas-container" id="reasoning-canvas">
+                        <svg id="canvas-lines"></svg>
+                    </div>
+                    <button id="add-node-btn" class="fab-btn">+ 新增推演节点</button>
+                </div>
+            </main>
+
+            <!-- 右栏 -->
+            <aside id="right-sidebar">
+                <div class="tab-bar">
+                    <button class="tab-btn active" data-tab="tab-characters">人物卡</button>
+                    <button class="tab-btn" data-tab="tab-ai">伴写副驾</button>
+                    <button class="tab-btn" data-tab="tab-chain">推演链</button>
+                    <button class="tab-btn" data-tab="tab-timeline">时间线</button>
+                </div>
+                <div id="tab-characters" class="tab-content"><button id="new-character-btn">+ 新建人物</button><div id="character-list"></div></div>
+                <div id="tab-timeline" class="tab-content hidden">
+                    <div class="timeline-header" id="timeline-title">时间线</div><div id="timeline-list"></div>
+                    <div class="timeline-form"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
+                </div>
+                <div id="tab-ai" class="tab-content hidden">
+                    <div id="copilot-history"></div>
+                    <div class="copilot-quick" id="copilot-quick-btns"><button data-cmd="续写下文" class="cp-quick-btn">&#129668; 续写下文</button><button data-cmd="润色选中内容" class="cp-quick-btn">&#10024; 润色选中</button><button data-cmd="评价当前情节并提出修改建议" class="cp-quick-btn">&#128064; 评价情节</button></div>
+                    <div class="copilot-input-row"><input type="text" id="copilot-input" placeholder="向 AI 输入指令..."><button id="copilot-send" class="sys-btn sys-btn-primary">发送</button></div>
+                </div>
+                <div id="tab-chain" class="tab-content hidden">
+                    <select id="chain-select" style="width:100%;padding:6px;margin-bottom:8px;font-size:.78rem;border:1px solid var(--border);border-radius:var(--radius);"><option value="">-- 选择推演方案 --</option></select>
+                    <div id="chain-bubbles" style="flex:1;overflow-y:auto;"></div>
+                    <button id="chain-run-btn" class="chain-gen-btn hidden" style="background:#6a1b9a;">&#9654; 运行推演链</button>
+                    <button id="chain-generate-btn" class="chain-gen-btn hidden">&#9997; 根据此推演链生成正文</button>
+                </div>
+            </aside>
+        </div>
+    </div>
+    <div id="archive-overlay" class="hidden">
+        <div class="archive-overlay-box">
+            <div class="spinner"></div>
+            <p>🧠 AI 正在提纯时间线并更新人物卡，请稍候...</p>
+        </div>
+    </div>
+    <div id="archive-toast"></div>
+    <div id="loc-tmpl-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:700px;max-height:85vh;overflow-y:auto;">
+            <h3 style="margin:0 0 8px;">⚙️ 地点模板设置</h3>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <select id="loc-tmpl-scale-sel" style="font-size:.8rem;padding:4px 8px;">
+                    <option value="大千世界">大千世界</option><option value="宇宙">宇宙</option><option value="星球">星球</option><option value="大陆">大陆</option><option value="国家">国家</option><option value="城池">城池</option><option value="街区">街区</option>
+                </select>
+                <button id="loc-tmpl-add-group" class="sys-btn sys-btn-secondary" style="font-size:.75rem;">+ 添加分组</button>
+            </div>
+            <div id="loc-tmpl-editor"></div>
+            <div class="modal-actions"><button id="loc-tmpl-save" class="btn-primary">保存模板</button><button id="loc-tmpl-cancel">取消</button></div>
+        </div>
     </div>
 </body>
 </html>
