@@ -2153,6 +2153,12 @@ async function loadRelationsGraph() {
         var factions = await res[1].json();
         var rels = await res[2].json();
         renderVisNetwork(chars, factions, rels);
+        var ul = document.getElementById("factions-list-ul");
+        if (ul) {
+            ul.innerHTML = factions.map(function(f) {
+                return '<li style="padding:8px;border-bottom:1px solid var(--border);"><strong>' + e(f.name) + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
+            }).join("") || "<li>(无势力)</li>";
+        }
     } catch (err) {
         console.error("加载图谱失败:", err);
     }
