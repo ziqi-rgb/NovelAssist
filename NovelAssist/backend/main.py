@@ -71,6 +71,21 @@ async def lifespan(app: FastAPI):
         db.execute(text("UPDATE timeline_events SET event_type = 'HISTORY' WHERE event_type = 'history'"))
         db.execute(text("UPDATE timeline_events SET event_type = 'WORLD' WHERE event_type = 'world'"))
         db.commit()
+        # Prompt auto-heal: detect old templates and upgrade in-place
+        gs = db.get(GlobalSettings, 1)
+        if gs and isinstance(gs.prompt_templates, dict):
+            tpl = dict(gs.prompt_templates)
+            healed = False
+            if "archive_timeline" in tpl and "time_elapsed_hours" not in tpl["archive_timeline"]:
+                tpl["archive_timeline"] = DEFAULT_PROMPT_TEMPLATES["archive_timeline"]
+                healed = True
+            if "archive_character" in tpl and "move_to_location" not in tpl["archive_character"]:
+                tpl["archive_character"] = DEFAULT_PROMPT_TEMPLATES["archive_character"]
+                healed = True
+            if healed:
+                gs.prompt_templates = tpl
+                flag_modified(gs, "prompt_templates")
+                db.commit()
     finally:
         db.close()
     yield

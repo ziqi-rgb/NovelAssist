@@ -256,6 +256,8 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
         await saveCurrentChapter();
         await loadCharacters();
         await loadTimeline();
+        loadNovelTime();
+        if (currentChapterId) { selectChapter({ id: currentChapterId, title: titleInput.value, content: contentInput.value, archived_content: document.getElementById("archived-content-viewer").textContent, volume_id: currentVolumeId }); }
     } catch (e) { showToast("归档失败: " + e.message); }
     finally { hideArchiveOverlay(); }
 });
