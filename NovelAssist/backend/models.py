@@ -42,6 +42,8 @@ class Novel(Base):
         {"group": "背景故事", "fields": ["出身", "经历"]},
     ])
     location_templates: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    calendar_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {"months_per_year": 12, "days_per_month": 30, "hours_per_day": 24})
+    current_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -172,6 +174,7 @@ class TimelineEvent(Base):
     timeline_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     time_label: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    absolute_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     related_location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
 
     novel: Mapped[Novel] = relationship(back_populates="timeline_events")
@@ -189,6 +192,36 @@ class CharacterSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     character: Mapped[Character] = relationship()
+
+
+class CharacterRoutine(Base):
+    """人物作息规律 — 周期性行为模式"""
+    __tablename__ = "character_routines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    cycle_type: Mapped[str] = mapped_column(String(16), nullable=False, default="日")
+    cycle_value: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    activity: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+
+    character: Mapped[Character] = relationship()
+    location: Mapped[Location] = relationship()
+
+
+class CharacterTrajectory(Base):
+    """人物特殊轨迹 — 一次性或长期移动事件"""
+    __tablename__ = "character_trajectories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    start_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    end_tick: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+
+    character: Mapped[Character] = relationship()
+    location: Mapped[Location] = relationship()
 
 
 class ReasoningChain(Base):

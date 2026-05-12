@@ -85,6 +85,9 @@ class NovelOut(BaseModel):
     id: int
     title: str
     character_template: Optional[list] = None
+    location_templates: Optional[dict] = None
+    calendar_config: Optional[dict] = None
+    current_tick: int = 0
     created_at: datetime
     updated_at: datetime
     class Config:

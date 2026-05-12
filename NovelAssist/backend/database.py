@@ -71,6 +71,16 @@ def run_migration() -> None:
         if "location_templates" not in novel_cols:
             db.execute(text("ALTER TABLE novels ADD COLUMN location_templates JSON DEFAULT '{}'"))
             db.commit()
+        if "calendar_config" not in novel_cols:
+            db.execute(text("ALTER TABLE novels ADD COLUMN calendar_config JSON DEFAULT '{}'"))
+            db.commit()
+        if "current_tick" not in novel_cols:
+            db.execute(text("ALTER TABLE novels ADD COLUMN current_tick INTEGER NOT NULL DEFAULT 0"))
+            db.commit()
+        te_cols2 = [c["name"] for c in insp.get_columns("timeline_events")]
+        if "absolute_tick" not in te_cols2:
+            db.execute(text("ALTER TABLE timeline_events ADD COLUMN absolute_tick INTEGER NOT NULL DEFAULT 0"))
+            db.commit()
     finally:
         db.close()
 
