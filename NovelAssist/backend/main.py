@@ -127,8 +127,8 @@ AGENT_TOOLS = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "premise": {"type": "string", "description": "本节点的前置逻辑或目标说明"},
-                                "prompt": {"type": "string", "description": "发给AI的提示词命令"},
+                                "premise": {"type": "string", "description": "本节点的前置逻辑或目标说明。必须填具体的自然语言，不要使用{占位符}格式。"},
+                                "prompt": {"type": "string", "description": "发给AI的提示词命令。必须填具体的自然语言指令，不要使用{占位符}格式。"},
                                 "target": {"type": "string", "description": "写入目标的占位符或标识"},
                             },
                             "required": ["premise", "prompt"],
@@ -1841,6 +1841,8 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 "- 修改人物状态/位置/生死 → 调用 modify_character\n"
                 "- 增删改大纲/地点/时间线 → 调用 manage_world_element\n"
                 "- 创建或覆盖推理方案 → 调用 generate_reasoning_chain\n"
+                "创建推理链时，每个步骤的premise和prompt必须填写具体的自然语言指令，例如\"分析秘境危险度\"\"根据已知情报推断敌人的弱点\"。"
+                "严禁使用{变量名}、{{占位符}}格式——那会在运行时由系统自动注入，创建链时不需要写。"
                 "如果你确认操作已完成，回复时请简要告知用户结果。"
             ),
         },
