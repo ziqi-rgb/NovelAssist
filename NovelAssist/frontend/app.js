@@ -1122,6 +1122,11 @@ const copilotHistory = document.getElementById("copilot-history");
 const copilotInput = document.getElementById("copilot-input");
 const copilotSend = document.getElementById("copilot-send");
 
+window.handleCopilotSend = function() {
+    var t = copilotInput.value.trim();
+    if (t) { copilotInput.value = ""; copilotChat(t); }
+};
+
 function getActiveTextarea() {
     if (currentModule === "writing") return contentInput;
     if (currentModule === "outline") return outlineContent;
@@ -1202,8 +1207,7 @@ async function copilotChat(instruction) {
     finally { aiB.classList.remove("streaming"); }
 }
 
-copilotSend.addEventListener("click", () => { const t = copilotInput.value.trim(); if (t) { copilotInput.value = ""; copilotChat(t); } });
-copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); copilotSend.click(); } });
+copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
 document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
 
 function renderToolProposal(parentBubble, proposal, autoExecute) {
