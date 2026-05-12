@@ -81,6 +81,13 @@ def run_migration() -> None:
         if "absolute_tick" not in te_cols2:
             db.execute(text("ALTER TABLE timeline_events ADD COLUMN absolute_tick INTEGER NOT NULL DEFAULT 0"))
             db.commit()
+
+        if "faction_id" not in char_cols:
+            db.execute(text("ALTER TABLE characters ADD COLUMN faction_id INTEGER"))
+            db.commit()
+        if "faction_role" not in char_cols:
+            db.execute(text("ALTER TABLE characters ADD COLUMN faction_role TEXT DEFAULT ''"))
+            db.commit()
     finally:
         db.close()
 

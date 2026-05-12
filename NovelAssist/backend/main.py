@@ -39,7 +39,7 @@ try:
         Chapter, Character, Outline, Location,
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
         CharacterRoutine, CharacterTrajectory,
-        DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
+        DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation,
     )
     from .calendar import CalendarEngine  # noqa: E402
 except ImportError:
@@ -48,7 +48,7 @@ except ImportError:
         Chapter, Character, Outline, Location,
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
         CharacterRoutine, CharacterTrajectory,
-        DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
+        DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation,
     )
     from calendar import CalendarEngine  # noqa: E402
 
@@ -76,7 +76,7 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "modify_character",
-            "description": "修改指定人物的存活状态或瞬间移动到某个地点。必须使用精确的人物ID和地点ID。",
+            "description": "修改指定人物的存活状态、势力归属或瞬间移动到某个地点。必须使用精确的人物ID。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,6 +84,8 @@ AGENT_TOOLS = [
                     "status": {"type": "string", "description": "当前状态描述(如:重伤、死亡、闭关)"},
                     "is_active": {"type": "boolean", "description": "死亡或永久退场填false"},
                     "location_id": {"type": "integer", "description": "要移动到的地点ID(选填)"},
+                    "faction_id": {"type": "integer", "description": "所属势力ID(选填)"},
+                    "faction_role": {"type": "string", "description": "势力内身份(如:内门弟子、宗主)"},
                     "reason": {"type": "string", "description": "修改原因"},
                 },
                 "required": ["character_id"],
@@ -94,16 +96,16 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "manage_world_element",
-            "description": "修改除人物外的世界观元素：大纲(outline)、地点(location)、时间线(timeline)。可以新增、更新或删除。",
+            "description": "修改世界观元素：大纲(outline)、地点(location)、时间线(timeline)、势力(faction)、人物关系(relation)。可以新增、更新或删除。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "element_type": {"type": "string", "enum": ["outline", "location", "timeline"]},
+                    "element_type": {"type": "string", "enum": ["outline", "location", "timeline", "faction", "relation"]},
                     "action": {"type": "string", "enum": ["add", "update", "delete"]},
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增或更新的数据字段。大纲填 title/description; 地点填 name/description; 时间线填 time_label/content(事件内容)",
+                        "description": "新增或更新的数据字段。outline 填 title/description; location 填 name/description; timeline 填 time_label/content; faction 填 name/description; relation 填 source_id/target_id/label/weight(数字)/description",
                         "additionalProperties": True,
                     },
                 },
@@ -1899,7 +1901,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 "当用户要求执行以下操作时，你必须调用对应的工具函数，而不是口头描述：\n"
                 "- 推进时间 → 调用 advance_world_time\n"
                 "- 修改人物状态/位置/生死 → 调用 modify_character\n"
-                "- 增删改大纲/地点/时间线 → 调用 manage_world_element\n"
+                "- 增删改大纲/地点/时间线/势力/人物关系 → 调用 manage_world_element\n"
                 "- 创建或覆盖推理方案 → 调用 generate_reasoning_chain\n"
                 "创建推理链时，节点prompt中可以使用系统占位符（如{timeline}、{characters_list}、{current_time}等），但严禁生造不存在的{xxx}。"
                 "如果你确认操作已完成，回复时请简要告知用户结果。"
@@ -1952,6 +1954,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             char.status = req.arguments["status"]
         if "is_active" in req.arguments:
             char.is_active = req.arguments["is_active"]
+        if "faction_id" in req.arguments:
+            char.faction_id = req.arguments["faction_id"]
+        if "faction_role" in req.arguments:
+            char.faction_role = req.arguments["faction_role"]
         loc_id = req.arguments.get("location_id")
         if loc_id is not None:
             loc = db.get(Location, loc_id)
@@ -2033,6 +2039,48 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.event_type = data["event_type"]
             elif action == "delete" and eid:
                 db.query(TimelineEvent).filter(TimelineEvent.id == eid).delete()
+
+        elif etype == "faction":
+            if action == "add":
+                db.add(Faction(
+                    novel_id=novel_id,
+                    name=data.get("name", ""),
+                    description=data.get("description", ""),
+                    base_location_id=data.get("base_location_id"),
+                ))
+            elif action == "update" and eid:
+                item = db.get(Faction, eid)
+                if item:
+                    if "name" in data:
+                        item.name = data["name"]
+                    if "description" in data:
+                        item.description = data["description"]
+                    if "base_location_id" in data:
+                        item.base_location_id = data["base_location_id"]
+            elif action == "delete" and eid:
+                db.query(Faction).filter(Faction.id == eid).delete()
+
+        elif etype == "relation":
+            if action == "add":
+                db.add(CharacterRelation(
+                    novel_id=novel_id,
+                    source_id=data.get("source_id"),
+                    target_id=data.get("target_id"),
+                    label=data.get("label", ""),
+                    weight=data.get("weight", 0),
+                    description=data.get("description", ""),
+                ))
+            elif action == "update" and eid:
+                rel = db.get(CharacterRelation, eid)
+                if rel:
+                    if "label" in data:
+                        rel.label = data["label"]
+                    if "weight" in data:
+                        rel.weight = int(data["weight"])
+                    if "description" in data:
+                        rel.description = data["description"]
+            elif action == "delete" and eid:
+                db.query(CharacterRelation).filter(CharacterRelation.id == eid).delete()
 
         db.commit()
         return {"status": "success", "msg": f"{etype} {action} 成功。"}

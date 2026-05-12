@@ -54,6 +54,8 @@ class Novel(Base):
     locations: Mapped[list[Location]] = relationship(back_populates="novel")
     world_events: Mapped[list[WorldEvent]] = relationship(back_populates="novel")
     timeline_events: Mapped[list[TimelineEvent]] = relationship(back_populates="novel")
+    factions: Mapped[list[Faction]] = relationship(back_populates="novel")
+    character_relations: Mapped[list[CharacterRelation]] = relationship(back_populates="novel")
 
 
 class Volume(Base):
@@ -116,9 +118,27 @@ class Character(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     is_always_context: Mapped[bool] = mapped_column(default=False)
     attributes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    faction_id: Mapped[Optional[int]] = mapped_column(ForeignKey("factions.id"), nullable=True)
+    faction_role: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
 
     novel: Mapped[Novel] = relationship(back_populates="characters")
+    faction: Mapped[Optional[Faction]] = relationship(back_populates="members")
+
+
+class Faction(Base):
+    """势力/宗门/国家"""
+    __tablename__ = "factions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    base_location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
+
+    novel: Mapped[Novel] = relationship(back_populates="factions")
+    base_location: Mapped[Optional[Location]] = relationship()
+    members: Mapped[list[Character]] = relationship(back_populates="faction")
 
 
 class Location(Base):
@@ -321,6 +341,23 @@ DEFAULT_PROMPT_TEMPLATES = {
         "推演指令：{instruction}"
     ),
 }
+
+
+class CharacterRelation(Base):
+    """人物关系连线 — 有向图"""
+    __tablename__ = "character_relations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
+    source_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), nullable=False)
+    target_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), nullable=False)
+    label: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    novel: Mapped[Novel] = relationship(back_populates="character_relations")
+    source: Mapped[Character] = relationship(foreign_keys=[source_id])
+    target: Mapped[Character] = relationship(foreign_keys=[target_id])
 
 
 class GlobalSettings(Base):
