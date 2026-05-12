@@ -502,7 +502,6 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                     novel = db.get(Novel, ch.novel_id)
                     if novel:
                         novel.current_tick += int(elapsed)
-                        flag_modified(novel, "current_tick")
                 events_list = parsed_tl.get("events", [])
                 for evt in events_list:
                     te = TimelineEvent(
