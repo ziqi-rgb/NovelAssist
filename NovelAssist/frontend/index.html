@@ -247,6 +247,12 @@
                     <div class="timeline-form"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
                 </div>
                 <div id="tab-ai" class="tab-content hidden">
+                    <div class="agent-ctl-bar">
+                        <span class="agent-status-label">🤖 Agent 状态: 就绪</span>
+                        <label title="开启后，大模型将直接执行修改操作而无需点击批准">
+                            <input type="checkbox" id="agent-auto-execute"> ⚡ 自动执行
+                        </label>
+                    </div>
                     <div id="copilot-history"></div>
                     <div class="copilot-quick" id="copilot-quick-btns"><button data-cmd="续写下文" class="cp-quick-btn">&#129668; 续写下文</button><button data-cmd="润色选中内容" class="cp-quick-btn">&#10024; 润色选中</button><button data-cmd="评价当前情节并提出修改建议" class="cp-quick-btn">&#128064; 评价情节</button></div>
                     <div class="copilot-input-row"><input type="text" id="copilot-input" placeholder="向 AI 输入指令..."><button id="copilot-send" class="sys-btn sys-btn-primary">发送</button></div>

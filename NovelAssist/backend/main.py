@@ -55,6 +55,42 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
 
+AGENT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "advance_world_time",
+            "description": "当小说时间流逝或用户要求推移时间时调用，推进小说的世界时间。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "elapsed_days": {"type": "integer", "description": "流逝的天数"},
+                    "elapsed_hours": {"type": "integer", "description": "流逝的小时数"},
+                },
+                "required": ["elapsed_days", "elapsed_hours"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "modify_character",
+            "description": "修改指定人物的存活状态或瞬间移动到某个地点。必须使用精确的人物ID和地点ID。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "character_id": {"type": "integer", "description": "目标人物ID"},
+                    "status": {"type": "string", "description": "当前状态描述(如:重伤、死亡、闭关)"},
+                    "is_active": {"type": "boolean", "description": "死亡或永久退场填false"},
+                    "location_id": {"type": "integer", "description": "要移动到的地点ID(选填)"},
+                    "reason": {"type": "string", "description": "修改原因"},
+                },
+                "required": ["character_id"],
+            },
+        },
+    },
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1336,19 +1372,43 @@ class ReasoningExecuteRequest(BaseModel):
     context_settings: dict = {}
 
 
-async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str) -> StreamingResponse:
+async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None) -> StreamingResponse:
     async def gen():
+        tool_calls_acc: dict[int, dict[str, str]] = {}
         try:
             client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+            extra = {}
+            if tools:
+                extra = {"tools": tools, "tool_choice": "auto"}
             stream = await client.chat.completions.create(
-                model=model, messages=messages, temperature=0.8, stream=True,
+                model=model, messages=messages, temperature=0.8, stream=True, **extra,
             )
             async for chunk in stream:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     yield f"data: {json.dumps({'type':'chunk','content':delta.content})}\n\n"
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        acc = tool_calls_acc[idx]
+                        if tc.id:
+                            acc["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                acc["name"] += tc.function.name
+                            if tc.function.arguments:
+                                acc["arguments"] += tc.function.arguments
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','message':str(e)})}\n\n"
+        for tc_data in tool_calls_acc.values():
+            if tc_data["name"]:
+                try:
+                    args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                except json.JSONDecodeError:
+                    args = {}
+                yield f"data: {json.dumps({'type':'tool_proposal','tool_name':tc_data['name'],'arguments':args,'tool_call_id':tc_data['id']})}\n\n"
         yield f"data: {json.dumps({'type':'done'})}\n\n"
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -1432,7 +1492,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             base = c.attributes.get("基础信息", {})
             if isinstance(base, dict) and base.get("姓名"):
                 name = str(base["姓名"])
-        parts: list[str] = [f"- **{name}** [{c.status}] {'🏃活跃' if c.is_active else '🚪退场'}"]
+        parts: list[str] = [f"- **{name}** (ID:{c.id}) [{c.status}] {'🏃活跃' if c.is_active else '🚪退场'}"]
         status = get_character_current_status(c.id, current_tick, db)
         parts.append(f"  📍 当前位置: {status['location_name']} ({status['desc']})")
         if c.aliases:
@@ -1722,7 +1782,69 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     prompt = resolve_placeholders(prompt, req.novel_id, db)
 
     messages = [{"role": "user", "content": prompt}]
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
+
+
+# ═══════════ Agent Tool Execution ═══════════
+
+class ToolExecuteReq(BaseModel):
+    tool_name: str
+    arguments: dict
+
+
+@app.post("/api/agent/execute/{novel_id}")
+def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+
+    if req.tool_name == "advance_world_time":
+        days = int(req.arguments.get("elapsed_days", 0))
+        hours = int(req.arguments.get("elapsed_hours", 0))
+        cfg = novel.calendar_config or {}
+        hpd = cfg.get("hours_per_day", 24)
+        added_ticks = (days * hpd) + hours
+        novel.current_tick += added_ticks
+        db.commit()
+        return {"status": "success", "msg": f"世界时间已推进 {days} 天 {hours} 小时"}
+
+    if req.tool_name == "modify_character":
+        char_id = req.arguments.get("character_id")
+        char = db.get(Character, char_id)
+        if char is None:
+            return {"status": "error", "msg": "人物不存在"}
+
+        snap = CharacterSnapshot(
+            character_id=char.id,
+            attributes=copy.deepcopy(char.attributes),
+            status=char.status or "",
+            is_active=char.is_active,
+            timestamp=datetime.utcnow(),
+        )
+        db.add(snap)
+
+        if "status" in req.arguments:
+            char.status = req.arguments["status"]
+        if "is_active" in req.arguments:
+            char.is_active = req.arguments["is_active"]
+        loc_id = req.arguments.get("location_id")
+        if loc_id is not None:
+            loc = db.get(Location, loc_id)
+            if loc:
+                db.add(CharacterTrajectory(
+                    character_id=char.id,
+                    location_id=loc_id,
+                    start_tick=novel.current_tick,
+                    reason=req.arguments.get("reason", "AI 指令调度"),
+                ))
+            else:
+                return {"status": "error", "msg": f"地点ID {loc_id} 不存在"}
+        if char.attributes and isinstance(char.attributes, dict):
+            flag_modified(char, "attributes")
+        db.commit()
+        return {"status": "success", "msg": f"人物 [{char.name}] 状态已更新。"}
+
+    return {"status": "error", "msg": "未知工具"}
 
 
 # ═══════════ Static ═══════════

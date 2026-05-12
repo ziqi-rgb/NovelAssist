@@ -1177,6 +1177,10 @@ async function copilotChat(instruction) {
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
+            else if (msg.type === "tool_proposal") {
+                var autoExec = document.getElementById("agent-auto-execute").checked;
+                renderToolProposal(aiB, msg, autoExec);
+            }
             else if (msg.type === "done") {
                 const text = aiB.textContent.replace(/^AI/, "").trim();
                 const row = document.createElement("div"); row.className = "cp-action-row";
@@ -1201,6 +1205,61 @@ async function copilotChat(instruction) {
 copilotSend.addEventListener("click", () => { const t = copilotInput.value.trim(); if (t) { copilotInput.value = ""; copilotChat(t); } });
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); copilotSend.click(); } });
 document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
+
+function renderToolProposal(parentBubble, proposal, autoExecute) {
+    var argsText = JSON.stringify(proposal.arguments || {}, null, 2);
+    var toolLabel = proposal.tool_name === "advance_world_time" ? "🌏 推进世界时间" :
+                    proposal.tool_name === "modify_character" ? "👤 修改人物" : "🔧 " + proposal.tool_name;
+    var tp = document.createElement("div");
+    tp.className = "tool-proposal";
+    tp.innerHTML = '<div class="tp-title">📋 提议操作: ' + toolLabel + '</div>' +
+        '<div class="tp-args">参数: ' + e(argsText) + '</div>' +
+        '<div class="tp-actions">' +
+            '<button class="tp-approve">✅ 批准并执行</button>' +
+            '<button class="tp-reject">❌ 拒绝</button>' +
+        '</div>';
+    parentBubble.appendChild(tp);
+    copilotHistory.scrollTop = copilotHistory.scrollHeight;
+
+    if (autoExecute) {
+        tp.querySelector(".tp-actions").innerHTML = '<span style="font-size:.7rem;color:#7c3aed;">⚡ 自动执行中...</span>';
+        executeTool(proposal.tool_name, proposal.arguments, tp);
+        return;
+    }
+
+    tp.querySelector(".tp-approve").addEventListener("click", function() {
+        tp.querySelector(".tp-actions").innerHTML = '<span style="font-size:.7rem;color:#7c3aed;">⏳ 执行中...</span>';
+        executeTool(proposal.tool_name, proposal.arguments, tp);
+    });
+    tp.querySelector(".tp-reject").addEventListener("click", function() {
+        tp.classList.add("tp-rejected");
+        tp.querySelector(".tp-title").textContent = "❌ 已拒绝: " + toolLabel;
+    });
+}
+
+async function executeTool(toolName, args, card) {
+    try {
+        var res = await fetch("/api/agent/execute/" + currentNovelId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tool_name: toolName, arguments: args }),
+        });
+        var result = await res.json();
+        if (result.status === "success") {
+            card.classList.add("tp-executed");
+            card.querySelector(".tp-title").textContent = "✅ 已执行: " + result.msg;
+            // Refresh time display and active tab if needed
+            if (typeof loadNovelTime === "function") loadNovelTime();
+            if (currentModule === "characters" && typeof loadCharacters === "function") loadCharacters(currentNovelId);
+        } else {
+            card.querySelector(".tp-title").textContent = "❌ 执行失败: " + (result.msg || "未知错误");
+            card.classList.add("tp-rejected");
+        }
+    } catch (e) {
+        card.querySelector(".tp-title").textContent = "❌ 网络错误: " + e.message;
+        card.classList.add("tp-rejected");
+    }
+}
 
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
@@ -1388,6 +1447,7 @@ chainGenBtn.addEventListener("click", async () => {
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { aiB.appendChild(document.createTextNode(msg.content)); aiB.scrollIntoView(false); }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
+            else if (msg.type === "tool_proposal") { renderToolProposal(aiB, msg, false); }
             else if (msg.type === "done") {
                 const txt = aiB.textContent.replace(/^AI/, "").trim();
                 const row = document.createElement("div"); row.className = "cp-action-row";
