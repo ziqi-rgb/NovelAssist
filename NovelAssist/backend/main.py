@@ -164,7 +164,7 @@ AGENT_TOOLS = [
                                                 "enum": ["text", "placeholder", "bool", "enum"],
                                                 "description": "块类型: text(纯文本), placeholder(系统占位符,value填不带{}的名称如current_time), bool(条件判断), enum(选项分支)",
                                             },
-                                            "value": {"type": "string", "description": "占位符名称(不带大括号)或文本内容"},
+                                            "value": {"type": "string", "description": "占位符名称(可带或不带大括号，如current_time或{current_time})或文本内容"},
                                         },
                                         "required": ["type", "value"],
                                     },
@@ -2050,10 +2050,14 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             parsed_target: list[dict] = []
             if isinstance(raw_target, list):
                 for blk in raw_target:
+                    blk_type = blk.get("type", "text")
+                    blk_value = blk.get("value", "")
+                    if blk_type == "placeholder" and blk_value and not blk_value.startswith("{"):
+                        blk_value = "{" + blk_value + "}"
                     parsed_target.append({
                         "id": "blk_" + uuid.uuid4().hex[:8],
-                        "type": blk.get("type", "text"),
-                        "value": blk.get("value", ""),
+                        "type": blk_type,
+                        "value": blk_value,
                     })
             elif isinstance(raw_target, str):
                 parsed_target.append({
