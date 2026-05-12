@@ -279,5 +279,37 @@
             <div class="modal-actions"><button id="loc-tmpl-save" class="btn-primary">保存模板</button><button id="loc-tmpl-cancel">取消</button></div>
         </div>
     </div>
+    <div id="time-settings-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:520px;max-height:85vh;overflow-y:auto;">
+            <h3>⏳ 世界时间与历法设定</h3>
+            <fieldset style="border:1px solid var(--border);padding:10px;margin-bottom:12px;border-radius:6px;background:#f8fafc;">
+                <legend style="font-size:0.8rem;font-weight:700;color:var(--accent);">当前主线时间 (数字锚点)</legend>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="number" id="ts-year" style="width:60px;" min="1" title="年">年
+                    <input type="number" id="ts-month" style="width:50px;" min="1" title="月">月
+                    <input type="number" id="ts-day" style="width:50px;" min="1" title="日">日
+                    <input type="number" id="ts-hour" style="width:50px;" min="0" title="时">时
+                </div>
+            </fieldset>
+            <fieldset style="border:1px solid var(--border);padding:10px;margin-bottom:12px;border-radius:6px;">
+                <legend style="font-size:0.8rem;font-weight:700;">历法结构</legend>
+                <div style="display:flex;gap:12px;margin-bottom:8px;">
+                    <label>一年几个月: <input type="number" id="ts-mpy" style="width:60px;"></label>
+                    <label>一月几天: <input type="number" id="ts-dpm" style="width:60px;"></label>
+                    <label>一天几时辰: <input type="number" id="ts-hpd" style="width:60px;"></label>
+                </div>
+            </fieldset>
+            <fieldset style="border:1px solid var(--border);padding:10px;margin-bottom:12px;border-radius:6px;">
+                <legend style="font-size:0.8rem;font-weight:700;">名词映射皮肤 (逗号分隔，留空则用数字)</legend>
+                <label>纪元/年号前缀: <input type="text" id="ts-era" placeholder="例如: 天宝"></label>
+                <label>循环年份名: <input type="text" id="ts-year-names" placeholder="例如: 甲子,乙丑... (循环使用)"></label>
+                <label>月份别称: <input type="text" id="ts-month-names" placeholder="例如: 孟春,仲春,季春..."></label>
+                <label>日期别称: <input type="text" id="ts-day-names" placeholder="例如: 初一,初二..."></label>
+                <label>时辰别称: <input type="text" id="ts-hour-names" placeholder="例如: 子时,丑时... (从0时起算)"></label>
+            </fieldset>
+            <div class="modal-actions"><button id="ts-save-btn" class="btn-primary">保存历法与时间</button><button id="ts-cancel-btn">取消</button></div>
+        </div>
+    </div>
 </body>
 </html>

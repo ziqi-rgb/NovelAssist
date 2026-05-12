@@ -36,9 +36,23 @@ async function loadNovelTime() {
     updateGlobalClockDisplay();
 }
 function updateGlobalClockDisplay() {
-    var d = tickToDate(window.currentTick);
     var el = document.getElementById("global-clock-display");
-    if (el) el.textContent = d.year + "年 " + d.month + "月 " + d.day + "日 " + d.hour + "时";
+    if (el) el.textContent = formatTickToLoreTime(window.currentTick);
+}
+
+function formatTickToLoreTime(tick, cfg) {
+    cfg = cfg || window.novelTimeConfig;
+    var d = tickToDate(tick, cfg);
+    var yStr = d.year + "年";
+    if (cfg.year_names && cfg.year_names.length > 0) yStr = cfg.year_names[(d.year - 1) % cfg.year_names.length] + "年";
+    if (cfg.era_name) yStr = cfg.era_name + " " + yStr;
+    var mStr = d.month + "月";
+    if (cfg.month_names && cfg.month_names.length >= d.month) mStr = cfg.month_names[d.month - 1];
+    var dStr = d.day + "日";
+    if (cfg.day_names && cfg.day_names.length >= d.day) dStr = cfg.day_names[d.day - 1];
+    var hStr = d.hour + "时";
+    if (cfg.hour_names && cfg.hour_names.length > d.hour) hStr = cfg.hour_names[d.hour];
+    return yStr + " " + mStr + " " + dStr + " " + hStr;
 }
 
 /* ═══════════ Novel ═══════════ */
@@ -394,8 +408,95 @@ function renderTimeEditor(container) {
     var timeFs = document.createElement("fieldset");
     timeFs.className = "char-fieldset";
     timeFs.style.cssText = "margin-top:16px;border-color:#93c5fd;background:#eff6ff;";
-    timeFs.innerHTML = '<legend style="color:#1d4ed8;">⏳ 行动规律与轨迹</legend><p style="font-size:0.75rem;color:#475569;margin-bottom:8px;">设定该角色每天/每月出现在哪里，以及特殊的行程变故。</p>';
+    timeFs.id = "char-time-editor";
+    timeFs.innerHTML = '<legend style="color:#1d4ed8;">⏳ 行动规律与轨迹</legend>'
+        + '<div style="margin-bottom:8px;"><strong style="font-size:0.78rem;">📅 周期作息</strong><button onclick="addRoutineRow()" style="margin-left:8px;font-size:0.68rem;padding:2px 8px;" class="sys-btn sys-btn-ghost">+ 新增</button></div>'
+        + '<div id="routine-rows"></div>'
+        + '<div style="margin-top:12px;margin-bottom:8px;"><strong style="font-size:0.78rem;">🗺️ 行动轨迹</strong><button onclick="addTrajectoryRow()" style="margin-left:8px;font-size:0.68rem;padding:2px 8px;" class="sys-btn sys-btn-ghost">+ 新增</button></div>'
+        + '<div id="trajectory-rows"></div>'
+        + '<button onclick="saveTimeData()" style="margin-top:8px;font-size:0.75rem;padding:4px 12px;" class="sys-btn sys-btn-primary">💾 保存作息与轨迹</button>';
     container.appendChild(timeFs);
+    loadTimeData();
+}
+
+function locationOptionsHtml(selId) {
+    var h = '<select class="traj-loc">';
+    window.locationsCache.forEach(function(l) { h += '<option value="' + l.id + '"' + (l.id === selId ? " selected" : "") + '>' + e(l.name) + '</option>'; });
+    h += '</select>';
+    return h;
+}
+
+function addRoutineRow(data) {
+    data = data || { location_id: null, cycle_type: "日", cycle_value: "", activity: "" };
+    var div = document.createElement("div");
+    div.className = "time-row";
+    div.style.cssText = "display:flex;gap:4px;align-items:center;margin-bottom:3px;font-size:0.72rem;";
+    div.innerHTML = '<select class="rt-cycle"><option value="日"' + (data.cycle_type === "日" ? " selected" : "") + '>每天</option><option value="月"' + (data.cycle_type === "月" ? " selected" : "") + '>每月</option><option value="年"' + (data.cycle_type === "年" ? " selected" : "") + '>每年</option></select>'
+        + '<input class="rt-value" placeholder="时刻/日期" value="' + e(data.cycle_value || "") + '" style="width:60px;">'
+        + '<span>在</span>' + locationOptionsHtml(data.location_id)
+        + '<input class="rt-activity" placeholder="做什么" value="' + e(data.activity || "") + '" style="flex:1;">'
+        + '<button onclick="this.parentElement.remove()" class="sys-btn sys-btn-danger">✕</button>';
+    document.getElementById("routine-rows").appendChild(div);
+}
+
+function addTrajectoryRow(data) {
+    data = data || { location_id: null, start_tick: window.currentTick, end_tick: null, reason: "" };
+    var d = tickToDate(data.start_tick || window.currentTick);
+    var div = document.createElement("div");
+    div.className = "time-row";
+    div.style.cssText = "display:flex;gap:4px;align-items:center;margin-bottom:3px;font-size:0.72rem;flex-wrap:wrap;";
+    div.innerHTML = '<span>起:</span>'
+        + '<input type="number" class="traj-y" value="' + d.year + '" style="width:40px;" min="1">年'
+        + '<input type="number" class="traj-m" value="' + d.month + '" style="width:40px;" min="1">月'
+        + '<input type="number" class="traj-d" value="' + d.day + '" style="width:40px;" min="1">日'
+        + '<input type="number" class="traj-h" value="' + d.hour + '" style="width:40px;" min="0">时'
+        + '<span>→</span>' + locationOptionsHtml(data.location_id)
+        + '<input class="traj-reason" placeholder="原因" value="' + e(data.reason || "") + '" style="width:100px;">'
+        + '<button onclick="this.parentElement.remove()" class="sys-btn sys-btn-danger">✕</button>';
+    document.getElementById("trajectory-rows").appendChild(div);
+}
+
+async function loadTimeData() {
+    if (!currentCharId) return;
+    var res = await fetch("/api/characters/" + currentCharId + "/time_data");
+    var data = await res.json();
+    document.getElementById("routine-rows").innerHTML = "";
+    document.getElementById("trajectory-rows").innerHTML = "";
+    (data.routines || []).forEach(function(r) { addRoutineRow(r); });
+    (data.trajectories || []).forEach(function(t) { addTrajectoryRow(t); });
+    if (window.locationsCache.length === 0) await loadLocationsCache();
+}
+
+async function loadLocationsCache() {
+    var res = await fetch("/api/locations?novel_id=" + currentNovelId);
+    window.locationsCache = await res.json();
+}
+
+async function saveTimeData() {
+    if (!currentCharId) return;
+    var routines = [], trajectories = [];
+    document.querySelectorAll("#routine-rows .time-row").forEach(function(row) {
+        routines.push({
+            cycle_type: row.querySelector(".rt-cycle").value,
+            cycle_value: row.querySelector(".rt-value").value.trim(),
+            location_id: parseInt(row.querySelector(".traj-loc").value) || 0,
+            activity: row.querySelector(".rt-activity").value.trim()
+        });
+    });
+    document.querySelectorAll("#trajectory-rows .time-row").forEach(function(row) {
+        var y = parseInt(row.querySelector(".traj-y").value) || 1;
+        var m = parseInt(row.querySelector(".traj-m").value) || 1;
+        var d = parseInt(row.querySelector(".traj-d").value) || 1;
+        var h = parseInt(row.querySelector(".traj-h").value) || 0;
+        trajectories.push({
+            location_id: parseInt(row.querySelector(".traj-loc").value) || 0,
+            start_tick: dateToTick(y, m, d, h),
+            end_tick: null,
+            reason: row.querySelector(".traj-reason").value.trim()
+        });
+    });
+    await fetch("/api/characters/" + currentCharId + "/time_data", { method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ routines: routines, trajectories: trajectories }) });
+    showToast("作息与轨迹已保存");
 }
 
 function renderTemplateEditor() {
@@ -1951,6 +2052,43 @@ document.addEventListener("DOMContentLoaded", async () => {
     var zipBtn = document.getElementById("export-zip-btn");
     if (zipBtn) zipBtn.addEventListener("click", function() {
         window.location.href = "/api/novels/" + currentNovelId + "/export-zip";
+    });
+    // Time settings modal
+    document.getElementById("global-clock-btn").addEventListener("click", function() {
+        var d = tickToDate(window.currentTick);
+        document.getElementById("ts-year").value = d.year;
+        document.getElementById("ts-month").value = d.month;
+        document.getElementById("ts-day").value = d.day;
+        document.getElementById("ts-hour").value = d.hour;
+        document.getElementById("ts-mpy").value = window.novelTimeConfig.months_per_year || 12;
+        document.getElementById("ts-dpm").value = window.novelTimeConfig.days_per_month || 30;
+        document.getElementById("ts-hpd").value = window.novelTimeConfig.hours_per_day || 24;
+        document.getElementById("ts-era").value = window.novelTimeConfig.era_name || "";
+        document.getElementById("ts-year-names").value = (window.novelTimeConfig.year_names || []).join(",");
+        document.getElementById("ts-month-names").value = (window.novelTimeConfig.month_names || []).join(",");
+        document.getElementById("ts-day-names").value = (window.novelTimeConfig.day_names || []).join(",");
+        document.getElementById("ts-hour-names").value = (window.novelTimeConfig.hour_names || []).join(",");
+        document.getElementById("time-settings-modal").classList.remove("hidden");
+    });
+    document.getElementById("ts-cancel-btn").addEventListener("click", function() { document.getElementById("time-settings-modal").classList.add("hidden"); });
+    document.querySelector("#time-settings-modal .modal-backdrop").addEventListener("click", function() { document.getElementById("time-settings-modal").classList.add("hidden"); });
+    document.getElementById("ts-save-btn").addEventListener("click", async function() {
+        var y = parseInt(document.getElementById("ts-year").value) || 1;
+        var m = parseInt(document.getElementById("ts-month").value) || 1;
+        var d = parseInt(document.getElementById("ts-day").value) || 1;
+        var h = parseInt(document.getElementById("ts-hour").value) || 0;
+        window.novelTimeConfig.months_per_year = parseInt(document.getElementById("ts-mpy").value) || 12;
+        window.novelTimeConfig.days_per_month = parseInt(document.getElementById("ts-dpm").value) || 30;
+        window.novelTimeConfig.hours_per_day = parseInt(document.getElementById("ts-hpd").value) || 24;
+        window.novelTimeConfig.era_name = document.getElementById("ts-era").value.trim();
+        window.novelTimeConfig.year_names = document.getElementById("ts-year-names").value.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+        window.novelTimeConfig.month_names = document.getElementById("ts-month-names").value.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+        window.novelTimeConfig.day_names = document.getElementById("ts-day-names").value.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+        window.novelTimeConfig.hour_names = document.getElementById("ts-hour-names").value.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+        window.currentTick = dateToTick(y, m, d, h, window.novelTimeConfig);
+        await fetch("/api/novels/" + currentNovelId + "/time", { method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ current_tick: window.currentTick, calendar_config: window.novelTimeConfig }) });
+        updateGlobalClockDisplay();
+        document.getElementById("time-settings-modal").classList.add("hidden");
     });
 });
 
