@@ -452,7 +452,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                     base = c.attributes.get("基础信息", {})
                     if isinstance(base, dict) and base.get("姓名"):
                         name = str(base["姓名"])
-                char_list.append({"id": c.id, "name": name, "attributes": c.attributes or {}})
+                char_list.append({"id": c.id, "name": name, "status": c.status, "is_active": c.is_active, "attributes": c.attributes or {}})
             char_json = json.dumps(char_list, ensure_ascii=False)
             tmpl_json = json.dumps(char_template, ensure_ascii=False)
             prompt = templates.get("archive_character", DEFAULT_PROMPT_TEMPLATES["archive_character"]).replace("{template}", tmpl_json).replace("{characters}", char_json).replace("{text}", text)
@@ -1199,7 +1199,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             base = c.attributes.get("基础信息", {})
             if isinstance(base, dict) and base.get("姓名"):
                 name = str(base["姓名"])
-        parts: list[str] = [f"- **{name}** [{c.status}]"]
+        parts: list[str] = [f"- **{name}** [{c.status}] {'🏃活跃' if c.is_active else '🚪退场'}"]
         if c.aliases:
             parts.append(f"  别名: {c.aliases}")
         if c.description:
@@ -1283,7 +1283,8 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     base = c.attributes.get("基础信息", {})
                     if isinstance(base, dict) and base.get("姓名"):
                         name = str(base["姓名"])
-                lines.append(f"- **{name}** [{c.status}]")
+                active_tag = "🏃活跃" if c.is_active else "🚪退场"
+                lines.append(f"- **{name}** [{c.status}] {active_tag}")
             return "\n".join(lines)
 
         if ph == "locations_list":
@@ -1347,6 +1348,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     if c.description:
                         info.append(f"描述: {c.description}")
                     info.append(f"状态: {c.status}")
+                    info.append(f"活跃: {'是' if c.is_active else '否（已退场）'}")
                     if c.attributes and isinstance(c.attributes, dict):
                         for group, fields in c.attributes.items():
                             if isinstance(fields, dict):
