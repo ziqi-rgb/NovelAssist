@@ -1736,12 +1736,33 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 lines.append(f"- **{e.time_label}**: {e.content}")
             return "\n".join(lines)
 
+        if ph == "timeline":
+            events = db.scalars(select(TimelineEvent).where(
+                TimelineEvent.novel_id == novel_id,
+                TimelineEvent.event_type == "main_story",
+            ).order_by(TimelineEvent.time_label)).all()
+            if not events:
+                return "(无正文时间线)"
+            lines = ["## 正文时间线"]
+            for e in events:
+                lines.append(f"- **{e.time_label}**: {e.content}")
+            return "\n".join(lines)
+
         if ph == "lore":
             return _lore()
 
         if ph == "current_time":
             lore_time = CalendarEngine.format_tick_to_lore_time(current_tick, novel.calendar_config if novel else {})
             return f"当前世界时间：{lore_time}"
+
+        if ph == "novel_name":
+            return novel.name if novel else "(无小说名)"
+
+        if ph == "chapter_title":
+            chapter = db.scalars(select(Chapter).where(
+                Chapter.novel_id == novel_id
+            ).order_by(Chapter.order_index.desc()).limit(1)).first()
+            return chapter.title if chapter else "(无章节)"
 
         m = re.match(r"character:(.+)$", ph)
         if m:

@@ -1768,7 +1768,7 @@ function renderLines() {
 
 /* ═══════════ Target Builder ═══════════ */
 
-const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{locations_list}","{timeline_main}","{timeline_history}","{timeline_world}","{character:}","{outline:}","{location:}","{chain_data}"];
+const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{characters_inactive}","{locations_list}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
 
 function getNodeById(nid) { return (currentChain && currentChain.nodes) ? currentChain.nodes.find(function(n) { return n.id === nid; }) : null; }
 
