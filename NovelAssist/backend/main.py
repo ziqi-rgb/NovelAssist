@@ -1274,17 +1274,35 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
 
         if ph == "characters_list":
             chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
-            if not chars:
-                return "(无人物)"
-            lines = ["## 人物名录"]
-            for c in chars:
+            # Active + always_context characters (always_context overrides inactive)
+            active = [c for c in chars if c.is_active or c.is_always_context]
+            if not active:
+                return "(无活跃人物)"
+            lines = ["## 活跃人物名录"]
+            for c in active:
                 name = c.name
                 if c.attributes and isinstance(c.attributes, dict):
                     base = c.attributes.get("基础信息", {})
                     if isinstance(base, dict) and base.get("姓名"):
                         name = str(base["姓名"])
-                active_tag = "🏃活跃" if c.is_active else "🚪退场"
+                active_tag = "🏃活跃" if c.is_active else "🚪退场(常驻)"
                 lines.append(f"- **{name}** [{c.status}] {active_tag}")
+            return "\n".join(lines)
+
+        if ph == "characters_inactive":
+            chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+            # Only truly retired AND not always_context
+            inactive = [c for c in chars if not c.is_active and not c.is_always_context]
+            if not inactive:
+                return "(无退场人物)"
+            lines = ["## 退场人物名录"]
+            for c in inactive:
+                name = c.name
+                if c.attributes and isinstance(c.attributes, dict):
+                    base = c.attributes.get("基础信息", {})
+                    if isinstance(base, dict) and base.get("姓名"):
+                        name = str(base["姓名"])
+                lines.append(f"- **{name}** [{c.status}] 🚪退场")
             return "\n".join(lines)
 
         if ph == "locations_list":
