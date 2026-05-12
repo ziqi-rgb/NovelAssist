@@ -970,6 +970,24 @@ function renderLocationDetail(loc) {
     if (!Object.keys(groups).length && !otherKeys.length && !Object.keys(own).length) {
         container.innerHTML = '<p class="placeholder">暂无属性（请先在模板设置中配置此尺度的字段）</p>';
     }
+    // Presence radar
+    fetch("/api/locations/" + loc.id + "/presence?novel_id=" + currentNovelId)
+        .then(function(r) { return r.json(); })
+        .then(function(chars) {
+            var div = document.createElement("div");
+            div.className = "tmpl-group";
+            div.style.cssText = "margin-top:16px;border-color:#8b5cf6;background:#f5f3ff;padding:12px 14px;border-radius:6px;";
+            var h = '<h4 style="color:#6d28d9;margin-bottom:8px;">📍 当前在此地的人物 (基于主线时间)</h4>';
+            if (chars.length === 0) {
+                h += '<div style="font-size:0.8rem;color:#6b7280;">当前无活跃人物在此。</div>';
+            } else {
+                chars.forEach(function(c) {
+                    h += '<div style="font-size:0.82rem;margin-bottom:4px;"><b>🏃 ' + e(c.name) + '</b> <span style="color:#6b7280;">(' + e(c.status_desc) + ')</span></div>';
+                });
+            }
+            div.innerHTML = h;
+            container.appendChild(div);
+        });
 }
 
 function collectLocationAttributes() {

@@ -78,6 +78,32 @@ app = FastAPI(title="AI 小说辅助引擎", version="0.5.1", lifespan=lifespan)
 NOVEL_ID_DEFAULT = 1
 
 
+# ═══════════ Space-Time Engine ═══════════
+
+def get_character_current_status(char_id: int, current_tick: int, db: Session):
+    from sqlalchemy import desc
+    # 1. 查找正在发生的特殊轨迹
+    traj = db.query(CharacterTrajectory).filter(
+        CharacterTrajectory.character_id == char_id,
+        CharacterTrajectory.start_tick <= current_tick,
+    ).order_by(desc(CharacterTrajectory.start_tick)).first()
+    if traj and (traj.end_tick is None or traj.end_tick > current_tick):
+        loc = db.get(Location, traj.location_id)
+        loc_name = loc.name if loc else "未知地"
+        return {"type": "trajectory", "location_id": traj.location_id, "location_name": loc_name, "desc": traj.reason}
+
+    # 2. 无轨迹则回退到作息规律
+    routines = db.query(CharacterRoutine).filter(
+        CharacterRoutine.character_id == char_id
+    ).all()
+    if routines:
+        loc = db.get(Location, routines[0].location_id)
+        loc_name = loc.name if loc else "未知地"
+        return {"type": "routine", "location_id": routines[0].location_id, "location_name": loc_name, "desc": f"按规律活动({routines[0].activity})"}
+
+    return {"type": "unknown", "location_id": None, "location_name": "行踪不明", "desc": ""}
+
+
 # ═══════════ Schemas ═══════════
 
 class NovelCreate(BaseModel):
@@ -676,6 +702,21 @@ def update_location(location_id: int, body: LocationCreate, db: Session = Depend
     return loc
 
 
+@app.get("/api/locations/{loc_id}/presence")
+def get_location_presence(loc_id: int, novel_id: int, db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    current_tick = novel.current_tick if novel else 0
+    chars = db.query(Character).filter(
+        Character.novel_id == novel_id, Character.is_active.is_(True)
+    ).all()
+    present_chars: list[dict] = []
+    for c in chars:
+        status = get_character_current_status(c.id, current_tick, db)
+        if status["location_id"] == loc_id:
+            present_chars.append({"id": c.id, "name": c.name, "status_desc": status["desc"]})
+    return present_chars
+
+
 def get_computed_attributes(location_id: int, db: Session, _depth: int = 0) -> dict:
     """Recursively merge parent attributes with child overrides."""
     if _depth > 10:
@@ -1262,6 +1303,8 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
     """Replace all {placeholder} patterns with database content."""
+    novel = db.get(Novel, novel_id)
+    current_tick = novel.current_tick if novel else 0
 
     def _fmt_char(c) -> str:
         name = c.name
@@ -1270,6 +1313,8 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             if isinstance(base, dict) and base.get("姓名"):
                 name = str(base["姓名"])
         parts: list[str] = [f"- **{name}** [{c.status}] {'🏃活跃' if c.is_active else '🚪退场'}"]
+        status = get_character_current_status(c.id, current_tick, db)
+        parts.append(f"  📍 当前位置: {status['location_name']} ({status['desc']})")
         if c.aliases:
             parts.append(f"  别名: {c.aliases}")
         if c.description:
@@ -1356,7 +1401,8 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     if isinstance(base, dict) and base.get("姓名"):
                         name = str(base["姓名"])
                 active_tag = "🏃活跃" if c.is_active else "🚪退场(常驻)"
-                lines.append(f"- **{name}** [{c.status}] {active_tag}")
+                status_info = get_character_current_status(c.id, current_tick, db)
+                lines.append(f"- **{name}** [{c.status}] {active_tag} | 📍 {status_info['location_name']} ({status_info['desc']})")
             return "\n".join(lines)
 
         if ph == "characters_inactive":
@@ -1437,6 +1483,15 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                         info.append(f"描述: {c.description}")
                     info.append(f"状态: {c.status}")
                     info.append(f"活跃: {'是' if c.is_active else '否（已退场）'}")
+                    status = get_character_current_status(c.id, current_tick, db)
+                    info.append(f"📍 当前时空坐标: 位于【{status['location_name']}】({status['desc']})")
+                    routines = db.query(CharacterRoutine).filter_by(character_id=c.id).all()
+                    if routines:
+                        info.append("📅 日常作息规律:")
+                        for r in routines:
+                            r_loc = db.get(Location, r.location_id)
+                            r_loc_name = r_loc.name if r_loc else "未知"
+                            info.append(f"  - [{r.cycle_type}{r.cycle_value}] 在 {r_loc_name} ({r.activity})")
                     if c.attributes and isinstance(c.attributes, dict):
                         for group, fields in c.attributes.items():
                             if isinstance(fields, dict):
