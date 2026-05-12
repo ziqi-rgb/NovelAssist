@@ -40,6 +40,7 @@ try:
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
     )
+    from .calendar import CalendarEngine  # noqa: E402
 except ImportError:
     from database import Base, engine, get_db, run_migration  # noqa: E402
     from models import (  # noqa: E402
@@ -48,6 +49,7 @@ except ImportError:
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
     )
+    from calendar import CalendarEngine  # noqa: E402
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
@@ -92,15 +94,26 @@ def get_character_current_status(char_id: int, current_tick: int, db: Session):
         loc_name = loc.name if loc else "未知地"
         return {"type": "trajectory", "location_id": traj.location_id, "location_name": loc_name, "desc": traj.reason}
 
-    # 2. 无轨迹则回退到作息规律
+    # 2. 无轨迹则时间匹配作息规律
     routines = db.query(CharacterRoutine).filter(
         CharacterRoutine.character_id == char_id
     ).all()
-    if routines:
-        loc = db.get(Location, routines[0].location_id)
+    fallback_routine = None
+    char = db.get(Character, char_id)
+    novel = db.get(Novel, char.novel_id) if char else None
+    config = novel.calendar_config if novel and novel.calendar_config else {}
+    for r in routines:
+        if not r.cycle_value or str(r.cycle_value).strip() == "常驻":
+            fallback_routine = r
+        elif CalendarEngine.is_routine_active(current_tick, config, r.cycle_type, r.cycle_value):
+            loc = db.get(Location, r.location_id)
+            loc_name = loc.name if loc else "未知地"
+            return {"type": "routine", "location_id": r.location_id, "location_name": loc_name, "desc": r.activity}
+    # 3. 无匹配作息则回退到常驻地
+    if fallback_routine:
+        loc = db.get(Location, fallback_routine.location_id)
         loc_name = loc.name if loc else "未知地"
-        return {"type": "routine", "location_id": routines[0].location_id, "location_name": loc_name, "desc": f"按规律活动({routines[0].activity})"}
-
+        return {"type": "routine_fallback", "location_id": fallback_routine.location_id, "location_name": loc_name, "desc": f"常驻于{loc_name}"}
     return {"type": "unknown", "location_id": None, "location_name": "行踪不明", "desc": ""}
 
 
@@ -547,6 +560,20 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                 target.status = str(upd["status_change"])
                             if "is_active" in upd:
                                 target.is_active = bool(upd["is_active"])
+                            # Auto-create trajectory from move_to_location
+                            if upd.get("move_to_location") and isinstance(upd["move_to_location"], str) and upd["move_to_location"].strip():
+                                loc_name = upd["move_to_location"].strip()
+                                loc = db.query(Location).filter(
+                                    Location.novel_id == ch.novel_id,
+                                    Location.name.like(f"%{loc_name}%"),
+                                ).first()
+                                if loc:
+                                    db.add(CharacterTrajectory(
+                                        character_id=target.id,
+                                        location_id=loc.id,
+                                        start_tick=novel2.current_tick if (novel2 := db.get(Novel, ch.novel_id)) else 0,
+                                        reason=f"正文归档：{loc_name}",
+                                    ))
                             name = target.name
                             if target.attributes and isinstance(target.attributes, dict):
                                 base = target.attributes.get("基础信息", {})

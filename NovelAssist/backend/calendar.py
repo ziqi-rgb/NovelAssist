@@ -28,3 +28,23 @@ class CalendarEngine:
         tick += (day - 1) * hpd
         tick += hour
         return tick
+
+    @staticmethod
+    def is_routine_active(tick: int, config: dict, cycle_type: str, cycle_value: str) -> bool:
+        dt = CalendarEngine.tick_to_datetime(tick, config)
+        val = str(cycle_value).strip()
+        if not val or val == "常驻":
+            return False
+        try:
+            if cycle_type == "日":
+                h = int(val.split(":")[0])
+                return dt["hour"] == h
+            elif cycle_type == "月":
+                d = int(val.split(" ")[0])
+                return dt["day"] == d
+            elif cycle_type == "年":
+                parts = val.split(" ")[0].split("-")
+                return dt["month"] == int(parts[0]) and dt["day"] == int(parts[1])
+        except Exception:
+            pass
+        return False
