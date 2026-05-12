@@ -137,8 +137,10 @@ AGENT_TOOLS = [
                                         "发给AI的提示词命令。强烈建议使用系统内置占位符动态获取信息。\n"
                                         "【合法占位符白名单 — 仅限以下，禁止生造】:\n"
                                         "{content} - 正文框当前文本\n"
-                                        "{characters_list} - 所有活跃人物的档案与时空坐标\n"
+                                        "{characters_list} - 所有活跃人物的档案与时空坐标(含势力归属)\n"
                                         "{characters_inactive} - 已退场人物列表\n"
+                                        "{factions_list} - 势力与宗门目录(含成员)\n"
+                                        "{relations_graph} - 人物关系网(有向连线)\n"
                                         "{timeline} - 正文时间线历史\n"
                                         "{outlines_list} - 世界大纲列表\n"
                                         "{current_time} - 当前世界历法时间\n"
@@ -1673,7 +1675,14 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                         name = str(base["姓名"])
                 active_tag = "🏃活跃" if c.is_active else "🚪退场(常驻)"
                 status_info = get_character_current_status(c.id, current_tick, db)
-                lines.append(f"- **{name}** [{c.status}] {active_tag} | 📍 {status_info['location_name']} ({status_info['desc']})")
+                faction_info = ""
+                if c.faction_id:
+                    faction = db.get(Faction, c.faction_id)
+                    if faction:
+                        faction_info = f" | 🏛️ {faction.name}"
+                        if c.faction_role:
+                            faction_info += f" - {c.faction_role}"
+                lines.append(f"- **{name}** [{c.status}] {active_tag} | 📍 {status_info['location_name']} ({status_info['desc']}){faction_info}")
             return "\n".join(lines)
 
         if ph == "characters_inactive":
@@ -1765,6 +1774,41 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 Chapter.novel_id == novel_id
             ).order_by(Chapter.order_index.desc()).limit(1)).first()
             return chapter.title if chapter else "(无章节)"
+
+        if ph == "factions_list":
+            factions = db.query(Faction).filter(Faction.novel_id == novel_id).all()
+            if not factions:
+                return "(无势力数据)"
+            res = []
+            for f in factions:
+                members = db.query(Character).filter(Character.faction_id == f.id).all()
+                mem_strs = [f"{m.name}({m.faction_role})" for m in members if m.faction_role]
+                mem_info = f"成员: {', '.join(mem_strs)}" if mem_strs else "暂无成员"
+                base_info = f"驻地ID:{f.base_location_id}" if f.base_location_id else "无固定驻地"
+                res.append(f"【{f.name}】 {f.description} | {base_info} | {mem_info}")
+            return "\n".join(res)
+
+        if ph == "relations_graph":
+            relations = db.query(CharacterRelation).filter(CharacterRelation.novel_id == novel_id).all()
+            if not relations:
+                return "(无关系连线)"
+            res = []
+            for r in relations:
+                src = db.get(Character, r.source_id)
+                tgt = db.get(Character, r.target_id)
+                if src and tgt:
+                    weight_desc = ""
+                    if r.weight >= 80:
+                        weight_desc = " [极度亲密]"
+                    elif r.weight >= 40:
+                        weight_desc = " [友好]"
+                    elif r.weight <= -80:
+                        weight_desc = " [不共戴天]"
+                    elif r.weight <= -40:
+                        weight_desc = " [敌对]"
+                    reason = f"。原因: {r.description}" if r.description else ""
+                    res.append(f"[{src.name}] 对 [{tgt.name}] 有着 <{r.label}> 关系 (好感度: {r.weight}){weight_desc}{reason}")
+            return "\n".join(res) if res else "(无关系连线)"
 
         m = re.match(r"character:(.+)$", ph)
         if m:
@@ -1900,7 +1944,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 "你是小说创作助手，集成了世界观编辑工具。\n"
                 "当用户要求执行以下操作时，你必须调用对应的工具函数，而不是口头描述：\n"
                 "- 推进时间 → 调用 advance_world_time\n"
-                "- 修改人物状态/位置/生死 → 调用 modify_character\n"
+                "- 修改人物状态/位置/生死/势力归属 → 调用 modify_character\n"
                 "- 增删改大纲/地点/时间线/势力/人物关系 → 调用 manage_world_element\n"
                 "- 创建或覆盖推理方案 → 调用 generate_reasoning_chain\n"
                 "创建推理链时，节点prompt中可以使用系统占位符（如{timeline}、{characters_list}、{current_time}等），但严禁生造不存在的{xxx}。"
@@ -1913,6 +1957,15 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
 
 
 # ═══════════ Agent Tool Execution ═══════════
+
+@app.get("/api/factions")
+def get_factions(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    return db.query(Faction).filter(Faction.novel_id == novel_id).all()
+
+
+@app.get("/api/character_relations")
+def get_relations(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    return db.query(CharacterRelation).filter(CharacterRelation.novel_id == novel_id).all()
 
 class ToolExecuteReq(BaseModel):
     tool_name: str

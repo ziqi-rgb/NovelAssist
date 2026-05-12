@@ -72,6 +72,7 @@
             <button class="nav-btn" data-module="map"><span class="nav-icon">&#128506;</span><span class="nav-label">地图编辑</span></button>
             <button class="nav-btn" data-module="sandbox"><span class="nav-icon">&#9876;</span><span class="nav-label">战斗推理</span></button>
             <button class="nav-btn" data-module="reasoning"><span class="nav-icon">&#129504;</span><span class="nav-label">推理链编辑</span></button>
+            <button class="nav-btn" data-module="relations"><span class="nav-icon">🌐</span><span class="nav-label">势力关系</span></button>
             <div class="nav-spacer"></div>
             <button class="nav-btn" id="prompt-settings-btn"><span class="nav-icon">&#9965;</span><span class="nav-label">提示词</span></button>
             <button class="nav-btn" id="export-btn"><span class="nav-icon">&#128229;</span><span class="nav-label">导出设定</span></button>
@@ -121,6 +122,15 @@
                 <div id="module-reasoning" class="module-panel hidden">
                     <div class="sidebar-header"><h2>推演方案</h2><button id="new-chain-btn" class="sys-btn sys-btn-secondary">+ 新建方案</button></div>
                     <ul id="chain-list"></ul>
+                </div>
+                <div id="module-relations" class="module-panel hidden">
+                    <div class="list-header" style="margin-bottom:10px;">
+                        <button id="btn-refresh-graph" class="sys-btn">🔄 刷新网络</button>
+                    </div>
+                    <div id="relation-list-container" style="font-size:0.8rem;color:var(--text);overflow-y:auto;flex:1;">
+                        <ul id="factions-list-ul"></ul>
+                        <ul id="relations-list-ul"></ul>
+                    </div>
                 </div>
             </aside>
 

@@ -96,6 +96,7 @@ document.querySelectorAll(".nav-btn[data-module]").forEach(b => {
         else if (currentModule === "map") { loadLocationTree(); }
         else if (currentModule === "reasoning") loadReasoningModule();
         else if (currentModule === "sandbox") loadSandboxModule();
+        else if (currentModule === "relations") loadRelationsGraph();
     });
 });
 
@@ -1768,7 +1769,7 @@ function renderLines() {
 
 /* ═══════════ Target Builder ═══════════ */
 
-const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{characters_inactive}","{locations_list}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
+const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{characters_inactive}","{factions_list}","{relations_graph}","{locations_list}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
 
 function getNodeById(nid) { return (currentChain && currentChain.nodes) ? currentChain.nodes.find(function(n) { return n.id === nid; }) : null; }
 
@@ -2137,6 +2138,29 @@ document.getElementById("sandbox-next-btn").addEventListener("click", function()
     document.getElementById("sandbox-start-btn").click();
 });
 
+/* ═══════════ Relations Graph ═══════════ */
+async function loadRelationsGraph() {
+    var fl = document.getElementById("factions-list-ul");
+    var rl = document.getElementById("relations-list-ul");
+    try {
+        var factions = await (await fetch("/api/factions" + nidQ())).json();
+        fl.innerHTML = factions.length ? "" : "<li>(无势力)</li>";
+        factions.forEach(function(f) {
+            fl.innerHTML += '<li><strong>🏛️ ' + e(f.name) + '</strong><br><span style="font-size:.72rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
+        });
+
+        var relations = await (await fetch("/api/character_relations" + nidQ())).json();
+        rl.innerHTML = relations.length ? "" : "<li>(无关系)</li>";
+        relations.forEach(function(r) {
+            rl.innerHTML += '<li style="padding:2px 0;">🔗 ID' + r.source_id + ' → ID' + r.target_id + ' <strong>' + e(r.label) + '</strong> (权重:' + r.weight + ')</li>';
+        });
+    } catch (e) {
+        fl.innerHTML = "<li>加载失败</li>";
+        rl.innerHTML = "<li>加载失败</li>";
+    }
+}
+document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRelationsGraph);
+
 /* ═══════════ Export ═══════════ */
 document.getElementById("export-btn").addEventListener("click", async () => {
     var res = await fetch("/api/novels/" + currentNovelId + "/export");
@@ -2165,6 +2189,7 @@ async function refreshAll() {
     else if (currentModule === "characters") await loadCharactersModule();
     else if (currentModule === "map") { await loadLocationTree(); }
     else if (currentModule === "reasoning") await loadReasoningModule();
+    else if (currentModule === "relations") await loadRelationsGraph();
     await loadCharacters(); swTimeline();
 }
 document.addEventListener("DOMContentLoaded", async () => {
