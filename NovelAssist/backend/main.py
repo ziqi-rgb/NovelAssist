@@ -472,36 +472,70 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
             temperature=0.5,
         )
         raw_tl = (tl_resp.choices[0].message.content or "").strip()
-        time_label = ""
-        tl_content = ""
-        for line in raw_tl.split("\n"):
-            line = line.strip()
-            if line.startswith("时间:") or line.startswith("时间："):
-                time_label = line.replace("时间:", "").replace("时间：", "").strip()
-            elif line.startswith("事件:") or line.startswith("事件："):
-                tl_content = line.replace("事件:", "").replace("事件：", "").strip()
-        if not tl_content:
-            tl_content = raw_tl[:100]
-        if not time_label:
-            time_label = f"归档 ch{chapter_id}"
-        if tl_content:
-            max_idx = db.scalar(
-                select(func.max(TimelineEvent.timeline_index)).where(
-                    TimelineEvent.novel_id == ch.novel_id,
-                    TimelineEvent.event_type == TimelineEventType.MAIN_STORY.name,
+        # Try new JSON object format first, fall back to old "时间:/事件:" text format
+        try:
+            mj = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw_tl, re.DOTALL)
+            if mj:
+                parsed_tl = json.loads(mj.group(1))
+            else:
+                # Maybe it's bare JSON without markdown fences
+                parsed_tl = json.loads(raw_tl)
+            if isinstance(parsed_tl, dict):
+                # New format: {"time_elapsed_hours": X, "events": [...]}
+                elapsed = parsed_tl.get("time_elapsed_hours", 0)
+                if isinstance(elapsed, (int, float)) and elapsed > 0:
+                    novel = db.get(Novel, ch.novel_id)
+                    if novel:
+                        novel.current_tick += int(elapsed)
+                        flag_modified(novel, "current_tick")
+                events_list = parsed_tl.get("events", [])
+                for evt in events_list:
+                    te = TimelineEvent(
+                        novel_id=ch.novel_id,
+                        event_type=TimelineEventType.MAIN_STORY.name,
+                        timeline_index=((db.scalar(
+                            select(func.max(TimelineEvent.timeline_index)).where(
+                                TimelineEvent.novel_id == ch.novel_id,
+                                TimelineEvent.event_type == TimelineEventType.MAIN_STORY.name,
+                            )
+                        ) or 0) + 1),
+                        time_label=evt.get("time", ""),
+                        content=evt.get("event", ""),
+                    )
+                    db.add(te)
+                    timeline_added = True
+        except (json.JSONDecodeError, AttributeError):
+            # Fallback: old "时间:/事件:" text format
+            time_label = ""
+            tl_content = ""
+            for line in raw_tl.split("\n"):
+                line = line.strip()
+                if line.startswith("时间:") or line.startswith("时间："):
+                    time_label = line.replace("时间:", "").replace("时间：", "").strip()
+                elif line.startswith("事件:") or line.startswith("事件："):
+                    tl_content = line.replace("事件:", "").replace("事件：", "").strip()
+            if not tl_content:
+                tl_content = raw_tl[:100]
+            if not time_label:
+                time_label = f"归档 ch{chapter_id}"
+            if tl_content:
+                max_idx = db.scalar(
+                    select(func.max(TimelineEvent.timeline_index)).where(
+                        TimelineEvent.novel_id == ch.novel_id,
+                        TimelineEvent.event_type == TimelineEventType.MAIN_STORY.name,
+                    )
                 )
-            )
-            new_idx = (max_idx or 0) + 1
-            te = TimelineEvent(
-                novel_id=ch.novel_id,
-                event_type=TimelineEventType.MAIN_STORY.name,  # "MAIN_STORY" string, consistent with frontend query
-                timeline_index=new_idx,
-                time_label=time_label,
-                content=tl_content,
-            )
-            print(f"[ARCHIVE] TimelineEvent insert: idx={new_idx} type={te.event_type} label={time_label} content={tl_content[:40]}...")
-            db.add(te)
-            timeline_added = True
+                new_idx = (max_idx or 0) + 1
+                te = TimelineEvent(
+                    novel_id=ch.novel_id,
+                    event_type=TimelineEventType.MAIN_STORY.name,
+                    timeline_index=new_idx,
+                    time_label=time_label,
+                    content=tl_content,
+                )
+                print(f"[ARCHIVE] TimelineEvent insert: idx={new_idx} type={te.event_type} label={time_label} content={tl_content[:40]}...")
+                db.add(te)
+                timeline_added = True
     except Exception as e:
         timeline_error = str(e)
 
@@ -1496,6 +1530,10 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
 
         if ph == "lore":
             return _lore()
+
+        if ph == "current_time":
+            lore_time = CalendarEngine.format_tick_to_lore_time(current_tick, novel.calendar_config if novel else {})
+            return f"当前世界时间：{lore_time}"
 
         m = re.match(r"character:(.+)$", ph)
         if m:

@@ -48,3 +48,41 @@ class CalendarEngine:
         except Exception:
             pass
         return False
+
+    @staticmethod
+    def format_tick_to_lore_time(tick: int, config: dict) -> str:
+        dt = CalendarEngine.tick_to_datetime(tick, config)
+
+        y_str = f"{dt['year']}年"
+        year_names = config.get("year_names") or []
+        if isinstance(year_names, str):
+            year_names = [n.strip() for n in year_names.split(",") if n.strip()]
+        if year_names:
+            y_str = f"{year_names[(dt['year'] - 1) % len(year_names)]}年"
+
+        era = config.get("era_name", "").strip()
+        if era:
+            y_str = f"{era} {y_str}"
+
+        m_str = f"{dt['month']}月"
+        month_names = config.get("month_names") or []
+        if isinstance(month_names, str):
+            month_names = [n.strip() for n in month_names.split(",") if n.strip()]
+        if month_names and len(month_names) >= dt["month"]:
+            m_str = month_names[dt["month"] - 1]
+
+        d_str = f"{dt['day']}日"
+        day_names = config.get("day_names") or []
+        if isinstance(day_names, str):
+            day_names = [n.strip() for n in day_names.split(",") if n.strip()]
+        if day_names and len(day_names) >= dt["day"]:
+            d_str = day_names[dt["day"] - 1]
+
+        h_str = f"{dt['hour']}时"
+        hour_names = config.get("hour_names") or []
+        if isinstance(hour_names, str):
+            hour_names = [n.strip() for n in hour_names.split(",") if n.strip()]
+        if hour_names and len(hour_names) > dt["hour"]:
+            h_str = hour_names[dt["hour"]]
+
+        return f"{y_str} {m_str} {d_str} {h_str}"
