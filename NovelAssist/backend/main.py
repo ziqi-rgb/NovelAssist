@@ -41,7 +41,7 @@ try:
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation,
     )
-    from .calendar import CalendarEngine  # noqa: E402
+    from .world_calendar import CalendarEngine  # noqa: E402
 except ImportError:
     from database import Base, engine, get_db, run_migration  # noqa: E402
     from models import (  # noqa: E402
@@ -50,7 +50,7 @@ except ImportError:
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation,
     )
-    from calendar import CalendarEngine  # noqa: E402
+    from world_calendar import CalendarEngine  # noqa: E402
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
