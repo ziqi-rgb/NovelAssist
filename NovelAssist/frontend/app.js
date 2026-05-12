@@ -1324,7 +1324,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
             var premise = rawPremise2.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
             var promptT = node.prompt || "";
             var targetT = compileTarget(node.target);
-            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
+            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {} }) });
             var txt = "";
             var gen = parseSSEStream(res);
             var chunkResult;
@@ -1838,7 +1838,7 @@ async function runNode(card, node) {
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model }),
+            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {} }),
         });
         let rawResult = "";
         for await (const msg of parseSSEStream(res)) {
@@ -1918,6 +1918,35 @@ document.getElementById("add-node-btn").addEventListener("click", () => {
     const node = { id: "n" + (idx + 1), x: 100 + (idx % 4) * 200, y: 80 + Math.floor(idx / 4) * 280, premise: "", prompt: "", target: [], branches: [], next_node_id: "", output: "" };
     currentChain.nodes.push(node);
     renderAllNodes(); renderLines(); autoSave();
+});
+
+/* ═══════════ Chain Settings Modal ═══════════ */
+var csm = document.getElementById("chain-settings-modal");
+document.getElementById("chain-settings-btn")?.addEventListener("click", function() {
+    if (!currentChain) { alert("请先选择或新建推演方案"); return; }
+    if (!currentChain.context_settings) currentChain.context_settings = { use_outlines: true, use_characters: true, use_timeline: true };
+    document.getElementById("cs-title").value = currentChain.title || "";
+    document.getElementById("cs-use-outlines").checked = !!currentChain.context_settings.use_outlines;
+    document.getElementById("cs-use-characters").checked = !!currentChain.context_settings.use_characters;
+    document.getElementById("cs-use-timeline").checked = !!currentChain.context_settings.use_timeline;
+    csm.classList.remove("hidden");
+});
+document.getElementById("cs-cancel-btn").addEventListener("click", function() { csm.classList.add("hidden"); });
+csm.querySelector(".modal-backdrop").addEventListener("click", function() { csm.classList.add("hidden"); });
+document.getElementById("cs-save-btn").addEventListener("click", async function() {
+    if (!currentChain || !currentChainId) return;
+    currentChain.title = document.getElementById("cs-title").value.trim() || currentChain.title;
+    currentChain.context_settings = {
+        use_outlines: document.getElementById("cs-use-outlines").checked,
+        use_characters: document.getElementById("cs-use-characters").checked,
+        use_timeline: document.getElementById("cs-use-timeline").checked,
+    };
+    await fetch("/api/reasoning_chains/" + currentChainId, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: currentChain.title, nodes: currentChain.nodes, context_settings: currentChain.context_settings }),
+    });
+    await loadReasoningModule();
+    csm.classList.add("hidden");
 });
 
 /* ═══════════ Settings ═══════════ */
