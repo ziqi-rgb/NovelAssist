@@ -1248,9 +1248,17 @@ async function executeTool(toolName, args, card) {
         if (result.status === "success") {
             card.classList.add("tp-executed");
             card.querySelector(".tp-title").textContent = "✅ 已执行: " + result.msg;
-            // Refresh time display and active tab if needed
             if (typeof loadNovelTime === "function") loadNovelTime();
             if (currentModule === "characters" && typeof loadCharacters === "function") loadCharacters(currentNovelId);
+            if (toolName === "manage_world_element") {
+                if (typeof loadOutlineNotes === "function") loadOutlineNotes();
+                if (typeof loadLocationsCache === "function") loadLocationsCache();
+                if (typeof loadLocationTree === "function") loadLocationTree();
+                if (typeof loadTimeline === "function") loadTimeline();
+            }
+            if (toolName === "generate_reasoning_chain") {
+                if (typeof loadReasoningModule === "function") loadReasoningModule();
+            }
         } else {
             card.querySelector(".tp-title").textContent = "❌ 执行失败: " + (result.msg || "未知错误");
             card.classList.add("tp-rejected");

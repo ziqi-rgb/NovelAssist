@@ -89,6 +89,56 @@ AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_world_element",
+            "description": "修改除人物外的世界观元素：大纲(outline)、地点(location)、时间线(timeline)。可以新增、更新或删除。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "element_type": {"type": "string", "enum": ["outline", "location", "timeline"]},
+                    "action": {"type": "string", "enum": ["add", "update", "delete"]},
+                    "element_id": {"type": "integer", "description": "更新或删除时必填"},
+                    "data": {
+                        "type": "object",
+                        "description": "新增或更新的数据字段。大纲填 title/description; 地点填 name/description; 时间线填 time_label/content(事件内容)",
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["element_type", "action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_reasoning_chain",
+            "description": "根据用户的需求，创建一个新的AI推理链方案，或覆盖已有的推理链。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create_new", "overwrite_existing"]},
+                    "chain_id": {"type": "integer", "description": "如果覆盖现有方案则必填"},
+                    "title": {"type": "string", "description": "推理链名称"},
+                    "steps": {
+                        "type": "array",
+                        "description": "推理链的顺序步骤。后端会自动将这些步骤线性连接并分配坐标。",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "premise": {"type": "string", "description": "本节点的前置逻辑或目标说明"},
+                                "prompt": {"type": "string", "description": "发给AI的提示词命令"},
+                                "target": {"type": "string", "description": "写入目标的占位符或标识"},
+                            },
+                            "required": ["premise", "prompt"],
+                        },
+                    },
+                },
+                "required": ["action", "title", "steps"],
+            },
+        },
+    },
 ]
 
 
@@ -1843,6 +1893,122 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             flag_modified(char, "attributes")
         db.commit()
         return {"status": "success", "msg": f"人物 [{char.name}] 状态已更新。"}
+
+    if req.tool_name == "manage_world_element":
+        etype = req.arguments.get("element_type")
+        action = req.arguments.get("action")
+        eid = req.arguments.get("element_id")
+        data = req.arguments.get("data", {})
+
+        if etype == "outline":
+            if action == "add":
+                db.add(Outline(
+                    novel_id=novel_id,
+                    title=data.get("title", ""),
+                    description=data.get("description", ""),
+                    category=data.get("category", "剧情"),
+                ))
+            elif action == "update" and eid:
+                item = db.get(Outline, eid)
+                if item:
+                    if "title" in data:
+                        item.title = data["title"]
+                    if "description" in data:
+                        item.description = data["description"]
+                    if "category" in data:
+                        item.category = data["category"]
+            elif action == "delete" and eid:
+                db.query(Outline).filter(Outline.id == eid).delete()
+
+        elif etype == "location":
+            if action == "add":
+                max_ord = db.scalar(select(func.max(Location.order_index)).where(Location.novel_id == novel_id)) or 0
+                db.add(Location(
+                    novel_id=novel_id,
+                    name=data.get("name", ""),
+                    description=data.get("description", ""),
+                    scale=data.get("scale", "城区"),
+                    order_index=max_ord + 1,
+                ))
+            elif action == "update" and eid:
+                item = db.get(Location, eid)
+                if item:
+                    if "name" in data:
+                        item.name = data["name"]
+                    if "description" in data:
+                        item.description = data["description"]
+                    if "scale" in data:
+                        item.scale = data["scale"]
+            elif action == "delete" and eid:
+                db.query(Location).filter(Location.id == eid).delete()
+
+        elif etype == "timeline":
+            if action == "add":
+                db.add(TimelineEvent(
+                    novel_id=novel_id,
+                    event_type=TimelineEventType.MAIN_STORY,
+                    time_label=data.get("time_label", data.get("time_str", "")),
+                    content=data.get("content", data.get("event_desc", "")),
+                    absolute_tick=novel.current_tick if novel else 0,
+                    timeline_index=0,
+                ))
+            elif action == "update" and eid:
+                item = db.get(TimelineEvent, eid)
+                if item:
+                    if "time_label" in data or "time_str" in data:
+                        item.time_label = data.get("time_label", data.get("time_str", item.time_label))
+                    if "content" in data or "event_desc" in data:
+                        item.content = data.get("content", data.get("event_desc", item.content))
+                    if "event_type" in data:
+                        item.event_type = data["event_type"]
+            elif action == "delete" and eid:
+                db.query(TimelineEvent).filter(TimelineEvent.id == eid).delete()
+
+        db.commit()
+        return {"status": "success", "msg": f"{etype} {action} 成功。"}
+
+    if req.tool_name == "generate_reasoning_chain":
+        action = req.arguments.get("action")
+        title = req.arguments.get("title", "未命名推理链")
+        steps = req.arguments.get("steps", [])
+        now_ts = int(datetime.utcnow().timestamp())
+        built_nodes = []
+        for i, step in enumerate(steps):
+            node_id = str(f"node_{now_ts}_{i}")
+            next_node_id = str(f"node_{now_ts}_{i + 1}") if i < len(steps) - 1 else ""
+            built_nodes.append({
+                "id": node_id,
+                "x": 50,
+                "y": 50 + (i * 250),
+                "premise": step.get("premise", ""),
+                "prompt": step.get("prompt", ""),
+                "target": step.get("target", "正文"),
+                "next_node_id": next_node_id,
+                "branches": [],
+                "output": "",
+            })
+
+        if action == "create_new":
+            new_chain = ReasoningChain(
+                novel_id=novel_id,
+                title=title,
+                nodes=built_nodes,
+                context_settings={"use_outlines": True, "use_characters": True, "use_timeline": True},
+            )
+            db.add(new_chain)
+            db.commit()
+            return {"status": "success", "msg": f"推理链 [{title}] 创建成功！"}
+        if action == "overwrite_existing":
+            chain_id = req.arguments.get("chain_id")
+            if chain_id:
+                chain = db.get(ReasoningChain, chain_id)
+                if chain:
+                    chain.title = title
+                    chain.nodes = built_nodes
+                    flag_modified(chain, "nodes")
+                    db.commit()
+                    return {"status": "success", "msg": f"推理链 [{title}] 已被更新！"}
+        return {"status": "error", "msg": "操作参数不完整"}
 
     return {"status": "error", "msg": "未知工具"}
 
