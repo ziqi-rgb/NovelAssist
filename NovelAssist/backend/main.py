@@ -127,8 +127,27 @@ AGENT_TOOLS = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "premise": {"type": "string", "description": "本节点的前置逻辑或目标说明。必须填具体的自然语言，不要使用{占位符}格式。"},
-                                "prompt": {"type": "string", "description": "发给AI的提示词命令。必须填具体的自然语言指令，不要使用{占位符}格式。"},
+                                "premise": {"type": "string", "description": "本节点的前置逻辑或目标说明。可使用系统内置占位符获取动态信息。"},
+                                "prompt": {
+                                    "type": "string",
+                                    "description": (
+                                        "发给AI的提示词命令。强烈建议使用系统内置占位符动态获取信息。\n"
+                                        "【合法占位符白名单 — 仅限以下，禁止生造】:\n"
+                                        "{content} - 正文框当前文本\n"
+                                        "{characters_list} - 所有活跃人物的档案与时空坐标\n"
+                                        "{characters_inactive} - 已退场人物列表\n"
+                                        "{timeline} - 正文时间线历史\n"
+                                        "{outlines_list} - 世界大纲列表\n"
+                                        "{current_time} - 当前世界历法时间\n"
+                                        "{lore} - 世界观基础设定集\n"
+                                        "{character:名字} - 提取特定人物属性\n"
+                                        "{location:地名} - 提取特定地点属性\n"
+                                        "{outline:标题} - 提取特定大纲条目\n"
+                                        "{novel_name} - 小说名称\n"
+                                        "{chapter_title} - 当前章节标题\n"
+                                        "绝对禁止生造不在白名单内的 {xxx} 占位符！其他信息请用自然语言描述。"
+                                    ),
+                                },
                                 "target": {"type": "string", "description": "写入目标的占位符或标识"},
                             },
                             "required": ["premise", "prompt"],
@@ -1841,8 +1860,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 "- 修改人物状态/位置/生死 → 调用 modify_character\n"
                 "- 增删改大纲/地点/时间线 → 调用 manage_world_element\n"
                 "- 创建或覆盖推理方案 → 调用 generate_reasoning_chain\n"
-                "创建推理链时，每个步骤的premise和prompt必须填写具体的自然语言指令，例如\"分析秘境危险度\"\"根据已知情报推断敌人的弱点\"。"
-                "严禁使用{变量名}、{{占位符}}格式——那会在运行时由系统自动注入，创建链时不需要写。"
+                "创建推理链时，节点prompt中可以使用系统占位符（如{timeline}、{characters_list}、{current_time}等），但严禁生造不存在的{xxx}。"
                 "如果你确认操作已完成，回复时请简要告知用户结果。"
             ),
         },
