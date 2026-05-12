@@ -9,6 +9,38 @@ let currentModule = "writing";
 let currentOutlineCat = "世界观";
 let mdViewing = false;
 
+/* ═══════════ Clock Engine ═══════════ */
+window.novelTimeConfig = { months_per_year: 12, days_per_month: 30, hours_per_day: 24 };
+window.currentTick = 0;
+window.locationsCache = [];
+
+function tickToDate(tick, cfg) {
+    cfg = cfg || window.novelTimeConfig;
+    var hpd = cfg.hours_per_day || 24, dpm = cfg.days_per_month || 30, mpy = cfg.months_per_year || 12;
+    var hour = tick % hpd, dTot = Math.floor(tick / hpd);
+    var day = (dTot % dpm) + 1, mTot = Math.floor(dTot / dpm);
+    var month = (mTot % mpy) + 1, year = Math.floor(mTot / mpy) + 1;
+    return { year: year, month: month, day: day, hour: hour };
+}
+function dateToTick(y, m, d, h, cfg) {
+    cfg = cfg || window.novelTimeConfig;
+    var hpd = cfg.hours_per_day || 24, dpm = cfg.days_per_month || 30, mpy = cfg.months_per_year || 12;
+    return (y - 1) * mpy * dpm * hpd + (m - 1) * dpm * hpd + (d - 1) * hpd + parseInt(h);
+}
+
+async function loadNovelTime() {
+    var res = await fetch("/api/novels/" + currentNovelId + "/time");
+    var data = await res.json();
+    window.currentTick = data.current_tick || 0;
+    window.novelTimeConfig = data.calendar_config || { months_per_year: 12, days_per_month: 30, hours_per_day: 24 };
+    updateGlobalClockDisplay();
+}
+function updateGlobalClockDisplay() {
+    var d = tickToDate(window.currentTick);
+    var el = document.getElementById("global-clock-display");
+    if (el) el.textContent = d.year + "年 " + d.month + "月 " + d.day + "日 " + d.hour + "时";
+}
+
 /* ═══════════ Novel ═══════════ */
 async function loadNovels() {
     const sel = document.getElementById("novel-select"); sel.innerHTML = "";
@@ -355,6 +387,12 @@ async function renderDynamicForm() {
         });
         container.appendChild(fs);
     });
+    // Time editor placeholder
+    var timeFs = document.createElement("fieldset");
+    timeFs.className = "char-fieldset";
+    timeFs.style.cssText = "margin-top:16px;border-color:#93c5fd;background:#eff6ff;";
+    timeFs.innerHTML = '<legend style="color:#1d4ed8;">⏳ 行动规律与轨迹</legend><p style="font-size:0.75rem;color:#475569;margin-bottom:8px;">设定该角色每天/每月出现在哪里，以及特殊的行程变故。</p>';
+    container.appendChild(timeFs);
 }
 
 function renderTemplateEditor() {
@@ -1893,6 +1931,7 @@ document.getElementById("export-btn").addEventListener("click", async () => {
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveCurrentChapter(); } });
 function e(t) { const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
 async function refreshAll() {
+    loadNovelTime();
     if (currentModule === "writing") { await loadVolumes(); await loadChapters(); }
     else if (currentModule === "outline") await loadOutlineNotes();
     else if (currentModule === "characters") await loadCharactersModule();

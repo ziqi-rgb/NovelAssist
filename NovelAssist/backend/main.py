@@ -37,6 +37,7 @@ try:
     from .models import (  # noqa: E402
         Chapter, Character, Outline, Location,
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
+        CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
     )
 except ImportError:
@@ -44,6 +45,7 @@ except ImportError:
     from models import (  # noqa: E402
         Chapter, Character, Outline, Location,
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
+        CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType,
     )
 
@@ -280,6 +282,30 @@ def update_novel_template(novel_id: int, body: list = Body(...), db: Session = D
     n.character_template = body  # type: ignore[assignment]
     db.commit()
     return {"ok": True}
+
+
+class NovelTimeUpdate(BaseModel):
+    current_tick: int
+    calendar_config: dict
+
+
+@app.get("/api/novels/{novel_id}/time")
+def get_novel_time(novel_id: int, db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    return {"current_tick": novel.current_tick, "calendar_config": novel.calendar_config}
+
+
+@app.put("/api/novels/{novel_id}/time")
+def update_novel_time(novel_id: int, req: NovelTimeUpdate, db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    novel.current_tick = req.current_tick
+    novel.calendar_config = req.calendar_config
+    db.commit()
+    return {"msg": "OK"}
 
 @app.get("/api/status")
 async def get_status() -> dict[str, str]:
@@ -902,6 +928,47 @@ def create_snapshot(char_id: int, body: SnapshotCreate, db: Session = Depends(ge
     db.commit()
     db.refresh(s)
     return s
+
+
+# ═══════════ Character Time Data ═══════════
+
+class RoutineData(BaseModel):
+    location_id: int
+    cycle_type: str
+    cycle_value: str
+    activity: str
+
+class TrajectoryData(BaseModel):
+    location_id: int
+    start_tick: int
+    end_tick: Optional[int] = None
+    reason: str
+
+class CharacterTimeData(BaseModel):
+    routines: list[RoutineData] = []
+    trajectories: list[TrajectoryData] = []
+
+
+@app.get("/api/characters/{char_id}/time_data")
+def get_char_time(char_id: int, db: Session = Depends(get_db)):
+    routines = db.query(CharacterRoutine).filter_by(character_id=char_id).all()
+    trajectories = db.query(CharacterTrajectory).filter_by(character_id=char_id).order_by(CharacterTrajectory.start_tick).all()
+    return {
+        "routines": [{"location_id": r.location_id, "cycle_type": r.cycle_type, "cycle_value": r.cycle_value, "activity": r.activity} for r in routines],
+        "trajectories": [{"location_id": t.location_id, "start_tick": t.start_tick, "end_tick": t.end_tick, "reason": t.reason} for t in trajectories],
+    }
+
+
+@app.put("/api/characters/{char_id}/time_data")
+def update_char_time(char_id: int, req: CharacterTimeData, db: Session = Depends(get_db)):
+    db.query(CharacterRoutine).filter_by(character_id=char_id).delete()
+    db.query(CharacterTrajectory).filter_by(character_id=char_id).delete()
+    for r in req.routines:
+        db.add(CharacterRoutine(character_id=char_id, location_id=r.location_id, cycle_type=r.cycle_type, cycle_value=r.cycle_value, activity=r.activity))
+    for t in req.trajectories:
+        db.add(CharacterTrajectory(character_id=char_id, location_id=t.location_id, start_tick=t.start_tick, end_tick=t.end_tick, reason=t.reason))
+    db.commit()
+    return {"msg": "OK"}
 
 @app.delete("/api/snapshots/{snap_id}")
 def delete_snapshot(snap_id: int, db: Session = Depends(get_db)):
