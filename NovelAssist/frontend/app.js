@@ -2139,25 +2139,97 @@ document.getElementById("sandbox-next-btn").addEventListener("click", function()
 });
 
 /* ═══════════ Relations Graph ═══════════ */
-async function loadRelationsGraph() {
-    var fl = document.getElementById("factions-list-ul");
-    var rl = document.getElementById("relations-list-ul");
-    try {
-        var factions = await (await fetch("/api/factions" + nidQ())).json();
-        fl.innerHTML = factions.length ? "" : "<li>(无势力)</li>";
-        factions.forEach(function(f) {
-            fl.innerHTML += '<li><strong>🏛️ ' + e(f.name) + '</strong><br><span style="font-size:.72rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
-        });
+var relationsNetwork = null;
 
-        var relations = await (await fetch("/api/character_relations" + nidQ())).json();
-        rl.innerHTML = relations.length ? "" : "<li>(无关系)</li>";
-        relations.forEach(function(r) {
-            rl.innerHTML += '<li style="padding:2px 0;">🔗 ID' + r.source_id + ' → ID' + r.target_id + ' <strong>' + e(r.label) + '</strong> (权重:' + r.weight + ')</li>';
-        });
-    } catch (e) {
-        fl.innerHTML = "<li>加载失败</li>";
-        rl.innerHTML = "<li>加载失败</li>";
+async function loadRelationsGraph() {
+    if (!currentNovelId) return;
+    try {
+        var res = await Promise.all([
+            fetch("/api/characters" + nidQ()),
+            fetch("/api/factions" + nidQ()),
+            fetch("/api/character_relations" + nidQ()),
+        ]);
+        var chars = await res[0].json();
+        var factions = await res[1].json();
+        var rels = await res[2].json();
+        renderVisNetwork(chars, factions, rels);
+    } catch (err) {
+        console.error("加载图谱失败:", err);
     }
+}
+
+function renderVisNetwork(chars, factions, rels) {
+    if (typeof vis === "undefined") { console.warn("vis-network CDN 未加载"); return; }
+    var container = document.getElementById("relation-network");
+    if (!container) return;
+
+    var factionMap = {};
+    factions.forEach(function(f) { factionMap[f.id] = f.name; });
+
+    var factionColors = ["#fef3c7","#dbeafe","#d1fae5","#fce7f3","#e0e7ff","#fef9c3","#ede9fe","#ccfbf1","#fee2e2","#e5e7eb"];
+    var factionColorIdx = 0;
+    var factionColorMap = {};
+    factions.forEach(function(f) {
+        factionColorMap[f.name] = factionColors[factionColorIdx % factionColors.length];
+        factionColorIdx++;
+    });
+    factionColorMap["散修/无势力"] = "#f1f5f9";
+
+    var nodes = new vis.DataSet(chars.map(function(c) {
+        var groupName = c.faction_id ? factionMap[c.faction_id] : "散修/无势力";
+        var roleStr = c.faction_role ? "\n(" + c.faction_role + ")" : "";
+        return {
+            id: c.id,
+            label: c.name + roleStr,
+            group: groupName,
+            title: "状态: " + (c.status || "正常") + "\n阵营: " + groupName,
+            shape: "dot",
+            size: c.is_active ? 20 : 10,
+            color: c.is_active ? undefined : { background: "#ccc", border: "#999" },
+        };
+    }));
+
+    var edges = new vis.DataSet(rels.map(function(r) {
+        var edgeColor = "#94a3b8";
+        if (r.weight < 0) edgeColor = "#ef4444";
+        if (r.weight > 50) edgeColor = "#10b981";
+        return {
+            from: r.source_id,
+            to: r.target_id,
+            label: r.label,
+            arrows: "to",
+            color: { color: edgeColor },
+            font: { size: 10, align: "middle" },
+            title: "好感度: " + r.weight + "\n原因: " + (r.description || "无"),
+        };
+    }));
+
+    var data = { nodes: nodes, edges: edges };
+
+    var options = {
+        physics: {
+            forceAtlas2Based: {
+                gravitationalConstant: -50,
+                centralGravity: 0.01,
+                springLength: 150,
+                springConstant: 0.08,
+            },
+            maxVelocity: 50,
+            solver: "forceAtlas2Based",
+            timestep: 0.35,
+            stabilization: { iterations: 150 },
+        },
+        groups: (function() {
+            var g = {};
+            Object.keys(factionColorMap).forEach(function(name) {
+                g[name] = { color: { background: factionColorMap[name], border: "#94a3b8" } };
+            });
+            return g;
+        })(),
+    };
+
+    if (relationsNetwork) relationsNetwork.destroy();
+    relationsNetwork = new vis.Network(container, data, options);
 }
 document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRelationsGraph);
 

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Novel Helper</title>
     <link rel="stylesheet" href="/style.css">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <script defer src="/app.js"></script>
 </head>
 <body>
@@ -123,14 +124,12 @@
                     <div class="sidebar-header"><h2>推演方案</h2><button id="new-chain-btn" class="sys-btn sys-btn-secondary">+ 新建方案</button></div>
                     <ul id="chain-list"></ul>
                 </div>
-                <div id="module-relations" class="module-panel hidden">
+                <div id="module-relations" class="module-panel hidden" style="display:flex;flex-direction:column;">
                     <div class="list-header" style="margin-bottom:10px;">
-                        <button id="btn-refresh-graph" class="sys-btn">🔄 刷新网络</button>
+                        <button id="btn-refresh-graph" class="sys-btn">🔄 重新物理排版</button>
+                        <span style="font-size:0.75rem;color:#64748b;margin-left:10px;">提示: 滚轮缩放，拖拽节点</span>
                     </div>
-                    <div id="relation-list-container" style="font-size:0.8rem;color:var(--text);overflow-y:auto;flex:1;">
-                        <ul id="factions-list-ul"></ul>
-                        <ul id="relations-list-ul"></ul>
-                    </div>
+                    <div id="relation-network" style="flex:1;border:1px solid var(--border);border-radius:6px;background-color:var(--bg);"></div>
                 </div>
             </aside>
 
