@@ -1922,13 +1922,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         elif etype == "location":
             if action == "add":
-                max_ord = db.scalar(select(func.max(Location.order_index)).where(Location.novel_id == novel_id)) or 0
                 db.add(Location(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
-                    scale=data.get("scale", "城区"),
-                    order_index=max_ord + 1,
                 ))
             elif action == "update" and eid:
                 item = db.get(Location, eid)
@@ -1937,8 +1934,6 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.name = data["name"]
                     if "description" in data:
                         item.description = data["description"]
-                    if "scale" in data:
-                        item.scale = data["scale"]
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 
