@@ -387,7 +387,10 @@ async function renderDynamicForm() {
         });
         container.appendChild(fs);
     });
-    // Time editor placeholder
+    renderTimeEditor(container);
+}
+
+function renderTimeEditor(container) {
     var timeFs = document.createElement("fieldset");
     timeFs.className = "char-fieldset";
     timeFs.style.cssText = "margin-top:16px;border-color:#93c5fd;background:#eff6ff;";
@@ -1931,7 +1934,7 @@ document.getElementById("export-btn").addEventListener("click", async () => {
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveCurrentChapter(); } });
 function e(t) { const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
 async function refreshAll() {
-    loadNovelTime();
+    await loadNovelTime();
     if (currentModule === "writing") { await loadVolumes(); await loadChapters(); }
     else if (currentModule === "outline") await loadOutlineNotes();
     else if (currentModule === "characters") await loadCharactersModule();
