@@ -2260,3 +2260,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener("mouseup", stopPan);
     canvasViewport.addEventListener("mouseleave", stopPan);
 })();
+
+(function bindSend() {
+    if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", bindSend); return; }
+    var btn = document.getElementById("copilot-send");
+    var inp = document.getElementById("copilot-input");
+    if (btn && inp) { btn.onclick = function() { var t = inp.value.trim(); if (t) { inp.value = ""; copilotChat(t); } }; }
+})();
