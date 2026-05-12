@@ -243,10 +243,10 @@
                     <div class="ws-header" style="padding:10px;border-bottom:1px solid var(--border);background:var(--bg);">
                         <h3 style="margin:0;font-size:1.1rem;display:inline-block;">🌐 势力与人际拓扑沙盘</h3>
                         <button id="btn-refresh-graph" class="sys-btn" style="margin-left:20px;">🔄 重新物理排版</button>
-                        <span style="font-size:0.8rem;color:#64748b;margin-left:15px;">操作: 滚轮缩放 | 拖拽节点 | 悬停看详情</span>
+                        <span style="font-size:0.8rem;color:#64748b;margin-left:15px;">操作: 滚轮缩放 | 拖拽节点 | 空白处拖拽视角</span>
                     </div>
-                    <div id="relation-network" style="flex:1;width:100%;position:relative;background-color:#fafafa;overflow:hidden;">
-                        <div id="network-loading-text" style="padding:20px;color:#64748b;">准备加载江湖网络...</div>
+                    <div style="flex:1;position:relative;width:100%;overflow:hidden;">
+                        <div id="relation-network" style="position:absolute;top:0;left:0;right:0;bottom:0;background-color:#fafafa;"></div>
                     </div>
                 </div>
             </main>

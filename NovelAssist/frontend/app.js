@@ -2178,98 +2178,91 @@ async function loadRelationsGraph() {
 }
 
 function renderVisNetwork(chars, factions, rels) {
-    if (typeof vis === "undefined") { console.warn("vis-network CDN 未加载"); return; }
     var container = document.getElementById("relation-network");
     if (!container) return;
-    container.innerHTML = "";
 
-    var factionMap = {};
-    if (Array.isArray(factions)) {
-        factions.forEach(function(f) { if (f && f.id != null) factionMap[f.id] = f.name; });
-    }
+    try {
+        if (typeof vis === "undefined") {
+            container.innerHTML = "<div style='color:red;padding:20px;'>错误: vis-network 库未加载。请检查网络。</div>";
+            return;
+        }
+        container.innerHTML = "";
 
-    var factionColors = ["#fef3c7","#dbeafe","#d1fae5","#fce7f3","#e0e7ff","#fef9c3","#ede9fe","#ccfbf1","#fee2e2","#e5e7eb"];
-    var factionColorIdx = 0;
-    var factionColorMap = {};
-    (factions || []).forEach(function(f) {
-        var name = f.name || "未命名";
-        factionColorMap[name] = factionColors[factionColorIdx % factionColors.length];
-        factionColorIdx++;
-    });
-    factionColorMap["散修/无势力"] = "#f1f5f9";
+        var factionMap = {};
+        if (Array.isArray(factions)) {
+            factions.forEach(function(f) { if (f && f.id != null) factionMap[f.id] = f.name; });
+        }
 
-    var validCharIds = new Set();
-    (chars || []).forEach(function(c) { if (c && c.id != null) validCharIds.add(String(c.id)); });
+        var factionColors = ["#fef3c7","#dbeafe","#d1fae5","#fce7f3","#e0e7ff","#fef9c3","#ede9fe","#ccfbf1","#fee2e2","#e5e7eb"];
+        var factionColorIdx = 0;
+        var factionColorMap = {};
+        (factions || []).forEach(function(f) {
+            var name = f.name || "未命名";
+            factionColorMap[name] = factionColors[factionColorIdx % factionColors.length];
+            factionColorIdx++;
+        });
+        factionColorMap["散修/无势力"] = "#f1f5f9";
 
-    var nodesArray = (chars || []).map(function(c) {
-        var groupName = (c.faction_id && factionMap[c.faction_id]) ? factionMap[c.faction_id] : "散修/无势力";
-        var roleStr = c.faction_role ? "\n(" + c.faction_role + ")" : "";
-        var cfg = {
-            id: String(c.id),
-            label: (c.name || "未知") + roleStr,
-            group: groupName,
-            title: "状态: " + (c.status || "正常") + "\n阵营: " + groupName,
-            shape: "dot",
-            size: c.is_active ? 20 : 10,
-        };
-        if (!c.is_active) cfg.color = { background: "#ccc", border: "#999" };
-        return cfg;
-    });
+        var validCharIds = new Set();
+        (chars || []).forEach(function(c) { if (c && c.id != null) validCharIds.add(String(c.id)); });
 
-    var validRels = (Array.isArray(rels) ? rels : []).filter(function(r) {
-        return r && validCharIds.has(String(r.source_id)) && validCharIds.has(String(r.target_id));
-    });
+        var nodesArray = (chars || []).map(function(c) {
+            var groupName = (c.faction_id && factionMap[c.faction_id]) ? factionMap[c.faction_id] : "散修/无势力";
+            var roleStr = c.faction_role ? "\n(" + c.faction_role + ")" : "";
+            var cfg = {
+                id: String(c.id),
+                label: (c.name || "未知") + roleStr,
+                group: groupName,
+                title: "状态: " + (c.status || "正常") + "\n阵营: " + groupName,
+                shape: "dot",
+                size: c.is_active ? 20 : 10,
+            };
+            if (!c.is_active) cfg.color = { background: "#ccc", border: "#999" };
+            return cfg;
+        });
 
-    var edgesArray = validRels.map(function(r) {
-        var edgeColor = "#94a3b8";
-        if (r.weight < 0) edgeColor = "#ef4444";
-        if (r.weight > 50) edgeColor = "#10b981";
-        return {
-            from: String(r.source_id),
-            to: String(r.target_id),
-            label: r.label || "",
-            arrows: "to",
-            color: { color: edgeColor },
-            font: { size: 10, align: "middle" },
-            title: "好感度: " + (r.weight || 0) + "\n原因: " + (r.description || "无"),
-        };
-    });
+        var validRels = (Array.isArray(rels) ? rels : []).filter(function(r) {
+            return r && validCharIds.has(String(r.source_id)) && validCharIds.has(String(r.target_id));
+        });
 
-    var data = { nodes: new vis.DataSet(nodesArray), edges: new vis.DataSet(edgesArray) };
+        var edgesArray = validRels.map(function(r) {
+            var edgeColor = "#94a3b8";
+            if (r.weight < 0) edgeColor = "#ef4444";
+            if (r.weight > 50) edgeColor = "#10b981";
+            return {
+                from: String(r.source_id),
+                to: String(r.target_id),
+                label: r.label || "",
+                arrows: "to",
+                color: { color: edgeColor },
+                font: { size: 10, align: "middle" },
+                title: "好感度: " + (r.weight || 0) + "\n原因: " + (r.description || "无"),
+            };
+        });
 
-    var options = {
-        physics: {
-            forceAtlas2Based: {
-                gravitationalConstant: -50,
-                centralGravity: 0.01,
-                springLength: 150,
-                springConstant: 0.08,
+        var data = { nodes: new vis.DataSet(nodesArray), edges: new vis.DataSet(edgesArray) };
+
+        var options = {
+            physics: {
+                solver: "repulsion",
+                repulsion: { nodeDistance: 200, springLength: 200 },
             },
-            maxVelocity: 50,
-            solver: "forceAtlas2Based",
-            timestep: 0.35,
-            stabilization: { iterations: 150 },
-        },
-        groups: (function() {
-            var g = {};
-            Object.keys(factionColorMap).forEach(function(name) {
-                g[name] = { color: { background: factionColorMap[name], border: "#94a3b8" } };
-            });
-            return g;
-        })(),
-    };
+            groups: (function() {
+                var g = {};
+                Object.keys(factionColorMap).forEach(function(name) {
+                    g[name] = { color: { background: factionColorMap[name], border: "#94a3b8" } };
+                });
+                return g;
+            })(),
+        };
 
-    if (window.relationsNetwork) window.relationsNetwork.destroy();
-
-    setTimeout(function() {
+        if (window.relationsNetwork) window.relationsNetwork.destroy();
         window.relationsNetwork = new vis.Network(container, data, options);
-        setTimeout(function() {
-            if (window.relationsNetwork) {
-                window.relationsNetwork.redraw();
-                window.relationsNetwork.fit();
-            }
-        }, 100);
-    }, 50);
+
+    } catch (err) {
+        console.error("Vis.js 渲染崩溃:", err);
+        container.innerHTML = "<div style='color:red;padding:20px;font-size:14px;line-height:1.5;'><b>🚨 渲染引擎崩溃!</b><br><br>错误信息: " + (err.message || String(err)) + "</div>";
+    }
 }
 document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRelationsGraph);
 
