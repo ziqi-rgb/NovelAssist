@@ -1831,7 +1831,21 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     prompt = tmpl.replace("{content}", req.current_chapter_content).replace("{selection}", req.selected_text).replace("{instruction}", req.instruction).replace("{chain_data}", req.chain_data)
     prompt = resolve_placeholders(prompt, req.novel_id, db)
 
-    messages = [{"role": "user", "content": prompt}]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是小说创作助手，集成了世界观编辑工具。\n"
+                "当用户要求执行以下操作时，你必须调用对应的工具函数，而不是口头描述：\n"
+                "- 推进时间 → 调用 advance_world_time\n"
+                "- 修改人物状态/位置/生死 → 调用 modify_character\n"
+                "- 增删改大纲/地点/时间线 → 调用 manage_world_element\n"
+                "- 创建或覆盖推理方案 → 调用 generate_reasoning_chain\n"
+                "如果你确认操作已完成，回复时请简要告知用户结果。"
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
     return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
 
 
