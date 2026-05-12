@@ -416,7 +416,7 @@ function renderTimeEditor(container) {
         + '<div id="trajectory-rows"></div>'
         + '<button onclick="saveTimeData()" style="margin-top:8px;font-size:0.75rem;padding:4px 12px;" class="sys-btn sys-btn-primary">💾 保存作息与轨迹</button>';
     container.appendChild(timeFs);
-    loadTimeData();
+    loadLocationsCache().then(function() { loadTimeData(); });
 }
 
 function locationOptionsHtml(selId) {
@@ -464,7 +464,6 @@ async function loadTimeData() {
     document.getElementById("trajectory-rows").innerHTML = "";
     (data.routines || []).forEach(function(r) { addRoutineRow(r); });
     (data.trajectories || []).forEach(function(t) { addTrajectoryRow(t); });
-    if (window.locationsCache.length === 0) await loadLocationsCache();
 }
 
 async function loadLocationsCache() {
