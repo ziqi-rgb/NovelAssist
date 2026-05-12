@@ -111,6 +111,7 @@ class Character(Base):
     aliases: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="存活")
+    is_active: Mapped[bool] = mapped_column(default=True)
     is_always_context: Mapped[bool] = mapped_column(default=False)
     attributes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
@@ -263,8 +264,9 @@ DEFAULT_PROMPT_TEMPLATES = {
         "人物模板字段结构：{template}\n"
         "已有人物数据：{characters}\n\n"
         "阅读以下正文，寻找人物状态或属性的改变。请严格对照模板的分组和字段名来填写 updates，不要遗漏模板中已有但当前为空的字段。如果正文提到某个人物获得了物品，请将物品名称填入对应的分组字段中。\n\n"
+        "【重要指令】：分析该人物是否已退出故事主舞台。如果人物明确死亡、归隐、去往极远之地、被长期封印，或其戏份已彻底完结（以后大概率不再登场），请将其 \"is_active\" 设为 false，并在 \"status_change\" 中说明原因（如：死亡/重伤归隐/飞升上界等）。如果人物仍活跃在当前剧情中（即使状态是重伤、被俘等），\"is_active\" 保持为 true。\n\n"
         "你必须仅返回合法的 JSON 数组，包含在 ```json ``` 代码块中，绝对不要输出任何其他解释文字。\n"
-        "格式：\n```json\n[{\"character_id\": 1, \"updates\": {\"分组名\": {\"字段名\": \"新值\"}}}]\n```\n"
+        "格式：\n```json\n[{\"character_id\": 1, \"updates\": {\"分组名\": {\"字段名\": \"新值\"}}, \"status_change\": \"退场原因\", \"is_active\": false}]\n```\n"
         "如果没有任何人物发生变化，返回空数组 []。\n\n"
         "正文：\n{text}"
     ),

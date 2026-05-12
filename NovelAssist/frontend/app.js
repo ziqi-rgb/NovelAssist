@@ -889,19 +889,8 @@ document.getElementById("save-location-btn").addEventListener("click", async () 
 /* ═══════════ Right bar ═══════════ */
 async function loadCharacters() {
     function getStatusBadge(ch) {
-        if (ch.attributes && typeof ch.attributes === "object") {
-            for (const groupKey of Object.keys(ch.attributes)) {
-                const fields = ch.attributes[groupKey];
-                if (fields && typeof fields === "object") {
-                    for (const fk of Object.keys(fields)) {
-                        if (/状态|生死|status/i.test(fk)) {
-                            const v = String(fields[fk]).trim();
-                            if (v) return `<span class="status-badge ${/已故|死亡|亡故|殒落|deceased/i.test(v) ? "dead" : "alive"}">${e(v)}</span>`;
-                        }
-                    }
-                }
-            }
-        }
+        if (ch.is_active === false) return '<span class="status-badge inactive">🚪 退场</span>';
+        if (ch.is_active === true) return '<span class="status-badge alive">🏃 活跃</span>';
         return "";
     }
     const c = document.getElementById("character-list"), chars = await (await fetch("/api/characters" + nidQ())).json(); c.innerHTML = "";

@@ -45,6 +45,9 @@ def run_migration() -> None:
         if "is_always_context" not in char_cols:
             db.execute(text("ALTER TABLE characters ADD COLUMN is_always_context BOOLEAN DEFAULT 0"))
             db.commit()
+        if "is_active" not in char_cols:
+            db.execute(text("ALTER TABLE characters ADD COLUMN is_active BOOLEAN DEFAULT 1"))
+            db.commit()
 
         ch_cols = [c["name"] for c in insp.get_columns("chapters")]
         if "archived_content" not in ch_cols:

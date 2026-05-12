@@ -146,6 +146,7 @@ class CharacterCreate(BaseModel):
     aliases: str = ""
     description: str = ""
     status: str = "存活"
+    is_active: bool = True
     is_always_context: bool = False
     attributes: dict = {}
 
@@ -155,6 +156,7 @@ class CharacterOut(BaseModel):
     aliases: str
     description: str
     status: str
+    is_active: bool = True
     is_always_context: bool = False
     attributes: dict = {}
     novel_id: int
@@ -469,20 +471,27 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                 for upd in parsed:
                     cid = upd.get("character_id")
                     u = upd.get("updates", {})
-                    if cid and u and isinstance(u, dict):
+                    if cid:
                         target = db.get(Character, cid)
                         if target:
                             old_attrs = copy.deepcopy(target.attributes or {})
                             db.add(CharacterSnapshot(character_id=cid, version_name="自动归档前快照", attributes=old_attrs))
-                            merged = copy.deepcopy(target.attributes or {})
-                            for group, fields in u.items():
-                                if isinstance(fields, dict):
-                                    merged.setdefault(group, {})
-                                    if isinstance(merged[group], dict):
-                                        for k, v in fields.items():
-                                            merged[group][k] = str(v)
-                            target.attributes = merged
-                            flag_modified(target, "attributes")
+                            # Merge attributes
+                            if u and isinstance(u, dict):
+                                merged = copy.deepcopy(target.attributes or {})
+                                for group, fields in u.items():
+                                    if isinstance(fields, dict):
+                                        merged.setdefault(group, {})
+                                        if isinstance(merged[group], dict):
+                                            for k, v in fields.items():
+                                                merged[group][k] = str(v)
+                                target.attributes = merged
+                                flag_modified(target, "attributes")
+                            # Handle status_change and is_active
+                            if upd.get("status_change"):
+                                target.status = str(upd["status_change"])
+                            if "is_active" in upd:
+                                target.is_active = bool(upd["is_active"])
                             name = target.name
                             if target.attributes and isinstance(target.attributes, dict):
                                 base = target.attributes.get("基础信息", {})

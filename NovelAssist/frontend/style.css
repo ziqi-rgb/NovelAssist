@@ -290,6 +290,7 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .status-badge{display:inline-block;padding:1px 6px;margin-left:6px;font-size:.68rem;border-radius:8px;vertical-align:middle}
 .status-badge.alive{background:#e8f5e9;color:#2e7d32}
 .status-badge.dead{background:#ffebee;color:#c62828}
+.status-badge.inactive{background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1}
 .char-activate{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:.72rem;color:var(--text-muted);cursor:pointer}
 .char-activate input{margin:0}
 
