@@ -96,7 +96,7 @@ document.querySelectorAll(".nav-btn[data-module]").forEach(b => {
         else if (currentModule === "map") { loadLocationTree(); }
         else if (currentModule === "reasoning") loadReasoningModule();
         else if (currentModule === "sandbox") loadSandboxModule();
-        else if (currentModule === "relations") loadRelationsGraph();
+        else if (currentModule === "relations") { loadRelationsGraph(); setTimeout(function() { if (window.relationsNetwork) { window.relationsNetwork.redraw(); window.relationsNetwork.fit(); } }, 150); }
     });
 });
 
@@ -2139,7 +2139,6 @@ document.getElementById("sandbox-next-btn").addEventListener("click", function()
 });
 
 /* ═══════════ Relations Graph ═══════════ */
-var relationsNetwork = null;
 
 async function loadRelationsGraph() {
     if (!currentNovelId) return;
@@ -2169,44 +2168,53 @@ function renderVisNetwork(chars, factions, rels) {
     var container = document.getElementById("relation-network");
     if (!container) return;
 
+    var validCharIds = new Set();
+    chars.forEach(function(c) { if (c && c.id != null) validCharIds.add(c.id); });
+
     var factionMap = {};
-    factions.forEach(function(f) { factionMap[f.id] = f.name; });
+    factions.forEach(function(f) { if (f && f.id != null) factionMap[f.id] = f.name; });
 
     var factionColors = ["#fef3c7","#dbeafe","#d1fae5","#fce7f3","#e0e7ff","#fef9c3","#ede9fe","#ccfbf1","#fee2e2","#e5e7eb"];
     var factionColorIdx = 0;
     var factionColorMap = {};
     factions.forEach(function(f) {
-        factionColorMap[f.name] = factionColors[factionColorIdx % factionColors.length];
+        var name = f.name || "未命名";
+        factionColorMap[name] = factionColors[factionColorIdx % factionColors.length];
         factionColorIdx++;
     });
     factionColorMap["散修/无势力"] = "#f1f5f9";
 
-    var nodes = new vis.DataSet(chars.map(function(c) {
-        var groupName = c.faction_id ? factionMap[c.faction_id] : "散修/无势力";
+    var nodesArray = chars.map(function(c) {
+        var groupName = (c.faction_id && factionMap[c.faction_id]) ? factionMap[c.faction_id] : "散修/无势力";
         var roleStr = c.faction_role ? "\n(" + c.faction_role + ")" : "";
-        return {
+        var cfg = {
             id: c.id,
-            label: c.name + roleStr,
+            label: (c.name || "未知") + roleStr,
             group: groupName,
             title: "状态: " + (c.status || "正常") + "\n阵营: " + groupName,
             shape: "dot",
             size: c.is_active ? 20 : 10,
-            color: c.is_active ? undefined : { background: "#ccc", border: "#999" },
         };
-    }));
+        if (!c.is_active) cfg.color = { background: "#ccc", border: "#999" };
+        return cfg;
+    });
+    var nodes = new vis.DataSet(nodesArray);
 
-    var edges = new vis.DataSet(rels.map(function(r) {
+    var validRels = rels.filter(function(r) {
+        return r && validCharIds.has(r.source_id) && validCharIds.has(r.target_id);
+    });
+    var edges = new vis.DataSet(validRels.map(function(r) {
         var edgeColor = "#94a3b8";
         if (r.weight < 0) edgeColor = "#ef4444";
         if (r.weight > 50) edgeColor = "#10b981";
         return {
             from: r.source_id,
             to: r.target_id,
-            label: r.label,
+            label: r.label || "",
             arrows: "to",
             color: { color: edgeColor },
             font: { size: 10, align: "middle" },
-            title: "好感度: " + r.weight + "\n原因: " + (r.description || "无"),
+            title: "好感度: " + (r.weight || 0) + "\n原因: " + (r.description || "无"),
         };
     }));
 
@@ -2234,8 +2242,15 @@ function renderVisNetwork(chars, factions, rels) {
         })(),
     };
 
-    if (relationsNetwork) relationsNetwork.destroy();
-    relationsNetwork = new vis.Network(container, data, options);
+    if (window.relationsNetwork) window.relationsNetwork.destroy();
+    window.relationsNetwork = new vis.Network(container, data, options);
+
+    setTimeout(function() {
+        if (window.relationsNetwork) {
+            window.relationsNetwork.redraw();
+            window.relationsNetwork.fit();
+        }
+    }, 100);
 }
 document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRelationsGraph);
 
