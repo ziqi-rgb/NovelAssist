@@ -65,18 +65,18 @@ async def lifespan(app: FastAPI):
         from .database import SessionLocal
     except ImportError:
         from database import SessionLocal
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         db.execute(text("UPDATE timeline_events SET event_type = 'MAIN_STORY' WHERE event_type = 'main_story'"))
         db.execute(text("UPDATE timeline_events SET event_type = 'HISTORY' WHERE event_type = 'history'"))
         db.execute(text("UPDATE timeline_events SET event_type = 'WORLD' WHERE event_type = 'world'"))
         db.commit()
-        # Prompt auto-heal: detect old templates and upgrade in-place
-        gs = db.get(GlobalSettings, 1)
+    # Prompt auto-heal in independent session
+    with SessionLocal() as db2:
+        gs = db2.get(GlobalSettings, 1)
         if gs and isinstance(gs.prompt_templates, dict):
             tpl = dict(gs.prompt_templates)
             healed = False
-            if "archive_timeline" in tpl and "time_elapsed_hours" not in tpl["archive_timeline"]:
+            if "archive_timeline" in tpl and "elapsed_days" not in tpl["archive_timeline"]:
                 tpl["archive_timeline"] = DEFAULT_PROMPT_TEMPLATES["archive_timeline"]
                 healed = True
             if "archive_character" in tpl and "move_to_location" not in tpl["archive_character"]:
@@ -85,9 +85,7 @@ async def lifespan(app: FastAPI):
             if healed:
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
-                db.commit()
-    finally:
-        db.close()
+                db2.commit()
     yield
 
 
@@ -496,12 +494,15 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                 # Maybe it's bare JSON without markdown fences
                 parsed_tl = json.loads(raw_tl)
             if isinstance(parsed_tl, dict):
-                # New format: {"time_elapsed_hours": X, "events": [...]}
-                elapsed = parsed_tl.get("time_elapsed_hours", 0)
-                if isinstance(elapsed, (int, float)) and elapsed > 0:
-                    novel = db.get(Novel, ch.novel_id)
-                    if novel:
-                        novel.current_tick += int(elapsed)
+                # New format: {"elapsed_days": X, "elapsed_hours": X, "events": [...]}
+                novel = db.get(Novel, ch.novel_id)
+                elapsed_days = int(parsed_tl.get("elapsed_days", 0))
+                elapsed_hours = int(parsed_tl.get("elapsed_hours", 0))
+                config = novel.calendar_config if novel else {}
+                hpd = config.get("hours_per_day", 24)
+                total_elapsed_ticks = (elapsed_days * hpd) + elapsed_hours
+                if total_elapsed_ticks > 0 and novel:
+                    novel.current_tick += total_elapsed_ticks
                 events_list = parsed_tl.get("events", [])
                 for evt in events_list:
                     te = TimelineEvent(

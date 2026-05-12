@@ -206,6 +206,7 @@ saveBtn.addEventListener("click", saveCurrentChapter);
 
 // word count + auto-save
 let autoSaveTimer = null;
+window.autoSaveTimer = autoSaveTimer;
 contentInput.addEventListener("input", () => {
     document.getElementById("word-count").textContent = contentInput.value.length;
     document.getElementById("save-status").textContent = "未保存";
@@ -230,6 +231,9 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
     const s = getSettings();
     if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
     showArchiveOverlay();
+    // Freeze auto-save during archive to prevent race conditions
+    if (window.autoSaveTimer) { clearTimeout(window.autoSaveTimer); window.autoSaveTimer = null; }
+    contentInput.disabled = true;
     try {
         const res = await fetch(`/api/chapters/${currentChapterId}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text_to_archive: sel, api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
         const data = await res.json();
@@ -259,7 +263,7 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
         loadNovelTime();
         if (currentChapterId) { selectChapter({ id: currentChapterId, title: titleInput.value, content: contentInput.value, archived_content: document.getElementById("archived-content-viewer").textContent, volume_id: currentVolumeId }); }
     } catch (e) { showToast("归档失败: " + e.message); }
-    finally { hideArchiveOverlay(); }
+    finally { contentInput.disabled = false; hideArchiveOverlay(); }
 });
 
 /* ═══════════ Outline (dual-pane + tree + MD) ═══════════ */

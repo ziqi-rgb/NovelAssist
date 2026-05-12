@@ -290,17 +290,18 @@ DEFAULT_PROMPT_TEMPLATES = {
     ),
     "archive_timeline": (
         '阅读以下正文，提取关键剧情事件放入时间线。\n'
-        '【特别指令：时间流逝】如果正文中明确描述了时间的推移（例如：\u201c三天后\u201d、\u201c次日清晨\u201d、\u201c过了半个月\u201d），请估算流逝的时间并换算为小时数。如果没有明确流逝，填 0。\n'
+        '【特别指令：时间流逝】如果正文中明确描述了时间的推移（如：\u201c三天后\u201d、\u201c过了半个月\u201d、\u201c两个时辰后\u201d），请分别提取流逝的\u201c天数\u201d和\u201c小时/时辰数\u201d。如果没有描述，则都填0。\n'
         '返回格式必须为 JSON 对象：\n'
-        "```json\n"
-        "{\n"
-        '  "time_elapsed_hours": 24,\n'
+        '```json\n'
+        '{\n'
+        '  "elapsed_days": 3,\n'
+        '  "elapsed_hours": 0,\n'
         '  "events": [\n'
         '    {"time": "发生时间描述", "location": "地点", "characters": "出场人物", "event": "事件摘要"}\n'
-        "  ]\n"
-        "}\n"
-        "```\n"
-        "正文：\n{text}"
+        '  ]\n'
+        '}\n'
+        '```\n'
+        '正文：\n{text}'
     ),
     "archive_character": (
         "人物模板字段结构：{template}\n"
