@@ -10,6 +10,7 @@ import re
 import sys
 import threading
 import urllib.parse
+import uuid
 import webbrowser
 import zipfile
 from contextlib import asynccontextmanager
@@ -148,7 +149,26 @@ AGENT_TOOLS = [
                                         "绝对禁止生造不在白名单内的 {xxx} 占位符！其他信息请用自然语言描述。"
                                     ),
                                 },
-                                "target": {"type": "string", "description": "写入目标的占位符或标识"},
+                                "target": {
+                                    "type": "array",
+                                    "description": (
+                                        "节点的结果指定(积木数组)。定义该节点向下一节点传递什么信息。\n"
+                                        "如要传递全局信息(时间等)连同推理结果，请组合placeholder和text块。\n"
+                                        "示例: [{\"type\":\"placeholder\",\"value\":\"current_time\"}, {\"type\":\"text\",\"value\":\"本节点的战力推演结果\"}]"
+                                    ),
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "type": {
+                                                "type": "string",
+                                                "enum": ["text", "placeholder", "bool", "enum"],
+                                                "description": "块类型: text(纯文本), placeholder(系统占位符,value填不带{}的名称如current_time), bool(条件判断), enum(选项分支)",
+                                            },
+                                            "value": {"type": "string", "description": "占位符名称(不带大括号)或文本内容"},
+                                        },
+                                        "required": ["type", "value"],
+                                    },
+                                },
                             },
                             "required": ["premise", "prompt"],
                         },
@@ -2005,13 +2025,34 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         for i, step in enumerate(steps):
             node_id = str(f"node_{now_ts}_{i}")
             next_node_id = str(f"node_{now_ts}_{i + 1}") if i < len(steps) - 1 else ""
+            raw_target = step.get("target")
+            parsed_target: list[dict] = []
+            if isinstance(raw_target, list):
+                for blk in raw_target:
+                    parsed_target.append({
+                        "id": "blk_" + uuid.uuid4().hex[:8],
+                        "type": blk.get("type", "text"),
+                        "value": blk.get("value", ""),
+                    })
+            elif isinstance(raw_target, str):
+                parsed_target.append({
+                    "id": "blk_" + uuid.uuid4().hex[:8],
+                    "type": "text",
+                    "value": raw_target,
+                })
+            else:
+                parsed_target.append({
+                    "id": "blk_" + uuid.uuid4().hex[:8],
+                    "type": "text",
+                    "value": "正文",
+                })
             built_nodes.append({
                 "id": node_id,
                 "x": 50,
                 "y": 50 + (i * 250),
                 "premise": step.get("premise", ""),
                 "prompt": step.get("prompt", ""),
-                "target": step.get("target", "正文"),
+                "target": parsed_target,
                 "next_node_id": next_node_id,
                 "branches": [],
                 "output": "",
