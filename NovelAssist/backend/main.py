@@ -2221,6 +2221,15 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     flag_modified(novel, "character_template")
                     db.commit()
 
+            # Build field_to_group mapping from current template
+            field_to_group: dict[str, str] = {}
+            current_tmpl = novel.character_template if isinstance(novel.character_template, list) else []
+            for g in current_tmpl:
+                if isinstance(g, dict):
+                    g_name = g.get("group", "自定义")
+                    for f in g.get("fields", []):
+                        field_to_group[f] = g_name
+
             # Upsert: check existing by name
             if "name" in data:
                 existing = db.query(Character).filter(
@@ -2231,14 +2240,21 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     eid = existing.id
 
             if action == "add":
+                nested_attrs: dict[str, dict[str, str]] = {}
+                for k, v in attrs.items():
+                    g_name = field_to_group.get(k, "自定义")
+                    if g_name not in nested_attrs:
+                        nested_attrs[g_name] = {}
+                    nested_attrs[g_name][k] = str(v)
                 db.add(Character(
                     novel_id=novel_id,
                     name=data.get("name", ""),
+                    description=data.get("description", ""),
                     status=data.get("status", "正常"),
                     is_active=data.get("is_active", True),
                     faction_id=data.get("faction_id"),
                     faction_role=data.get("faction_role", ""),
-                    attributes=attrs,
+                    attributes=nested_attrs,
                 ))
             elif action == "update" and eid:
                 char = db.get(Character, eid)
@@ -2263,9 +2279,13 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     if "faction_role" in data:
                         char.faction_role = data["faction_role"]
                     if "attributes" in data:
-                        new_attrs = dict(char.attributes) if char.attributes else {}
-                        new_attrs.update(data["attributes"])
-                        char.attributes = new_attrs
+                        current_attrs: dict = dict(char.attributes) if char.attributes else {}
+                        for k, v in data["attributes"].items():
+                            g_name = field_to_group.get(k, "自定义")
+                            if g_name not in current_attrs:
+                                current_attrs[g_name] = {}
+                            current_attrs[g_name][k] = str(v)
+                        char.attributes = current_attrs
                         flag_modified(char, "attributes")
                     loc_id = data.get("location_id")
                     if loc_id is not None:
