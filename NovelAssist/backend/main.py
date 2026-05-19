@@ -87,7 +87,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale/parent_id/parent_name(父地点名)/map_x/map_y(0-24整数的相对坐标)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(新键自动扩模板)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
+                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale/parent_id/parent_name(父地点名)/map_x/map_y(0-24整数的相对坐标)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
                         "additionalProperties": True,
                     },
                 },
@@ -2190,45 +2190,63 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(CharacterRelation).filter(CharacterRelation.id == eid).delete()
 
         elif etype == "character":
-            # Dynamic template expansion (correct List[Dict] handling)
-            attrs = data.get("attributes", {})
-            if attrs and isinstance(novel.character_template, list):
+            raw_attrs = data.get("attributes", {})
+            normalized_attrs: dict[str, dict[str, str]] = {}
+
+            if raw_attrs and isinstance(novel.character_template, list):
                 tmpl = list(novel.character_template)
-                existing_fields: set[str] = set()
+
+                group_to_fields: dict[str, set[str]] = {}
                 for g in tmpl:
-                    if isinstance(g, dict) and "fields" in g:
-                        existing_fields.update(g["fields"])
+                    if isinstance(g, dict):
+                        group_to_fields[g.get("group", "")] = set(g.get("fields", []))
+
+                field_to_group: dict[str, str] = {}
+                for g_name, fields in group_to_fields.items():
+                    for f in fields:
+                        field_to_group[f] = g_name
 
                 added_new = False
-                custom_group = None
-                for g in tmpl:
-                    if isinstance(g, dict) and g.get("group") == "自定义":
-                        custom_group = g
-                        break
 
-                for k in attrs.keys():
-                    if k not in existing_fields:
-                        if custom_group is None:
-                            custom_group = {"group": "自定义", "fields": []}
-                            tmpl.append(custom_group)
-                        if k not in custom_group["fields"]:
-                            custom_group["fields"].append(k)
-                            existing_fields.add(k)
+                for k, v in raw_attrs.items():
+                    if isinstance(v, dict):
+                        g_name = k
+                        if g_name not in group_to_fields:
+                            group_to_fields[g_name] = set()
+                            tmpl.append({"group": g_name, "fields": []})
                             added_new = True
+                        if g_name not in normalized_attrs:
+                            normalized_attrs[g_name] = {}
+                        for f_name, f_val in v.items():
+                            if f_name not in group_to_fields[g_name]:
+                                for tg in tmpl:
+                                    if tg.get("group") == g_name:
+                                        tg.setdefault("fields", []).append(f_name)
+                                        break
+                                group_to_fields[g_name].add(f_name)
+                                added_new = True
+                            normalized_attrs[g_name][f_name] = str(f_val)
+                    else:
+                        g_name = field_to_group.get(k, "自定义")
+                        if g_name not in group_to_fields:
+                            group_to_fields[g_name] = set()
+                            tmpl.append({"group": g_name, "fields": []})
+                            added_new = True
+                        if g_name not in normalized_attrs:
+                            normalized_attrs[g_name] = {}
+                        if k not in group_to_fields[g_name]:
+                            for tg in tmpl:
+                                if tg.get("group") == g_name:
+                                    tg.setdefault("fields", []).append(k)
+                                    break
+                            group_to_fields[g_name].add(k)
+                            added_new = True
+                        normalized_attrs[g_name][k] = str(v)
 
                 if added_new:
                     novel.character_template = tmpl
                     flag_modified(novel, "character_template")
                     db.commit()
-
-            # Build field_to_group mapping from current template
-            field_to_group: dict[str, str] = {}
-            current_tmpl = novel.character_template if isinstance(novel.character_template, list) else []
-            for g in current_tmpl:
-                if isinstance(g, dict):
-                    g_name = g.get("group", "自定义")
-                    for f in g.get("fields", []):
-                        field_to_group[f] = g_name
 
             # Upsert: check existing by name
             if "name" in data:
@@ -2240,12 +2258,6 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     eid = existing.id
 
             if action == "add":
-                nested_attrs: dict[str, dict[str, str]] = {}
-                for k, v in attrs.items():
-                    g_name = field_to_group.get(k, "自定义")
-                    if g_name not in nested_attrs:
-                        nested_attrs[g_name] = {}
-                    nested_attrs[g_name][k] = str(v)
                 db.add(Character(
                     novel_id=novel_id,
                     name=data.get("name", ""),
@@ -2254,7 +2266,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     is_active=data.get("is_active", True),
                     faction_id=data.get("faction_id"),
                     faction_role=data.get("faction_role", ""),
-                    attributes=nested_attrs,
+                    attributes=normalized_attrs,
                 ))
             elif action == "update" and eid:
                 char = db.get(Character, eid)
@@ -2278,13 +2290,13 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         char.faction_id = data["faction_id"]
                     if "faction_role" in data:
                         char.faction_role = data["faction_role"]
-                    if "attributes" in data:
+                    if raw_attrs:
                         current_attrs: dict = dict(char.attributes) if char.attributes else {}
-                        for k, v in data["attributes"].items():
-                            g_name = field_to_group.get(k, "自定义")
+                        for g_name, fields_dict in normalized_attrs.items():
                             if g_name not in current_attrs:
                                 current_attrs[g_name] = {}
-                            current_attrs[g_name][k] = str(v)
+                            for f_name, f_val in fields_dict.items():
+                                current_attrs[g_name][f_name] = f_val
                         char.attributes = current_attrs
                         flag_modified(char, "attributes")
                     loc_id = data.get("location_id")
