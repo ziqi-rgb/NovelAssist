@@ -206,6 +206,8 @@ async def lifespan(app: FastAPI):
             "🗺️ 深度生态与地图建构流",
             "🗺️ 严谨建图层级推演流",
             "👤 深度人设与关系推演流",
+            "👤 深度人设与势力羁绊流",
+            "📖 剧情大纲多幕结构流",
         ]
         db3.query(ReasoningChain).filter(ReasoningChain.title.in_(legacy)).delete(synchronize_session=False)
         db3.commit()
@@ -225,32 +227,46 @@ async def lifespan(app: FastAPI):
                 ],
             ))
 
-        # 2. 👤 深度人设与势力羁绊流 (5-node DAG)
-        db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与势力羁绊流").delete(synchronize_session=False)
+        # 2. 👤 严谨人设与模板质检流 (7-node DAG with QC loop)
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 严谨人设与模板质检流").delete(synchronize_session=False)
         db3.commit()
         db3.add(ReasoningChain(
-            title="👤 深度人设与势力羁绊流",
+            title="👤 严谨人设与模板质检流",
             context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
             nodes=[
-                {"id":"chk_eval","x":100,"y":50,"premise":"判断目标角色的核心势力是否已建立。","prompt":"【势力判定】（⚠️绝对禁止调用工具！）\n查阅已有人物名录：{characters_list}。\n判断：目标角色背后的核心势力是否已在数据库中存在？\n- 势力已存在，输出 <ROUTE>READY</ROUTE>\n- 势力缺失，输出 <ROUTE>BUILD_FACTION</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],"branches":[{"condition":"READY","next_node_id":"chk_build_char"},{"condition":"BUILD_FACTION","next_node_id":"chk_build_faction"}],"next_node_id":"","output":""},
-                {"id":"chk_build_faction","x":350,"y":50,"premise":"建立缺失的势力。","prompt":"【建立势力】（✅允许调用工具）\n核心势力缺失！调用 manage_world_element (etype: faction) 建立该势力。提供 base_location_name 关联其驻地。建完即止！","target":[],"branches":[],"next_node_id":"chk_eval","output":""},
-                {"id":"chk_build_char","x":250,"y":200,"premise":"势力已就绪，正式建立角色。","prompt":"【建立角色】（✅允许调用工具）\n核心势力已就绪。调用 manage_world_element (etype: character) 建立角色。\n要求：\n1. 生成极其丰富的嵌套 attributes 字典（自创新分组如【战斗流派】【羁绊网络】）。\n2. 准确填写 faction_name 和 faction_role。\n3. description 写一段史诗级人物小传。","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[],"next_node_id":"chk_plan_rel","output":""},
-                {"id":"chk_plan_rel","x":250,"y":400,"premise":"规划人物关系羁绊清单。","prompt":"【关系规划】（⚠️绝对禁止调用工具！）\n查阅人物名录：{characters_list}。\n请以纯文本列出：该新角色应与名录中哪 1-2 名已有角色存在极深的恩怨羁绊？\n每一条写明关系类型(如死敌/挚友/师徒)和关系由来。","target":[{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],"branches":[],"next_node_id":"chk_build_rel","output":""},
-                {"id":"chk_build_rel","x":250,"y":580,"premise":"建立关系连线。","prompt":"【建立关系】（✅允许调用工具）\n查阅上文关系清单。调用 manage_world_element (etype: relation) 逐条建立关系。\n使用 source_name/target_name 指定人物，填写 label(关系类型) 和 weight(-100死敌 ~ +100挚爱)。","target":[],"branches":[],"next_node_id":"","output":""},
+                {"id":"c_n1_prepare","x":0,"y":0,"premise":"整理用户要求，建立初步人设文本。","prompt":"【初步整理】（⚠️绝对禁止调用工具！）\n整理用户要求，推导出需要创建的人物名称、势力、性格特征。建立初步人设文本。纯文本输出！","target":[],"branches":[],"next_node_id":"c_n2_check_faction","output":""},
+                {"id":"c_n2_check_faction","x":200,"y":0,"premise":"判定是否需要建立新势力。","prompt":"【势力判定】（⚠️绝对禁止调用工具！）\n查阅：{locations_list}。\n判断当前人设是否需要建立新势力？\n- 需要新势力，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>\n严禁工具调用！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"YES","next_node_id":"c_n3_build_faction"},{"condition":"NO","next_node_id":"c_n4_number"}],"next_node_id":"","output":""},
+                {"id":"c_n3_build_faction","x":400,"y":0,"premise":"建立新势力。","prompt":"【建立势力】（✅允许调用工具）\n调用 manage_world_element (etype: faction) 建立势力。提供 base_location_name 关联驻地。建完即止！","target":[],"branches":[],"next_node_id":"c_n2_check_faction","output":""},
+                {"id":"c_n4_number","x":200,"y":150,"premise":"判定人设数量并编号。","prompt":"【数量判定】（⚠️绝对禁止调用工具！）\n判断需要创建的人物数量（1-N个），为他们编号。纯文本输出清单。","target":[],"branches":[],"next_node_id":"c_n5_build_char","output":""},
+                {"id":"c_n5_build_char","x":200,"y":300,"premise":"调用工具创建人设。","prompt":"【执行创建】（✅允许调用工具）\n查阅人物模板：{character_template}。\n调用 manage_world_element (etype: character) 细化并创建人设。\n必须将属性严格按模板分组填入嵌套字典 attributes！","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[],"next_node_id":"c_n6_verify","output":""},
+                {"id":"c_n6_verify","x":200,"y":480,"premise":"核心质检：数量与模板符合度。","prompt":"【核心质检】（⚠️绝对禁止调用工具！）\n1. 数量达标了吗？\n2. 刚建的人设符合 {character_template} 吗，有无不合理的空缺？\n- 全达标且符合模板，输出 <ROUTE>PERFECT</ROUTE>\n- 不符合模板，输出 <ROUTE>NEEDS_FIX</ROUTE>\n- 数量不达标，输出 <ROUTE>NEEDS_MORE</ROUTE>\n严禁工具调用！仅输出标签！","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[{"condition":"PERFECT","next_node_id":""},{"condition":"NEEDS_FIX","next_node_id":"c_n7_fix"},{"condition":"NEEDS_MORE","next_node_id":"c_n5_build_char"}],"next_node_id":"","output":""},
+                {"id":"c_n7_fix","x":400,"y":480,"premise":"补齐残缺属性。","prompt":"【补齐修复】（✅允许调用工具）\n调用 manage_world_element (etype: character, action: update) 为残缺的角色补齐缺失的属性字段。填完返回质检。","target":[],"branches":[],"next_node_id":"c_n6_verify","output":""},
             ],
         ))
 
-        # 3. 📖 剧情大纲多幕结构流 (3-node cyclic DAG)
-        db3.query(ReasoningChain).filter(ReasoningChain.title == "📖 剧情大纲多幕结构流").delete(synchronize_session=False)
+        # 3. 📖 全维世界观与大纲流水线 (dynamic 6-module × 4-node = 24-node mega DAG)
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "📖 全维世界观与大纲流水线").delete(synchronize_session=False)
         db3.commit()
+        modules = [
+            ("world", "世界观设定", "世界观"),
+            ("faction", "世界势力设定", "世界势力"),
+            ("geo", "地理知识设定", "地理"),
+            ("char", "人物粗略设定", "人物设定"),
+            ("power", "能力体系设定", "能力体系"),
+            ("story", "剧情大纲推演", "剧情大纲"),
+        ]
+        outline_nodes: list[dict] = []
+        for i, (m_id, m_name, cat) in enumerate(modules):
+            next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
+            next_check = f"o_{next_m_id}_check" if next_m_id != "end" else ""
+            outline_nodes.append({"id": f"o_{m_id}_check","x":0,"y":i*400,"premise":f"进入 {m_name} 模块评估。","prompt":f"【模块判定】（⚠️绝对禁止调用工具！）\n分析用户输入与前文积累。\n判断：是否需要创建或扩充【{m_name}】？\n- 需要，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
+            outline_nodes.append({"id": f"o_{m_id}_plan","x":200,"y":i*400,"premise":f"开始规划 {m_name}。","prompt":f"【分条规划】（⚠️绝对禁止调用工具！）\n请对【{m_name}】进行详细规划，将其拆分为多个条目。\n如果是剧情大纲，必须明确遵循【卷->章->幕】三级嵌套，指明 parent_name。\n纯文本输出清单！","target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
+            outline_nodes.append({"id": f"o_{m_id}_build","x":400,"y":i*400,"premise":f"执行 {m_name} 创建。","prompt":f"【执行创建】（✅允许调用工具）\n查阅规划清单与已建进度。挑出当前最高级且未被创建的 1 个节点，调用 manage_world_element (etype: outline) 建立它。\ncategory 必须填入 '{cat}'。parent_name 必须对齐规划！","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
+            outline_nodes.append({"id": f"o_{m_id}_verify","x":600,"y":i*400,"premise":f"校验 {m_name} 进度。","prompt":f"【进度判定】（⚠️绝对禁止调用工具！）\n比对规划清单，【{m_name}】的所有内容是否已全部调用工具创建完毕？\n- 未完工，输出 <ROUTE>CONTINUE</ROUTE>\n- 全部完工，输出 <ROUTE>DONE</ROUTE>\n绝对禁止调用工具，仅输出标签！","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         db3.add(ReasoningChain(
-            title="📖 剧情大纲多幕结构流",
+            title="📖 全维世界观与大纲流水线",
             context_settings={"use_outlines": True, "use_characters": False, "use_timeline": False},
-            nodes=[
-                {"id":"out_plan","x":100,"y":50,"premise":"根据指令从零规划大纲树。","prompt":"【大纲规划】（⚠️绝对禁止调用工具！）\n请根据用户指令从零规划大纲树。\n【大纲标尺法则】：必须遵循 [卷/季] -> [章/集] -> [幕/节] 的嵌套层级。\n请仅用纯文本罗列清单，明确标出每层的 title、category(世界观/剧情大纲等) 和 parent_name。","target":[],"branches":[],"next_node_id":"out_build_top","output":""},
-                {"id":"out_build_top","x":100,"y":250,"premise":"挑出最高级未建节点，每次只建一层。","prompt":"【执行创建】（✅允许调用工具）\n查阅大纲清单与已建好的记录。\n挑出目前最高级且尚未被建立的唯一一个节点，调用 manage_world_element (etype: outline) 建立它！\n确保 parent_name 与目录一致。每次只建一个！","target":[],"branches":[],"next_node_id":"out_check","output":""},
-                {"id":"out_check","x":100,"y":450,"premise":"判断是否已到达大纲树最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n刚建立的大纲节点是大纲树最底层的目标节点吗？\n- 到底了，输出 <ROUTE>DONE</ROUTE>\n- 还没到底，输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"out_build_top"}],"next_node_id":"","output":""},
-            ],
+            nodes=outline_nodes,
         ))
 
         db3.commit()

@@ -1408,7 +1408,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
 
         while (currentNodeId) {
             loopCount++;
-            if (loopCount > 20) {
+            if (loopCount > 100) {
                 bubbleEl.appendChild(document.createTextNode("\n[⚠️ 达到最大循环层数 20，强制熔断]"));
                 break;
             }
