@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse, Response
@@ -1446,6 +1448,33 @@ class ReasoningExecuteRequest(BaseModel):
     context_settings: dict = {}
 
 
+async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str) -> str:
+    if not instruction.strip():
+        return "chat"
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "你是一个意图分类器。必须仅返回以下五个单词之一，不要有任何其他字符：chat, map_assist, outline_assist, character_assist, import_data。"},
+            {"role": "user", "content": f"判断以下用户指令的意图类别：\n{instruction}\n\n"
+             "分类规则：\n- 分析或排查地理/地图：map_assist\n- 分析大纲/剧情：outline_assist\n- 分析人物/角色：character_assist\n- 长篇设定导入解析：import_data\n- 其他日常对话或直接下达的新增/修改指令：chat"},
+        ],
+        "max_tokens": 10, "temperature": 0.0,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code == 200:
+                ans = res.json()["choices"][0]["message"]["content"].strip().lower()
+                for valid in ["chat", "map_assist", "outline_assist", "character_assist", "import_data"]:
+                    if valid in ans:
+                        return valid
+    except Exception:
+        pass
+    return "chat"
+
+
 async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None) -> StreamingResponse:
     async def gen():
         tool_calls_acc: dict[int, dict[str, str]] = {}
@@ -1923,6 +1952,9 @@ class CopilotRequest(BaseModel):
 
 @app.post("/api/writing/copilot")
 async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
+    if req.scene == "auto":
+        req.scene = await get_llm_intent(req.instruction, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL)
+
     gs = db.get(GlobalSettings, 1)
     templates = gs.prompt_templates if gs else DEFAULT_PROMPT_TEMPLATES
     tmpl = templates.get(req.scene, templates.get("chat", "{instruction}"))
@@ -1935,13 +1967,11 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
             "role": "system",
             "content": (
                 "你是本小说的全知全能系统代理（Agent）。\n"
-                "【最高指令】：你拥有 manage_world_element 等核心工具。当用户在对话中要求创建、新增、建立、修改任何人物、地点、大纲、势力时，"
-                "你必须立即调用工具执行操作！绝不允许仅返回文本建议让用户自己去建！\n"
-                "【执行规范】：\n"
-                "1. 新建地点时：如果有上级区域，必须利用 parent_name 参数自动建立层级，并判断合适的 scale。\n"
-                "2. 新建人物时：请仔细阅读给出的设定，并将其填充到 attributes 中。\n"
-                "3. 遇到已存在的实体应使用 update 更新，不要重复创建。\n"
-                "回答需简明扼要，直接行动，拒绝冗长说教。"
+                "【执行纪律 (绝对遵守)】：\n"
+                "1. 当用户要求创建、修改实体时，你必须默默调用 manage_world_element 工具执行，禁止口头敷衍。\n"
+                "2. 【严禁脑补与串线】：用户让你建人物就只建人物，让你建地点就只建地点！绝不允许自行关联或补全用户未提及的无关剧情或地点。\n"
+                "3. 【地点层级链】：若需新建地点，必须维持 [星球-大陆-国家-城池-街区-具体建筑] 的严格嵌套。如果用户指令跨级(如从星球直接到街区)，请自行推演创建合理的中间层级！\n"
+                "回答需直接、冰冷、精准，直接触发工具。"
             ),
         },
     ]
@@ -2014,6 +2044,27 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(Outline).filter(Outline.id == eid).delete()
 
         elif etype == "location":
+            # Scale validation and downgrade
+            valid_scales = ["星球", "大陆", "国家", "城池", "街区", "具体建筑"]
+            input_scale = data.get("scale", "具体建筑")
+            if input_scale not in valid_scales:
+                s_lower = str(input_scale).lower()
+                if "village" in s_lower or "村" in s_lower or "镇" in s_lower:
+                    input_scale = "街区"
+                elif "city" in s_lower or "城" in s_lower:
+                    input_scale = "城池"
+                elif "国" in s_lower or "kingdom" in s_lower or "empire" in s_lower:
+                    input_scale = "国家"
+                elif "大陆" in s_lower or "continent" in s_lower:
+                    input_scale = "大陆"
+                elif "星球" in s_lower or "planet" in s_lower or "世界" in s_lower:
+                    input_scale = "星球"
+                elif "建筑" in s_lower or "building" in s_lower:
+                    input_scale = "具体建筑"
+                else:
+                    input_scale = "具体建筑"
+            data["scale"] = input_scale
+
             # Upsert: check existing by name
             existing_loc = None
             if "name" in data:
