@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI):
                 {
                     "id": "node_eval", "x": 100, "y": 50,
                     "premise": "探明当前世界快照，判断上级是否存在。",
-                    "prompt": "【现状探明】查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，输出 <ROUTE>FALSE</ROUTE>",
+                    "prompt": "【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！",
                     "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
                     "branches": [
                         {"condition": "TRUE", "next_node_id": "node_true_build"},
@@ -256,35 +256,35 @@ async def lifespan(app: FastAPI):
                 {
                     "id": "node_true_build", "x": 400, "y": 0,
                     "premise": "上级已存在，直接顺势落子。",
-                    "prompt": "【顺势落子】直接上级已存在。请判断合适的层级关系，直接调用 manage_world_element 工具生成目标地点。要求准确嵌套上级地图。",
+                    "prompt": "【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系，直接调用 manage_world_element 工具生成目标地点。要求准确嵌套上级地图。",
                     "target": [], "branches": [],
                     "next_node_id": "", "output": ""
                 },
                 {
                     "id": "node_plan", "x": 0, "y": 200,
                     "premise": "上级缺失，从零规划完整嵌套链。",
-                    "prompt": "【蓝图规划】上级地图缺失，需从零搭建。请生成一条从最高层级到目标地点的地点嵌套链（例如：九州世界 -> 苍玄大陆 -> 青云国 -> 目标地点）。列出完整的层级目录，并明确谁是谁的上级。",
+                    "prompt": "【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建。\n请仅用纯文本罗列出一条从最高层级到目标地点的地点嵌套清单。\n格式示例：\n1. 世界：XXX\n2. 大陆：XXX\n3. 目标：XXX\n明确标出谁是谁的 parent_name！严禁调用任何管理工具！",
                     "target": [], "branches": [],
                     "next_node_id": "node_desc", "output": ""
                 },
                 {
                     "id": "node_desc", "x": 0, "y": 400,
                     "premise": "填充各层级的详细设定描述。",
-                    "prompt": "【设定填充】基于刚才生成的地点嵌套链，为目录中的每一层级生成详细的描述（生态、势力、背景）。传入下一层节点作为设定参考。",
+                    "prompt": "【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！",
                     "target": [], "branches": [],
                     "next_node_id": "node_build_top", "output": ""
                 },
                 {
                     "id": "node_build_top", "x": 200, "y": 400,
                     "premise": "进入循环创建，每次只建最高层未建节点。",
-                    "prompt": "【执行创建】进入创建流程！请查阅之前生成的嵌套链目录。\n找出目前最高级别且尚未被建立的那一个地点，调用 manage_world_element 工具建立它！\n注意：每一步只能建立一个节点，确保 parent_name 与目录规划一致。",
+                    "prompt": "【执行创建】（✅允许调用工具）\n这是循环创建阶段！请查阅上方制定的地点嵌套清单，以及上文系统记录中已经调用工具建好的地点。\n对比一下，在清单中，哪一个层级是目前最高级且尚未被工具建立的？\n请挑出这唯一的一个，调用 manage_world_element 工具将它建立出来！\n严禁一次性建立多个，每次只建一个！确保 parent_name 对齐！",
                     "target": [], "branches": [],
                     "next_node_id": "node_check_bottom", "output": ""
                 },
                 {
                     "id": "node_check_bottom", "x": 200, "y": 600,
                     "premise": "判断是否已到达嵌套链的最底层。",
-                    "prompt": "【进度判定】刚才建立的地点，是嵌套链最底层的那个目标地点吗？\n- 如果已经是目标地点（到底了），输出 <ROUTE>DONE</ROUTE>\n- 如果还没有到底（还有下级没建），输出 <ROUTE>CONTINUE</ROUTE>",
+                    "prompt": "【进度判定】（⚠️绝对禁止调用工具！）\n请对比一下：刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 如果已经是目标地点了，说明完工，输出 <ROUTE>DONE</ROUTE>\n- 如果还不是目标地点（清单里还有下一级没建），输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！",
                     "target": [], "branches": [
                         {"condition": "DONE", "next_node_id": ""},
                         {"condition": "CONTINUE", "next_node_id": "node_build_top"}
