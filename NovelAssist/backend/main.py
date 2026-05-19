@@ -200,35 +200,46 @@ async def lifespan(app: FastAPI):
                 db2.commit()
     # Seed smart reasoning chains — delete old first, then insert upgraded
     with SessionLocal() as db3:
-        db3.query(ReasoningChain).filter(ReasoningChain.title.in_([
-            "🗺️ 深度生态与地图建构流",
-            "👤 深度人设与关系推演流",
-        ])).delete(synchronize_session=False)
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 深度生态与地图建构流").delete(synchronize_session=False)
         db3.commit()
 
         nodes_map = [
             {
-                "id": "eco_analyze", "x": 100, "y": 50,
-                "premise": "分析用户建图需求，推演该地点的生态环境、资源特产、隐藏势力。",
-                "prompt": "你是一位顶尖世界架构师。分析用户指令。发挥极致想象力，推演该地点的：\n1. 【微气候与地质奇观】\n2. 【稀有特产与变异生物】\n3. 【潜伏势力与远古遗迹】\n排版要求精美。\n完成后，查阅世界快照，判定目标地点的最直接上级是否存在？\n缺失输出 <ROUTE>NO_PARENT</ROUTE>，存在输出 <ROUTE>READY</ROUTE>",
+                "id": "node_check", "x": 0, "y": 0,
+                "premise": "分析用户建图指令，判断上级是否存在。",
+                "prompt": "【现状判定】分析用户的建图指令。\n查阅世界快照中的{locations_list}。\n判断：是否存在可以直接作为目标地点上级的地图区域？\n- 如果存在合适的上级（或目标就是最高级），输出 <ROUTE>TRUE</ROUTE>\n- 如果完全没有合适的上级（需要从零搭建世界/大陆），输出 <ROUTE>FALSE</ROUTE>\n严禁调用工具，只做布尔判断。",
                 "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
                 "branches": [
-                    {"condition": "NO_PARENT", "next_node_id": "eco_parent"},
-                    {"condition": "READY", "next_node_id": "eco_build"}
+                    {"condition": "TRUE", "next_node_id": "node_true_build"},
+                    {"condition": "FALSE", "next_node_id": "node_false_plan"}
                 ],
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "eco_parent", "x": -100, "y": 250,
-                "premise": "目标地点的上级区域缺失！",
-                "prompt": "【前置补齐】目标地点的上级区域缺失！请阅读前文的生态报告，调用 manage_world_element，建立一个符合该生态基调的宏大上级区域（大洲/大荒/海域等）。严禁建立底层建筑，仅建框架！",
+                "id": "node_true_build", "x": 250, "y": -100,
+                "premise": "存在合适的上级地图，直接顺势落子。",
+                "prompt": "【顺势落子】(流转原因: 存在上级地图)。\n请分析目标地点的层级（如国家、城池、建筑），找出准确的 parent_name。\n直接调用 manage_world_element 工具，生成丰富的 description 和坐标，完成嵌套创建。",
                 "target": [], "branches": [],
-                "next_node_id": "eco_build", "output": ""
+                "next_node_id": "", "output": ""
             },
             {
-                "id": "eco_build", "x": 300, "y": 250,
-                "premise": "上级地点已就绪，生态推演已完成。",
-                "prompt": "【综合落子】上级地点已就绪。请仔细阅读第一步的生态推演报告，调用 manage_world_element 建立最终目标地点。要求：\n1. 将推演的特产、势力精简浓缩写入 description。\n2. parent_name 必须指向真实的、刚才建好或已有的上级。\n3. 生成合理的 map_x 和 map_y 坐标。",
+                "id": "node_false_plan", "x": 150, "y": 150,
+                "premise": "缺失上级地图，需要从零规划地图树。",
+                "prompt": "【拓扑规划】(流转原因: 缺失上级地图)。\n为了容纳目标地点，我们需要从零搭建一棵地图树！\n请规划一条自顶向下的嵌套链（例如：九洲界[世界] -> 苍玄大陆[大陆] -> 青云国[国家] -> 目标地点）。\n输出这个目录层级，明确每个节点的隶属关系。",
+                "target": [], "branches": [],
+                "next_node_id": "node_false_desc", "output": ""
+            },
+            {
+                "id": "node_false_desc", "x": 150, "y": 350,
+                "premise": "为地图嵌套链的各层级填充史诗描述。",
+                "prompt": "【血肉填充】基于上一步生成的地图嵌套链，为这几个即将创建的层级区域，分别生成一段极具史诗感、包含生态与势力的描述 (description) 文本。",
+                "target": [], "branches": [],
+                "next_node_id": "node_false_build", "output": ""
+            },
+            {
+                "id": "node_false_build", "x": 150, "y": 550,
+                "premise": "万事俱备，自上而下批量创世。",
+                "prompt": "【批处理创世】万事俱备！请仔细阅读积累的上下文。\n现在，请自顶向下，连续多次调用 manage_world_element 工具！\n先建最顶层世界，再建大陆，直到最底层的目标地点。\n注意：每个节点的 parent_name 必须与其上级节点完全一致！",
                 "target": [], "branches": [],
                 "next_node_id": "", "output": ""
             },
@@ -238,6 +249,9 @@ async def lifespan(app: FastAPI):
             context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
             nodes=nodes_map,
         ))
+
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与关系推演流").delete(synchronize_session=False)
+        db3.commit()
 
         nodes_char = [
             {
