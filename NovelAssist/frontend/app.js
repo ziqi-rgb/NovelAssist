@@ -2156,11 +2156,11 @@ async function runNode(card, node) {
             if (msg.type === "chunk") { rawResult += msg.content; outDiv.textContent = "AI 思考中...\n" + rawResult; outDiv.scrollTop = outDiv.scrollHeight; }
             else if (msg.type === "error") { rawResult += "\n[错误: " + msg.message + "]"; }
             else if (msg.type === "tool_proposal") {
-                var argsStr = JSON.stringify(msg.arguments);
+                var safeArgs = encodeURIComponent(JSON.stringify(msg.arguments));
                 outDiv.innerHTML += '<div class="tool-proposal-card" style="margin-top:10px;padding:10px;border:1px solid #c084fc;border-radius:8px;background:#faf5ff;">'
                     + '<p style="margin:0 0 5px 0;color:#9333ea;"><strong>🛠 提议执行: ' + e(msg.tool_name) + '</strong></p>'
                     + '<pre style="font-size:0.75rem;background:#fff;padding:5px;border-radius:4px;max-height:100px;overflow-y:auto;">' + e(JSON.stringify(msg.arguments, null, 2)) + '</pre>'
-                    + '<button class="sys-btn sys-btn-primary" style="margin-top:5px;width:100%;" onclick="executeTool(\'' + e(msg.tool_name) + '\', ' + e(argsStr.replace(/'/g,"\\'")) + ', this)">批准执行</button>'
+                    + '<button class="sys-btn sys-btn-primary" style="margin-top:5px;width:100%;" onclick="var a=JSON.parse(decodeURIComponent(\'' + safeArgs + '\'));executeTool(\'' + e(msg.tool_name) + '\',a,this)">批准执行</button>'
                     + '</div>';
             }
             else if (msg.type === "done") {
