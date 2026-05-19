@@ -1403,12 +1403,15 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
 
         nodes.forEach(function(n) { n.output = ""; });
         var currentNodeId = nodes[0].id;
-        var executedNodeIds = new Set();
+        var loopCount = 0;
         var fullChainContext = "【初始指令】: " + userInput + "\n";
 
         while (currentNodeId) {
-            if (executedNodeIds.has(currentNodeId)) break;
-            executedNodeIds.add(currentNodeId);
+            loopCount++;
+            if (loopCount > 20) {
+                bubbleEl.appendChild(document.createTextNode("\n[⚠️ 达到最大循环层数 20，强制熔断]"));
+                break;
+            }
             var node = nodes.find(function(n) { return n.id === currentNodeId; });
             if (!node) break;
 
@@ -1603,12 +1606,12 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
     nodes.forEach(function(n) { n.output = ""; });
     // State machine: start from first node
     var currentNodeId = nodes[0].id;
-    var executedNodeIds = new Set();
+    var loopCount = 0;
     var chapterContent = contentInput.value || "";
     var sel = contentInput.value.substring(contentInput.selectionStart, contentInput.selectionEnd);
     while (currentNodeId) {
-        if (executedNodeIds.has(currentNodeId)) { break; }
-        executedNodeIds.add(currentNodeId);
+        loopCount++;
+        if (loopCount > 20) { console.warn("推理链循环熔断"); break; }
         var node = nodes.find(function(n) { return n.id === currentNodeId; });
         if (!node) break;
         // Collect upstream output
