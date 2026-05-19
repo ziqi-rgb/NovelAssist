@@ -87,7 +87,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
+                        "description": "新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。",
                         "additionalProperties": True,
                     },
                 },
@@ -198,99 +198,58 @@ async def lifespan(app: FastAPI):
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
-    # Seed official reasoning chains — clean legacy, keep only 2 official SOPs
+    # Seed official reasoning chains — clean legacy, keep map SOP + 2 new SOPs
     with SessionLocal() as db3:
-        # 1. Purge all legacy/historical chains
         legacy = [
             "🤖 智能建图 SOP",
             "🗺️ 智能建图判定流",
             "🗺️ 深度生态与地图建构流",
             "🗺️ 严谨建图层级推演流",
+            "👤 深度人设与关系推演流",
         ]
         db3.query(ReasoningChain).filter(ReasoningChain.title.in_(legacy)).delete(synchronize_session=False)
         db3.commit()
 
-        # 2. 👤 深度人设与关系推演流
-        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与关系推演流").first():
+        # 1. 🗺️ 蓝图规划与逐层搭建流 (6-node DAG — keep existing)
+        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 蓝图规划与逐层搭建流").first():
             db3.add(ReasoningChain(
-                title="👤 深度人设与关系推演流",
-                context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
+                title="🗺️ 蓝图规划与逐层搭建流",
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
                 nodes=[
-                    {
-                        "id": "char_flesh", "x": 100, "y": 50,
-                        "premise": "极致深化角色血肉，构建人际关系网。",
-                        "prompt": "你是一位金牌小说人设师。分析用户指令。请极度深化该角色：\n1. 【核心矛盾与致命性格缺陷】\n2. 【独特的战斗流派或怪癖】\n3. 【宿命与隐秘动机】\n【强制羁绊】：查阅已有人物名录快照，你必须强行设定他与名录中至少 1-2 个已有角色存在极深的恩怨、血缘或利益纠葛！输出推演报告。",
-                        "target": [{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],
-                        "branches": [],
-                        "next_node_id": "char_build", "output": ""
-                    },
-                    {
-                        "id": "char_build", "x": 300, "y": 250,
-                        "premise": "基于推演报告，规范化落子创建角色。",
-                        "prompt": "【规范化落子】请严格基于上一步的推演报告，调用 manage_world_element 建立角色。\n要求：\n1. 必须用嵌套字典格式填入 attributes。\n2. 遇到人物模板中没有的属性，必须自创【羁绊网络】、【战斗流派】等新分组！\n3. description 中写一段极具戏剧张力的人物小传。",
-                        "target": [{"id":"blk_1","type":"placeholder","value":"{character_template}"}],
-                        "branches": [],
-                        "next_node_id": "", "output": ""
-                    },
+                    {"id":"node_eval","x":100,"y":50,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_build"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
+                    {"id":"node_true_build","x":400,"y":0,"premise":"上级已存在，直接顺势落子。","prompt":"【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系（规模 scale），直接调用 manage_world_element 工具生成目标地点。\n要求：\n1. 准确嵌套上级地图（parent_name）。\n2. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表在上一级25x25网格中的具体方位）。\n3. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"","output":""},
+                    {"id":"node_plan","x":0,"y":200,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【绝对空间标尺】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n（注：特殊地形如沙漠、海洋请标为[国家]；绿洲、小镇标为[城池]；神殿、具体建筑标为[街区]）\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
+                    {"id":"node_desc","x":0,"y":400,"premise":"填充各层级的详细设定描述。","prompt":"【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
+                    {"id":"node_build_top","x":200,"y":400,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表它在上一级25x25网格中的具体方位）。\n4. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
+                    {"id":"node_check_bottom","x":200,"y":600,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n请对比一下：刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 如果已经是目标地点了，说明完工，输出 <ROUTE>DONE</ROUTE>\n- 如果还不是目标地点（清单里还有下一级没建），输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
                 ],
             ))
 
-        # 3. 🗺️ 蓝图规划与逐层搭建流 (6-node DAG)
-        db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 蓝图规划与逐层搭建流").delete(synchronize_session=False)
+        # 2. 👤 深度人设与势力羁绊流 (5-node DAG)
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与势力羁绊流").delete(synchronize_session=False)
         db3.commit()
         db3.add(ReasoningChain(
-            title="🗺️ 蓝图规划与逐层搭建流",
-            context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
+            title="👤 深度人设与势力羁绊流",
+            context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
             nodes=[
-                {
-                    "id": "node_eval", "x": 100, "y": 50,
-                    "premise": "探明当前世界快照，判断上级是否存在。",
-                    "prompt": "【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！",
-                    "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
-                    "branches": [
-                        {"condition": "TRUE", "next_node_id": "node_true_build"},
-                        {"condition": "FALSE", "next_node_id": "node_plan"}
-                    ],
-                    "next_node_id": "", "output": ""
-                },
-                {
-                    "id": "node_true_build", "x": 400, "y": 0,
-                    "premise": "上级已存在，直接顺势落子。",
-                    "prompt": "【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系（规模 scale），直接调用 manage_world_element 工具生成目标地点。\n要求：\n1. 准确嵌套上级地图（parent_name）。\n2. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表在上一级25x25网格中的具体方位）。\n3. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！",
-                    "target": [], "branches": [],
-                    "next_node_id": "", "output": ""
-                },
-                {
-                    "id": "node_plan", "x": 0, "y": 200,
-                    "premise": "上级缺失，从零规划完整嵌套链。",
-                    "prompt": "【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【绝对空间标尺】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n（注：特殊地形如沙漠、海洋请标为[国家]；绿洲、小镇标为[城池]；神殿、具体建筑标为[街区]）\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！",
-                    "target": [], "branches": [],
-                    "next_node_id": "node_desc", "output": ""
-                },
-                {
-                    "id": "node_desc", "x": 0, "y": 400,
-                    "premise": "填充各层级的详细设定描述。",
-                    "prompt": "【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！",
-                    "target": [], "branches": [],
-                    "next_node_id": "node_build_top", "output": ""
-                },
-                {
-                    "id": "node_build_top", "x": 200, "y": 400,
-                    "premise": "进入循环创建，每次只建最高层未建节点。",
-                    "prompt": "【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表它在上一级25x25网格中的具体方位）。\n4. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！",
-                    "target": [], "branches": [],
-                    "next_node_id": "node_check_bottom", "output": ""
-                },
-                {
-                    "id": "node_check_bottom", "x": 200, "y": 600,
-                    "premise": "判断是否已到达嵌套链的最底层。",
-                    "prompt": "【进度判定】（⚠️绝对禁止调用工具！）\n请对比一下：刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 如果已经是目标地点了，说明完工，输出 <ROUTE>DONE</ROUTE>\n- 如果还不是目标地点（清单里还有下一级没建），输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！",
-                    "target": [], "branches": [
-                        {"condition": "DONE", "next_node_id": ""},
-                        {"condition": "CONTINUE", "next_node_id": "node_build_top"}
-                    ],
-                    "next_node_id": "", "output": ""
-                },
+                {"id":"chk_eval","x":100,"y":50,"premise":"判断目标角色的核心势力是否已建立。","prompt":"【势力判定】（⚠️绝对禁止调用工具！）\n查阅已有人物名录：{characters_list}。\n判断：目标角色背后的核心势力是否已在数据库中存在？\n- 势力已存在，输出 <ROUTE>READY</ROUTE>\n- 势力缺失，输出 <ROUTE>BUILD_FACTION</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],"branches":[{"condition":"READY","next_node_id":"chk_build_char"},{"condition":"BUILD_FACTION","next_node_id":"chk_build_faction"}],"next_node_id":"","output":""},
+                {"id":"chk_build_faction","x":350,"y":50,"premise":"建立缺失的势力。","prompt":"【建立势力】（✅允许调用工具）\n核心势力缺失！调用 manage_world_element (etype: faction) 建立该势力。提供 base_location_name 关联其驻地。建完即止！","target":[],"branches":[],"next_node_id":"chk_eval","output":""},
+                {"id":"chk_build_char","x":250,"y":200,"premise":"势力已就绪，正式建立角色。","prompt":"【建立角色】（✅允许调用工具）\n核心势力已就绪。调用 manage_world_element (etype: character) 建立角色。\n要求：\n1. 生成极其丰富的嵌套 attributes 字典（自创新分组如【战斗流派】【羁绊网络】）。\n2. 准确填写 faction_name 和 faction_role。\n3. description 写一段史诗级人物小传。","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[],"next_node_id":"chk_plan_rel","output":""},
+                {"id":"chk_plan_rel","x":250,"y":400,"premise":"规划人物关系羁绊清单。","prompt":"【关系规划】（⚠️绝对禁止调用工具！）\n查阅人物名录：{characters_list}。\n请以纯文本列出：该新角色应与名录中哪 1-2 名已有角色存在极深的恩怨羁绊？\n每一条写明关系类型(如死敌/挚友/师徒)和关系由来。","target":[{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],"branches":[],"next_node_id":"chk_build_rel","output":""},
+                {"id":"chk_build_rel","x":250,"y":580,"premise":"建立关系连线。","prompt":"【建立关系】（✅允许调用工具）\n查阅上文关系清单。调用 manage_world_element (etype: relation) 逐条建立关系。\n使用 source_name/target_name 指定人物，填写 label(关系类型) 和 weight(-100死敌 ~ +100挚爱)。","target":[],"branches":[],"next_node_id":"","output":""},
+            ],
+        ))
+
+        # 3. 📖 剧情大纲多幕结构流 (3-node cyclic DAG)
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "📖 剧情大纲多幕结构流").delete(synchronize_session=False)
+        db3.commit()
+        db3.add(ReasoningChain(
+            title="📖 剧情大纲多幕结构流",
+            context_settings={"use_outlines": True, "use_characters": False, "use_timeline": False},
+            nodes=[
+                {"id":"out_plan","x":100,"y":50,"premise":"根据指令从零规划大纲树。","prompt":"【大纲规划】（⚠️绝对禁止调用工具！）\n请根据用户指令从零规划大纲树。\n【大纲标尺法则】：必须遵循 [卷/季] -> [章/集] -> [幕/节] 的嵌套层级。\n请仅用纯文本罗列清单，明确标出每层的 title、category(世界观/剧情大纲等) 和 parent_name。","target":[],"branches":[],"next_node_id":"out_build_top","output":""},
+                {"id":"out_build_top","x":100,"y":250,"premise":"挑出最高级未建节点，每次只建一层。","prompt":"【执行创建】（✅允许调用工具）\n查阅大纲清单与已建好的记录。\n挑出目前最高级且尚未被建立的唯一一个节点，调用 manage_world_element (etype: outline) 建立它！\n确保 parent_name 与目录一致。每次只建一个！","target":[],"branches":[],"next_node_id":"out_check","output":""},
+                {"id":"out_check","x":100,"y":450,"premise":"判断是否已到达大纲树最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n刚建立的大纲节点是大纲树最底层的目标节点吗？\n- 到底了，输出 <ROUTE>DONE</ROUTE>\n- 还没到底，输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"out_build_top"}],"next_node_id":"","output":""},
             ],
         ))
 
@@ -2125,12 +2084,23 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         data = req.arguments.get("data", {})
 
         if etype == "outline":
+            # parent_name → parent_id lookup
+            parent_id = data.get("parent_id")
+            if not parent_id and data.get("parent_name"):
+                parent_obj = db.query(Outline).filter(
+                    Outline.novel_id == novel_id, Outline.title == data["parent_name"]
+                ).first()
+                if parent_obj:
+                    parent_id = parent_obj.id
+
             if action == "add":
                 db.add(Outline(
                     novel_id=novel_id,
                     title=data.get("title", ""),
                     description=data.get("description", ""),
                     category=data.get("category", "剧情"),
+                    parent_id=parent_id,
+                    order_index=data.get("order_index", 0),
                 ))
             elif action == "update" and eid:
                 item = db.get(Outline, eid)
@@ -2141,6 +2111,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.description = data["description"]
                     if "category" in data:
                         item.category = data["category"]
+                    if parent_id is not None:
+                        item.parent_id = parent_id
+                    if "order_index" in data:
+                        item.order_index = int(data["order_index"])
             elif action == "delete" and eid:
                 db.query(Outline).filter(Outline.id == eid).delete()
 
@@ -2252,12 +2226,21 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(TimelineEvent).filter(TimelineEvent.id == eid).delete()
 
         elif etype == "faction":
+            # base_location_name → base_location_id lookup
+            base_location_id = data.get("base_location_id")
+            if not base_location_id and data.get("base_location_name"):
+                loc_obj = db.query(Location).filter(
+                    Location.novel_id == novel_id, Location.name == data["base_location_name"]
+                ).first()
+                if loc_obj:
+                    base_location_id = loc_obj.id
+
             if action == "add":
                 db.add(Faction(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
-                    base_location_id=data.get("base_location_id"),
+                    base_location_id=base_location_id,
                 ))
             elif action == "update" and eid:
                 item = db.get(Faction, eid)
@@ -2266,17 +2249,35 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.name = data["name"]
                     if "description" in data:
                         item.description = data["description"]
-                    if "base_location_id" in data:
-                        item.base_location_id = data["base_location_id"]
+                    if "base_location_id" in data or "base_location_name" in data:
+                        item.base_location_id = base_location_id
             elif action == "delete" and eid:
                 db.query(Faction).filter(Faction.id == eid).delete()
 
         elif etype == "relation":
+            # source_name/target_name → ID lookup
+            source_id = data.get("source_id")
+            target_id = data.get("target_id")
+            if not source_id and data.get("source_name"):
+                src = db.query(Character).filter(
+                    Character.novel_id == novel_id, Character.name == data["source_name"]
+                ).first()
+                if src:
+                    source_id = src.id
+            if not target_id and data.get("target_name"):
+                tgt = db.query(Character).filter(
+                    Character.novel_id == novel_id, Character.name == data["target_name"]
+                ).first()
+                if tgt:
+                    target_id = tgt.id
+
             if action == "add":
+                if not source_id or not target_id:
+                    return {"status": "error", "msg": "必须提供有效的 source_id/target_id 或 source_name/target_name"}
                 db.add(CharacterRelation(
                     novel_id=novel_id,
-                    source_id=data.get("source_id"),
-                    target_id=data.get("target_id"),
+                    source_id=source_id,
+                    target_id=target_id,
                     label=data.get("label", ""),
                     weight=data.get("weight", 0),
                     description=data.get("description", ""),
@@ -2361,6 +2362,15 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     action = "update"
                     eid = existing.id
 
+            # faction_name → faction_id lookup
+            faction_id = data.get("faction_id")
+            if not faction_id and data.get("faction_name"):
+                fac = db.query(Faction).filter(
+                    Faction.novel_id == novel_id, Faction.name == data["faction_name"]
+                ).first()
+                if fac:
+                    faction_id = fac.id
+
             if action == "add":
                 db.add(Character(
                     novel_id=novel_id,
@@ -2368,7 +2378,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     description=data.get("description", ""),
                     status=data.get("status", "正常"),
                     is_active=data.get("is_active", True),
-                    faction_id=data.get("faction_id"),
+                    faction_id=faction_id,
                     faction_role=data.get("faction_role", ""),
                     attributes=normalized_attrs,
                 ))
@@ -2390,8 +2400,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         char.status = data["status"]
                     if "is_active" in data:
                         char.is_active = data["is_active"]
-                    if "faction_id" in data:
-                        char.faction_id = data["faction_id"]
+                    if "faction_id" in data or "faction_name" in data:
+                        char.faction_id = faction_id
                     if "faction_role" in data:
                         char.faction_role = data["faction_role"]
                     if raw_attrs:
