@@ -1181,7 +1181,7 @@ async function copilotChat(instruction, forceScene) {
 
     try {
         var currentAiResponse = "";
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || getCopilotScene(instruction), history: window.copilotChatHistory }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", history: window.copilotChatHistory }) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
@@ -1381,7 +1381,7 @@ async function executeTool(toolName, args, card) {
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
+const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
 
 function getCopilotScene() {
     return "auto";
@@ -1507,6 +1507,13 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
                 if (chunkResult.done) break;
                 var msg = chunkResult.value;
                 if (msg.type === "chunk") txt += msg.content;
+                else if (msg.type === "tool_proposal") {
+                    await fetch("/api/agent/execute/" + currentNovelId, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
+                    });
+                    txt += "\n[🛠 工具已自动执行: " + msg.tool_name + "]";
+                }
             }
             // Extract ROUTE key and strip tags
             var routeKey = null;
@@ -2019,6 +2026,14 @@ async function runNode(card, node) {
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { rawResult += msg.content; outDiv.textContent = "AI 思考中...\n" + rawResult; outDiv.scrollTop = outDiv.scrollHeight; }
             else if (msg.type === "error") { rawResult += "\n[错误: " + msg.message + "]"; }
+            else if (msg.type === "tool_proposal") {
+                var argsStr = JSON.stringify(msg.arguments);
+                outDiv.innerHTML += '<div class="tool-proposal-card" style="margin-top:10px;padding:10px;border:1px solid #c084fc;border-radius:8px;background:#faf5ff;">'
+                    + '<p style="margin:0 0 5px 0;color:#9333ea;"><strong>🛠 提议执行: ' + e(msg.tool_name) + '</strong></p>'
+                    + '<pre style="font-size:0.75rem;background:#fff;padding:5px;border-radius:4px;max-height:100px;overflow-y:auto;">' + e(JSON.stringify(msg.arguments, null, 2)) + '</pre>'
+                    + '<button class="sys-btn sys-btn-primary" style="margin-top:5px;width:100%;" onclick="executeTool(\'' + e(msg.tool_name) + '\', ' + e(argsStr.replace(/'/g,"\\'")) + ', this)">批准执行</button>'
+                    + '</div>';
+            }
             else if (msg.type === "done") {
                 // Extract ROUTE key and strip tags
                 let routeKey = null;

@@ -198,6 +198,44 @@ async def lifespan(app: FastAPI):
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
+    # Seed smart map reasoning chain
+    with SessionLocal() as db3:
+        existing = db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 智能建图判定流").first()
+        if not existing:
+            nodes = [
+                {
+                    "id": "node_check", "x": 100, "y": 50,
+                    "premise": "目标: 在此处输入你想建立的地点。例如【在江南旁边建一个桃花岛】",
+                    "prompt": "【现状判定】\n分析世界快照中的已有地点。\n判断目标地点的上级地点是否已存在？\n如果已存在，输出 <ROUTE>YES</ROUTE>\n如果不存在，输出 <ROUTE>NO</ROUTE>\n不要有多余废话。",
+                    "target": [{"id":"blk_1", "type":"placeholder", "value":"{locations_list}"}],
+                    "branches": [
+                        {"condition": "NO", "next_node_id": "node_build_parent"},
+                        {"condition": "YES", "next_node_id": "node_build_target"}
+                    ],
+                    "next_node_id": "", "output": ""
+                },
+                {
+                    "id": "node_build_parent", "x": -100, "y": 250,
+                    "premise": "前置: 上级地点缺失，需补齐。",
+                    "prompt": "【前置建设】\n请调用 manage_world_element 工具，建设必须的上级地点（严禁建底层建筑）。建完即停。",
+                    "target": [], "branches": [],
+                    "next_node_id": "node_build_target", "output": ""
+                },
+                {
+                    "id": "node_build_target", "x": 300, "y": 250,
+                    "premise": "前置: 上级地点已就绪。",
+                    "prompt": "【精准落子】\n请调用 manage_world_element 工具，正式建立目标地点。务必正确挂载 parent_name 到上级，并生成坐标。",
+                    "target": [], "branches": [],
+                    "next_node_id": "", "output": ""
+                },
+            ]
+            chain = ReasoningChain(
+                title="🗺️ 智能建图判定流",
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
+                nodes=nodes,
+            )
+            db3.add(chain)
+            db3.commit()
     yield
 
 
@@ -1580,7 +1618,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         {"role": "system", "content": system_msg},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
@@ -1968,11 +2006,6 @@ class CopilotRequest(BaseModel):
 async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     gs = db.get(GlobalSettings, 1)
     templates = gs.prompt_templates if gs else DEFAULT_PROMPT_TEMPLATES
-
-    if req.scene == "auto":
-        intent_tmpl = templates.get("intent_classifier", DEFAULT_PROMPT_TEMPLATES["intent_classifier"])
-        req.scene = await get_llm_intent(req.instruction, req.api_key or LLM_API_KEY,
-                                         req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, intent_tmpl)
 
     tmpl = templates.get(req.scene, templates.get("chat", "{instruction}"))
 

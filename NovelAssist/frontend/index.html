@@ -274,6 +274,14 @@
                     </div>
                     <div id="copilot-history"></div>
                     <div class="copilot-quick" id="copilot-quick-btns"><button data-cmd="续写下文" class="cp-quick-btn">&#129668; 续写下文</button><button data-cmd="润色选中内容" class="cp-quick-btn">&#10024; 润色选中</button><button data-cmd="评价当前情节并提出修改建议" class="cp-quick-btn">&#128064; 评价情节</button></div>
+                    <div style="margin-bottom:6px;">
+                        <select id="chat-scene-select" style="width:100%;max-width:200px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.78rem;background:var(--bg);color:var(--text);">
+                            <option value="chat">💬 日常聊天与精准编辑</option>
+                            <option value="map_gen">🗺️ 自动化生成 - 地图层级</option>
+                            <option value="char_gen">👤 自动化生成 - 角色设定</option>
+                            <option value="outline_gen">📖 自动化生成 - 剧情大纲</option>
+                        </select>
+                    </div>
                     <div class="copilot-input-row"><input type="text" id="copilot-input" placeholder="向 AI 输入指令..."><button id="copilot-send" class="sys-btn sys-btn-primary" onclick="handleCopilotSend()">发送</button></div>
                 </div>
                 <div id="tab-chain" class="tab-content hidden">
