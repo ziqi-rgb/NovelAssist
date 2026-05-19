@@ -220,7 +220,7 @@ async def lifespan(app: FastAPI):
                 nodes=[
                     {"id":"node_eval","x":100,"y":50,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_build"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
                     {"id":"node_true_build","x":400,"y":0,"premise":"上级已存在，直接顺势落子。","prompt":"【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系（规模 scale），直接调用 manage_world_element 工具生成目标地点。\n要求：\n1. 准确嵌套上级地图（parent_name）。\n2. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表在上一级25x25网格中的具体方位）。\n3. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"","output":""},
-                    {"id":"node_plan","x":0,"y":200,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【绝对空间标尺】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n（注：特殊地形如沙漠、海洋请标为[国家]；绿洲、小镇标为[城池]；神殿、具体建筑标为[街区]）\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
+                    {"id":"node_plan","x":0,"y":200,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n当前系统已建立的世界背景大纲如下：{outlines_list}。\n\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】世界观、世界势力、地理、能力体系设定、剧情大纲中提到的一切地理细节！\n- 例如：大纲中若写了势力'暗影回廊'总部在天启城下城，你就必须规划天启城，并在其下层规划街区'暗影回廊'。\n- 继承大纲对这些地点的文字描述，合理分配 25x25 网格的 grid_x 和 grid_y，保证地图与大纲的内容互为表里，完全一致！\n\n【空间标尺法则】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[{"id":"blk_1","type":"placeholder","value":"{outlines_list}"}],"branches":[],"next_node_id":"node_desc","output":""},
                     {"id":"node_desc","x":0,"y":400,"premise":"填充各层级的详细设定描述。","prompt":"【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
                     {"id":"node_build_top","x":200,"y":400,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表它在上一级25x25网格中的具体方位）。\n4. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
                     {"id":"node_check_bottom","x":200,"y":600,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n请对比一下：刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 如果已经是目标地点了，说明完工，输出 <ROUTE>DONE</ROUTE>\n- 如果还不是目标地点（清单里还有下一级没建），输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
@@ -235,11 +235,11 @@ async def lifespan(app: FastAPI):
             context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
             nodes=[
                 {"id":"c_n1_prepare","x":0,"y":0,"premise":"整理用户要求，建立初步人设文本。","prompt":"【初步整理】（⚠️绝对禁止调用工具！）\n整理用户要求，推导出需要创建的人物名称、势力、性格特征。建立初步人设文本。纯文本输出！","target":[],"branches":[],"next_node_id":"c_n2_check_faction","output":""},
-                {"id":"c_n2_check_faction","x":200,"y":0,"premise":"判定是否需要建立新势力。","prompt":"【势力判定】（⚠️绝对禁止调用工具！）\n查阅：{locations_list}。\n判断当前人设是否需要建立新势力？\n- 需要新势力，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>\n严禁工具调用！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"YES","next_node_id":"c_n3_build_faction"},{"condition":"NO","next_node_id":"c_n4_number"}],"next_node_id":"","output":""},
+                {"id":"c_n2_check_faction","x":200,"y":0,"premise":"判定是否需要建立新势力。","prompt":"【势力存在判定】（⚠️绝对禁止调用工具！）\n对比当前初步人设中的所属势力，并仔细核对已有的势力名录：{locations_list}（地理大纲中已有的势力也视同存在）。\n- 如果该势力在名录中已存在，【绝对禁止重复创建】，直接输出 <ROUTE>NO</ROUTE> 路由至编号节点；\n- 只有在确属全新的空白势力时，才输出 <ROUTE>YES</ROUTE> 前往建立节点。","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"YES","next_node_id":"c_n3_build_faction"},{"condition":"NO","next_node_id":"c_n4_number"}],"next_node_id":"","output":""},
                 {"id":"c_n3_build_faction","x":400,"y":0,"premise":"建立新势力。","prompt":"【建立势力】（✅允许调用工具）\n调用 manage_world_element (etype: faction) 建立势力。提供 base_location_name 关联驻地。建完即止！","target":[],"branches":[],"next_node_id":"c_n2_check_faction","output":""},
                 {"id":"c_n4_number","x":200,"y":150,"premise":"判定人设数量并编号。","prompt":"【数量判定】（⚠️绝对禁止调用工具！）\n判断需要创建的人物数量（1-N个），为他们编号。纯文本输出清单。","target":[],"branches":[],"next_node_id":"c_n5_build_char","output":""},
-                {"id":"c_n5_build_char","x":200,"y":300,"premise":"调用工具创建人设。","prompt":"【执行创建】（✅允许调用工具）\n查阅人物模板：{character_template}。\n调用 manage_world_element (etype: character) 细化并创建人设。\n必须将属性严格按模板分组填入嵌套字典 attributes！","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[],"next_node_id":"c_n6_verify","output":""},
-                {"id":"c_n6_verify","x":200,"y":480,"premise":"核心质检：数量与模板符合度。","prompt":"【核心质检】（⚠️绝对禁止调用工具！）\n1. 数量达标了吗？\n2. 刚建的人设符合 {character_template} 吗，有无不合理的空缺？\n- 全达标且符合模板，输出 <ROUTE>PERFECT</ROUTE>\n- 不符合模板，输出 <ROUTE>NEEDS_FIX</ROUTE>\n- 数量不达标，输出 <ROUTE>NEEDS_MORE</ROUTE>\n严禁工具调用！仅输出标签！","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[{"condition":"PERFECT","next_node_id":""},{"condition":"NEEDS_FIX","next_node_id":"c_n7_fix"},{"condition":"NEEDS_MORE","next_node_id":"c_n5_build_char"}],"next_node_id":"","output":""},
+                {"id":"c_n5_build_char","x":200,"y":300,"premise":"调用工具创建人设。","prompt":"【人物落子】（✅允许调用工具）\n请调取系统人物属性模板：{character_template}。\n调用 manage_world_element 建立角色。必须生成极其丰富的嵌套 attributes 字典。所有的键值必须严格对齐模板分组，禁止自造残缺属性。","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[],"next_node_id":"c_n6_verify","output":""},
+                {"id":"c_n6_verify","x":200,"y":480,"premise":"核心质检：数量与模板符合度。","prompt":"【模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n请对比刚刚创建的人设属性与系统人物属性模板：{character_template}。\n1. 数量是否达到用户最初要求的数量？\n2. attributes 字典中是否包含模板要求的所有必填分组（如性格特征、能力数据）？有无不合理的空空缺？\n- 若完美合格，输出 <ROUTE>PERFECT</ROUTE> 结束流程。\n- 若数量不足，输出 <ROUTE>NEEDS_MORE</ROUTE> 跳回创建节点。\n- 若存在残缺属性，输出 <ROUTE>NEEDS_FIX</ROUTE> 转向修复节点。","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[{"condition":"PERFECT","next_node_id":""},{"condition":"NEEDS_FIX","next_node_id":"c_n7_fix"},{"condition":"NEEDS_MORE","next_node_id":"c_n5_build_char"}],"next_node_id":"","output":""},
                 {"id":"c_n7_fix","x":400,"y":480,"premise":"补齐残缺属性。","prompt":"【补齐修复】（✅允许调用工具）\n调用 manage_world_element (etype: character, action: update) 为残缺的角色补齐缺失的属性字段。填完返回质检。","target":[],"branches":[],"next_node_id":"c_n6_verify","output":""},
             ],
         ))
@@ -252,7 +252,7 @@ async def lifespan(app: FastAPI):
             ("faction", "世界势力设定", "世界势力"),
             ("geo", "地理知识设定", "地理"),
             ("char", "人物粗略设定", "人物设定"),
-            ("power", "能力体系设定", "能力体系"),
+            ("power", "能力体系设定", "能力体系设定"),
             ("story", "剧情大纲推演", "剧情大纲"),
         ]
         outline_nodes: list[dict] = []
@@ -260,8 +260,14 @@ async def lifespan(app: FastAPI):
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
             next_check = f"o_{next_m_id}_check" if next_m_id != "end" else ""
             outline_nodes.append({"id": f"o_{m_id}_check","x":0,"y":i*400,"premise":f"进入 {m_name} 模块评估。","prompt":f"【模块判定】（⚠️绝对禁止调用工具！）\n分析用户输入与前文积累。\n判断：是否需要创建或扩充【{m_name}】？\n- 需要，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
-            outline_nodes.append({"id": f"o_{m_id}_plan","x":200,"y":i*400,"premise":f"开始规划 {m_name}。","prompt":f"【分条规划】（⚠️绝对禁止调用工具！）\n请对【{m_name}】进行详细规划，将其拆分为多个条目。\n如果是剧情大纲，必须明确遵循【卷->章->幕】三级嵌套，指明 parent_name。\n纯文本输出清单！","target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
-            outline_nodes.append({"id": f"o_{m_id}_build","x":400,"y":i*400,"premise":f"执行 {m_name} 创建。","prompt":f"【执行创建】（✅允许调用工具）\n查阅规划清单与已建进度。挑出当前最高级且未被创建的 1 个节点，调用 manage_world_element (etype: outline) 建立它。\ncategory 必须填入 '{cat}'。parent_name 必须对齐规划！","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
+            plan_prompt = f"【分条规划】（⚠️绝对禁止调用工具！）\n请对【{m_name}】进行详细规划，将其拆分为多个条目。\n如果是剧情大纲，必须明确遵循【卷->章->幕】三级嵌套，指明 parent_name。\n"
+            build_prompt = f"【执行创建】（✅允许调用工具）\n查阅规划清单与已建进度。挑出当前最高级且未被创建的 1 个节点，调用 manage_world_element (etype: outline) 建立它。\ncategory 必须填入 '{cat}'。parent_name 必须对齐规划！\n"
+            if m_id != "char":
+                plan_prompt += "【大纲-地图全景互借天条】：\n当前分类属于世界大纲的核心设定，你规划的设定必须【100% 参照并继承】已有物理地图：{locations_list}。严禁生造与已有地点名、坐标或背景描述冲突的内容！\n"
+                build_prompt += "【强制格式规范】：写入的 description 字段文本，必须且只能使用精美、严谨的 Markdown 语法进行排版（支持二级标题、加粗、无序列表和引用块），前端预览界面将以此格式直接渲染！\n"
+            plan_prompt += "纯文本输出清单！"
+            outline_nodes.append({"id": f"o_{m_id}_plan","x":200,"y":i*400,"premise":f"开始规划 {m_name}。","prompt":plan_prompt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
+            outline_nodes.append({"id": f"o_{m_id}_build","x":400,"y":i*400,"premise":f"执行 {m_name} 创建。","prompt":build_prompt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
             outline_nodes.append({"id": f"o_{m_id}_verify","x":600,"y":i*400,"premise":f"校验 {m_name} 进度。","prompt":f"【进度判定】（⚠️绝对禁止调用工具！）\n比对规划清单，【{m_name}】的所有内容是否已全部调用工具创建完毕？\n- 未完工，输出 <ROUTE>CONTINUE</ROUTE>\n- 全部完工，输出 <ROUTE>DONE</ROUTE>\n绝对禁止调用工具，仅输出标签！","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         db3.add(ReasoningChain(
             title="📖 全维世界观与大纲流水线",
@@ -2105,14 +2111,29 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 data = {}
 
         if etype == "outline":
-            # parent_name → parent_id lookup
+            # parent_name → parent_id lookup (multi-level path support)
             parent_id = data.get("parent_id")
-            if not parent_id and data.get("parent_name"):
-                parent_obj = db.query(Outline).filter(
-                    Outline.novel_id == novel_id, Outline.title == data["parent_name"]
-                ).first()
-                if parent_obj:
-                    parent_id = parent_obj.id
+            p_name = data.get("parent_name")
+            if not parent_id and p_name:
+                parts = [p.strip() for p in p_name.replace("\uff0f", "/").split("/") if p.strip()]
+                last_parent_id = None
+                for part in parts:
+                    parent_obj = db.query(Outline).filter(
+                        Outline.novel_id == novel_id,
+                        Outline.title == part,
+                        Outline.parent_id == last_parent_id,
+                    ).first()
+                    if parent_obj:
+                        last_parent_id = parent_obj.id
+                    else:
+                        fallback_obj = db.query(Outline).filter(
+                            Outline.novel_id == novel_id,
+                            Outline.title == parts[-1],
+                        ).first()
+                        if fallback_obj:
+                            last_parent_id = fallback_obj.id
+                        break
+                parent_id = last_parent_id
 
             if action == "add":
                 db.add(Outline(
