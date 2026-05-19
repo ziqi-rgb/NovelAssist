@@ -133,6 +133,12 @@ AGENT_TOOLS = [
                                         "{novel_name} - 小说名称\n"
                                         "{chapter_title} - 当前章节标题\n"
                                         "{character_template} - 当前世界人物模板字段列表\n"
+                                        "{locations_full_detail} - 高密度全维物理地图树\n"
+                                        "{outline_cat_world} - 世界观分类大纲树\n"
+                                        "{outline_cat_faction} - 世界势力分类大纲树\n"
+                                        "{outline_cat_geo} - 地理分类大纲树\n"
+                                        "{outline_cat_power} - 能力体系分类大纲树\n"
+                                        "{outline_cat_story} - 剧情大纲分类树\n"
                                         "绝对禁止生造不在白名单内的 {xxx} 占位符！其他信息请用自然语言描述。"
                                     ),
                                 },
@@ -218,9 +224,9 @@ async def lifespan(app: FastAPI):
                 title="🗺️ 蓝图规划与逐层搭建流",
                 context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
                 nodes=[
-                    {"id":"node_eval","x":100,"y":50,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_build"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
-                    {"id":"node_true_build","x":400,"y":0,"premise":"上级已存在，直接顺势落子。","prompt":"【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系（规模 scale），直接调用 manage_world_element 工具生成目标地点。\n要求：\n1. 准确嵌套上级地图（parent_name）。\n2. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表在上一级25x25网格中的具体方位）。\n3. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"","output":""},
-                    {"id":"node_plan","x":0,"y":200,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n当前系统已建立的世界背景大纲如下：{outlines_list}。\n\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】世界观、世界势力、地理、能力体系设定、剧情大纲中提到的一切地理细节！\n- 例如：大纲中若写了势力'暗影回廊'总部在天启城下城，你就必须规划天启城，并在其下层规划街区'暗影回廊'。\n- 继承大纲对这些地点的文字描述，合理分配 25x25 网格的 grid_x 和 grid_y，保证地图与大纲的内容互为表里，完全一致！\n\n【空间标尺法则】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[{"id":"blk_1","type":"placeholder","value":"{outlines_list}"}],"branches":[],"next_node_id":"node_desc","output":""},
+                    {"id":"node_eval","x":100,"y":50,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_plan"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
+                    {"id":"node_true_plan","x":400,"y":0,"premise":"上级已存在，以该上级为锚点规划子层级清单。","prompt":"【局部路径规划】（⚠️绝对禁止调用工具！）\n探测到目标地点的上级地图已存在于数据库中（详见上文环境）。\n请以该已有的上级节点为锚点，自顶向下规划前往目标地点所需的完整子层级嵌套清单，确定每一个子地点的 scale（只能是大陆/国家/城池/街区之一）与具体 grid_x/grid_y 坐标（0-24 之间），并仅以纯文本输出清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度设定，使生成的地点描述与空间结构与之完全对齐：\n【世界观大纲】：\n{outline_cat_world}\n【世界势力大纲】：\n{outline_cat_faction}\n【地理大纲】：\n{outline_cat_geo}\n【能力体系大纲】：\n{outline_cat_power}\n\n请仅输出纯文本规划清单。明确标出谁是谁的 parent_name（格式为：上级/子级）！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
+                    {"id":"node_plan","x":0,"y":200,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度背景设定，使生成的地点名、描述、空间结构与其完美对齐，互为表里：\n【世界观设定】：\n{outline_cat_world}\n【世界势力设定】：\n{outline_cat_faction}\n【地理知识设定】：\n{outline_cat_geo}\n【能力体系设定】：\n{outline_cat_power}\n\n【空间标尺法则】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
                     {"id":"node_desc","x":0,"y":400,"premise":"填充各层级的详细设定描述。","prompt":"【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
                     {"id":"node_build_top","x":200,"y":400,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表它在上一级25x25网格中的具体方位）。\n4. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
                     {"id":"node_check_bottom","x":200,"y":600,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n请对比一下：刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 如果已经是目标地点了，说明完工，输出 <ROUTE>DONE</ROUTE>\n- 如果还不是目标地点（清单里还有下一级没建），输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
@@ -256,14 +262,23 @@ async def lifespan(app: FastAPI):
             ("story", "剧情大纲推演", "剧情大纲"),
         ]
         outline_nodes: list[dict] = []
+        category_contracts = {
+            "世界观": "阐述世界的底层物理定律、超凡法则、文明起源、历史纪元等最宏观、最基础的世界框架设定，解答'这是个怎样的世界'的核心命题。重点在于底层运行规律和核心设定背景，非具体地理，亦非剧情剧情。",
+            "世界势力": "定义世界中割据或隐藏的门派、宗族、联邦、商会、地下结社等社会组织。包括其领袖、宗旨、内部等级结构、与他方的恩怨和主导产业。",
+            "地理": "描绘大陆、国度、险恶禁地、奇特天险、城池等地理实体的分布。重点在于描写地形、极端气候、资源产出以及空间结构嵌套。",
+            "人物设定": "列出非剧情主线的核心人物人设简述，包含其姓名、背景、核心能力、所属势力、基础标签等档案摘要。",
+            "能力体系设定": "系统化拆解该世界的修行体系、超凡境界划分、等级晋升要求、能量底层机制（如灵力、魔能、源能）、以及各种战技或功法的通识法则。",
+            "剧情大纲": "推演小说的核心主线脉络，严格按照 [卷/季] -> [章/集] -> [幕/节] 递归向下细化，包含每一段情节的起承转合、冲突高潮与任务线。",
+        }
         for i, (m_id, m_name, cat) in enumerate(modules):
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
             next_check = f"o_{next_m_id}_check" if next_m_id != "end" else ""
+            contract = category_contracts.get(cat, "")
             outline_nodes.append({"id": f"o_{m_id}_check","x":0,"y":i*400,"premise":f"进入 {m_name} 模块评估。","prompt":f"【模块判定】（⚠️绝对禁止调用工具！）\n分析用户输入与前文积累。\n判断：是否需要创建或扩充【{m_name}】？\n- 需要，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
-            plan_prompt = f"【分条规划】（⚠️绝对禁止调用工具！）\n请对【{m_name}】进行详细规划，将其拆分为多个条目。\n如果是剧情大纲，必须明确遵循【卷->章->幕】三级嵌套，指明 parent_name。\n"
+            plan_prompt = f"【分条规划】（⚠️绝对禁止调用工具！）\n【{cat} 硬性契约定义】：{contract}\n请严格遵照上述契约定义，对【{m_name}】进行详细规划，将其拆分为多个条目。\n如果是剧情大纲，必须明确遵循【卷->章->幕】三级嵌套，指明 parent_name。\n"
             build_prompt = f"【执行创建】（✅允许调用工具）\n查阅规划清单与已建进度。挑出当前最高级且未被创建的 1 个节点，调用 manage_world_element (etype: outline) 建立它。\ncategory 必须填入 '{cat}'。parent_name 必须对齐规划！\n"
             if m_id != "char":
-                plan_prompt += "【大纲-地图全景互借天条】：\n当前分类属于世界大纲的核心设定，你规划的设定必须【100% 参照并继承】已有物理地图：{locations_list}。严禁生造与已有地点名、坐标或背景描述冲突的内容！\n"
+                plan_prompt += "【大纲-地图全景互借天条】：\n当前分类属于世界大纲的核心设定，你规划的设定必须【100% 参照并继承】已有高精度物理地图：{locations_full_detail}。严禁生造与已有地点名、坐标或背景描述冲突的内容！\n"
                 build_prompt += "【强制格式规范】：写入的 description 字段文本，必须且只能使用精美、严谨的 Markdown 语法进行排版（支持二级标题、加粗、无序列表和引用块），前端预览界面将以此格式直接渲染！\n"
             plan_prompt += "纯文本输出清单！"
             outline_nodes.append({"id": f"o_{m_id}_plan","x":200,"y":i*400,"premise":f"开始规划 {m_name}。","prompt":plan_prompt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
@@ -1799,6 +1814,24 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 lines.append(f"- ID:{lc.id} **{lc.name}** [{sc}]{parent_info}")
             return "\n".join(lines)
 
+        if ph == "locations_full_detail":
+            locs = db.scalars(select(Location).where(Location.novel_id == novel_id)).all()
+            by_parent: dict = {}
+            for lc in locs:
+                by_parent.setdefault(lc.parent_id, []).append(lc)
+            def render_loc_tree(pid, depth):
+                parts: list[str] = []
+                for lc in by_parent.get(pid, []):
+                    indent = "  " * depth
+                    coord = f"({lc.grid_x},{lc.grid_y})" if (lc.grid_x is not None and lc.grid_y is not None) else ""
+                    parts.append(f"{indent}- **{lc.name}** [{lc.scale_level}] {coord}")
+                    if lc.description:
+                        desc_clean = lc.description.replace('\n', ' ').strip()
+                        parts.append(f"{indent}  *{desc_clean[:120]}*")
+                    parts.extend(render_loc_tree(lc.id, depth + 1))
+                return parts
+            return "\n".join(render_loc_tree(None, 0)) or "【当前系统暂无地点数据】"
+
         if ph == "timeline_history":
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
@@ -1874,6 +1907,36 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     fields = g.get("fields", [])
                     parts.append(f"{g_name}: [{', '.join(fields)}]")
             return " ; ".join(parts) if parts else "(无字段)"
+
+        def _outline_tree_by_cat(cat_name: str) -> str:
+            items = db.scalars(select(Outline).where(
+                Outline.novel_id == novel_id, Outline.category == cat_name,
+            ).order_by(Outline.order_index)).all()
+            by_parent2: dict = {}
+            for it in items:
+                by_parent2.setdefault(it.parent_id, []).append(it)
+            def render_ol_tree(pid, depth):
+                parts2: list[str] = []
+                for it in by_parent2.get(pid, []):
+                    indent = "  " * depth
+                    parts2.append(f"{indent}- **{it.title}**")
+                    if it.description:
+                        for line in it.description.splitlines():
+                            parts2.append(f"{indent}  {line}")
+                    parts2.extend(render_ol_tree(it.id, depth + 1))
+                return parts2
+            return "\n".join(render_ol_tree(None, 0)) or f"【当前分类 {cat_name} 暂无大纲数据】"
+
+        if ph == "outline_cat_world":
+            return _outline_tree_by_cat("世界观")
+        if ph == "outline_cat_faction":
+            return _outline_tree_by_cat("世界势力")
+        if ph == "outline_cat_geo":
+            return _outline_tree_by_cat("地理")
+        if ph == "outline_cat_power":
+            return _outline_tree_by_cat("能力体系设定")
+        if ph == "outline_cat_story":
+            return _outline_tree_by_cat("剧情大纲")
 
         if ph == "factions_list":
             factions = db.query(Faction).filter(Faction.novel_id == novel_id).all()
@@ -2105,10 +2168,26 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         eid = req.arguments.get("element_id")
         data = req.arguments.get("data", {})
         if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                data = {}
+            data_str = data.strip()
+            if data_str.startswith('"') and data_str.endswith('"') and len(data_str) > 1:
+                try:
+                    data_str = json.loads(data_str)
+                except Exception:
+                    data_str = data
+            for _ in range(5):
+                if not isinstance(data_str, str):
+                    break
+                try:
+                    data_str = json.loads(data_str)
+                except json.JSONDecodeError:
+                    try:
+                        cleaned = data_str.replace('\\\\', '\\').replace('\\"', '"').replace('\\n', '\n')
+                        if cleaned.startswith('"') and cleaned.endswith('"'):
+                            cleaned = cleaned[1:-1]
+                        data_str = json.loads(cleaned)
+                    except Exception:
+                        break
+            data = data_str if isinstance(data_str, dict) else {}
 
         if etype == "outline":
             # parent_name → parent_id lookup (multi-level path support)

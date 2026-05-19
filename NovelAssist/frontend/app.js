@@ -2007,7 +2007,7 @@ function renderLines() {
 
 /* ═══════════ Target Builder ═══════════ */
 
-const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{characters_inactive}","{factions_list}","{relations_graph}","{locations_list}","{character_template}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
+const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{outline_cat_world}","{outline_cat_faction}","{outline_cat_geo}","{outline_cat_power}","{outline_cat_story}","{characters_list}","{characters_inactive}","{factions_list}","{relations_graph}","{locations_list}","{locations_full_detail}","{character_template}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
 
 function getNodeById(nid) { return (currentChain && currentChain.nodes) ? currentChain.nodes.find(function(n) { return n.id === nid; }) : null; }
 
