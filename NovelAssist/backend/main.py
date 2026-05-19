@@ -1789,11 +1789,13 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             tmpl = novel.character_template if novel else []
             if not tmpl:
                 return "(无人物模板)"
-            keys: list[str] = []
+            parts: list[str] = []
             for g in tmpl:
                 if isinstance(g, dict):
-                    keys.extend(g.get("fields", []))
-            return ", ".join(keys) if keys else "(无字段)"
+                    g_name = g.get("group", "未命名")
+                    fields = g.get("fields", [])
+                    parts.append(f"{g_name}: [{', '.join(fields)}]")
+            return " ; ".join(parts) if parts else "(无字段)"
 
         if ph == "factions_list":
             factions = db.query(Faction).filter(Faction.novel_id == novel_id).all()
