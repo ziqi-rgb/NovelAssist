@@ -1448,7 +1448,7 @@ class ReasoningExecuteRequest(BaseModel):
     context_settings: dict = {}
 
 
-async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str) -> str:
+async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str, system_prompt: str) -> str:
     if not instruction.strip():
         return "chat"
     url = f"{base_url.rstrip('/')}/chat/completions"
@@ -1456,9 +1456,8 @@ async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: s
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "你是一个意图分类器。必须仅返回以下五个单词之一，不要有任何其他字符：chat, map_assist, outline_assist, character_assist, import_data。"},
-            {"role": "user", "content": f"判断以下用户指令的意图类别：\n{instruction}\n\n"
-             "分类规则：\n- 分析或排查地理/地图：map_assist\n- 分析大纲/剧情：outline_assist\n- 分析人物/角色：character_assist\n- 长篇设定导入解析：import_data\n- 其他日常对话或直接下达的新增/修改指令：chat"},
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"判断以下用户指令的意图类别：\n{instruction}"},
         ],
         "max_tokens": 10, "temperature": 0.0,
     }
@@ -1965,11 +1964,14 @@ class CopilotRequest(BaseModel):
 
 @app.post("/api/writing/copilot")
 async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
-    if req.scene == "auto":
-        req.scene = await get_llm_intent(req.instruction, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL)
-
     gs = db.get(GlobalSettings, 1)
     templates = gs.prompt_templates if gs else DEFAULT_PROMPT_TEMPLATES
+
+    if req.scene == "auto":
+        intent_tmpl = templates.get("intent_classifier", DEFAULT_PROMPT_TEMPLATES["intent_classifier"])
+        req.scene = await get_llm_intent(req.instruction, req.api_key or LLM_API_KEY,
+                                         req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, intent_tmpl)
+
     tmpl = templates.get(req.scene, templates.get("chat", "{instruction}"))
 
     prompt = tmpl.replace("{content}", req.current_chapter_content).replace("{selection}", req.selected_text).replace("{instruction}", req.instruction).replace("{chain_data}", req.chain_data)
