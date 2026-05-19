@@ -198,118 +198,75 @@ async def lifespan(app: FastAPI):
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
-    # Seed smart reasoning chains — delete old first, then insert upgraded
+    # Seed official reasoning chains — clean legacy, keep only 2 official SOPs
     with SessionLocal() as db3:
-        db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 深度生态与地图建构流").delete(synchronize_session=False)
+        # 1. Purge all legacy/historical chains
+        legacy = [
+            "🤖 智能建图 SOP",
+            "🗺️ 智能建图判定流",
+            "🗺️ 深度生态与地图建构流",
+        ]
+        db3.query(ReasoningChain).filter(ReasoningChain.title.in_(legacy)).delete(synchronize_session=False)
         db3.commit()
 
-        nodes_map = [
-            {
-                "id": "node_check", "x": 0, "y": 0,
-                "premise": "分析用户建图指令，判断上级是否存在。",
-                "prompt": "【现状判定】分析用户的建图指令。\n查阅世界快照中的{locations_list}。\n判断：是否存在可以直接作为目标地点上级的地图区域？\n- 如果存在合适的上级（或目标就是最高级），输出 <ROUTE>TRUE</ROUTE>\n- 如果完全没有合适的上级（需要从零搭建世界/大陆），输出 <ROUTE>FALSE</ROUTE>\n严禁调用工具，只做布尔判断。",
-                "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
-                "branches": [
-                    {"condition": "TRUE", "next_node_id": "node_true_build"},
-                    {"condition": "FALSE", "next_node_id": "node_false_plan"}
+        # 2. 👤 深度人设与关系推演流
+        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与关系推演流").first():
+            db3.add(ReasoningChain(
+                title="👤 深度人设与关系推演流",
+                context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
+                nodes=[
+                    {
+                        "id": "char_flesh", "x": 100, "y": 50,
+                        "premise": "极致深化角色血肉，构建人际关系网。",
+                        "prompt": "你是一位金牌小说人设师。分析用户指令。请极度深化该角色：\n1. 【核心矛盾与致命性格缺陷】\n2. 【独特的战斗流派或怪癖】\n3. 【宿命与隐秘动机】\n【强制羁绊】：查阅已有人物名录快照，你必须强行设定他与名录中至少 1-2 个已有角色存在极深的恩怨、血缘或利益纠葛！输出推演报告。",
+                        "target": [{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],
+                        "branches": [],
+                        "next_node_id": "char_build", "output": ""
+                    },
+                    {
+                        "id": "char_build", "x": 300, "y": 250,
+                        "premise": "基于推演报告，规范化落子创建角色。",
+                        "prompt": "【规范化落子】请严格基于上一步的推演报告，调用 manage_world_element 建立角色。\n要求：\n1. 必须用嵌套字典格式填入 attributes。\n2. 遇到人物模板中没有的属性，必须自创【羁绊网络】、【战斗流派】等新分组！\n3. description 中写一段极具戏剧张力的人物小传。",
+                        "target": [{"id":"blk_1","type":"placeholder","value":"{character_template}"}],
+                        "branches": [],
+                        "next_node_id": "", "output": ""
+                    },
                 ],
-                "next_node_id": "", "output": ""
-            },
-            {
-                "id": "node_true_build", "x": 250, "y": -100,
-                "premise": "存在合适的上级地图，直接顺势落子。",
-                "prompt": "【顺势落子】(流转原因: 存在上级地图)。\n请分析目标地点的层级（如国家、城池、建筑），找出准确的 parent_name。\n直接调用 manage_world_element 工具，生成丰富的 description 和坐标，完成嵌套创建。",
-                "target": [], "branches": [],
-                "next_node_id": "", "output": ""
-            },
-            {
-                "id": "node_false_plan", "x": 150, "y": 150,
-                "premise": "缺失上级地图，需要从零规划地图树。",
-                "prompt": "【拓扑规划】(流转原因: 缺失上级地图)。\n为了容纳目标地点，我们需要从零搭建一棵地图树！\n请规划一条自顶向下的嵌套链（例如：九洲界[世界] -> 苍玄大陆[大陆] -> 青云国[国家] -> 目标地点）。\n输出这个目录层级，明确每个节点的隶属关系。",
-                "target": [], "branches": [],
-                "next_node_id": "node_false_desc", "output": ""
-            },
-            {
-                "id": "node_false_desc", "x": 150, "y": 350,
-                "premise": "为地图嵌套链的各层级填充史诗描述。",
-                "prompt": "【血肉填充】基于上一步生成的地图嵌套链，为这几个即将创建的层级区域，分别生成一段极具史诗感、包含生态与势力的描述 (description) 文本。",
-                "target": [], "branches": [],
-                "next_node_id": "node_false_build", "output": ""
-            },
-            {
-                "id": "node_false_build", "x": 150, "y": 550,
-                "premise": "万事俱备，自上而下批量创世。",
-                "prompt": "【批处理创世】万事俱备！请仔细阅读积累的上下文。\n现在，请自顶向下，连续多次调用 manage_world_element 工具！\n先建最顶层世界，再建大陆，直到最底层的目标地点。\n注意：每个节点的 parent_name 必须与其上级节点完全一致！",
-                "target": [], "branches": [],
-                "next_node_id": "", "output": ""
-            },
-        ]
-        db3.add(ReasoningChain(
-            title="🗺️ 深度生态与地图建构流",
-            context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
-            nodes=nodes_map,
-        ))
+            ))
 
-        db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与关系推演流").delete(synchronize_session=False)
-        db3.commit()
-
-        nodes_char = [
-            {
-                "id": "char_flesh", "x": 100, "y": 50,
-                "premise": "极致深化角色血肉，构建人际关系网。",
-                "prompt": "你是一位金牌小说人设师。分析用户指令。请极度深化该角色：\n1. 【核心矛盾与致命性格缺陷】\n2. 【独特的战斗流派或怪癖】\n3. 【宿命与隐秘动机】\n【强制羁绊】：查阅已有人物名录快照，你必须强行设定他与名录中至少 1-2 个已有角色存在极深的恩怨、血缘或利益纠葛！输出推演报告。",
-                "target": [{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],
-                "branches": [],
-                "next_node_id": "char_build", "output": ""
-            },
-            {
-                "id": "char_build", "x": 300, "y": 250,
-                "premise": "基于推演报告，规范化落子创建角色。",
-                "prompt": "【规范化落子】请严格基于上一步的推演报告，调用 manage_world_element 建立角色。\n要求：\n1. 必须用嵌套字典格式填入 attributes。\n2. 遇到人物模板中没有的属性，必须自创【羁绊网络】、【战斗流派】等新分组！\n3. description 中写一段极具戏剧张力的人物小传。",
-                "target": [{"id":"blk_1","type":"placeholder","value":"{character_template}"}],
-                "branches": [],
-                "next_node_id": "", "output": ""
-            },
-        ]
-        db3.add(ReasoningChain(
-            title="👤 深度人设与关系推演流",
-            context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
-            nodes=nodes_char,
-        ))
-
-        db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 严谨建图层级推演流").delete(synchronize_session=False)
-        nodes_cyclic = [
-            {
-                "id": "node_eval", "x": 100, "y": 50,
-                "premise": "严谨评估当前世界快照，判断最急需建立的层级。",
-                "prompt": "【层级评估】\n查阅当前的世界快照：{locations_list}。\n目标地点：用户最初的指令需求。\n请按照严谨的地理层级（如：世界->大陆->国家->城池->具体建筑）进行自顶向下的梳理。\n分析当前数据库中【缺失的最高层级】是什么？\n- 如果目标地点的直接上级已存在（或者目标本身就是最顶层），输出 <ROUTE>READY</ROUTE>\n- 如果缺失任何上级，请明确指出【当前最急需建立的一层上级】是什么，并输出 <ROUTE>BUILD_NEXT</ROUTE>\n仅作严谨的客观推断，严禁调用工具，严禁生成多余的描述性废话。",
-                "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
-                "branches": [
-                    {"condition": "READY", "next_node_id": "node_final"},
-                    {"condition": "BUILD_NEXT", "next_node_id": "node_build_next"}
+        # 3. 🗺️ 严谨建图层级推演流 (cyclic)
+        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 严谨建图层级推演流").first():
+            db3.add(ReasoningChain(
+                title="🗺️ 严谨建图层级推演流",
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
+                nodes=[
+                    {
+                        "id": "node_eval", "x": 100, "y": 50,
+                        "premise": "严谨评估当前世界快照，判断最急需建立的层级。",
+                        "prompt": "【层级评估】\n查阅当前的世界快照：{locations_list}。\n目标地点：用户最初的指令需求。\n请按照严谨的地理层级（如：世界->大陆->国家->城池->具体建筑）进行自顶向下的梳理。\n分析当前数据库中【缺失的最高层级】是什么？\n- 如果目标地点的直接上级已存在（或者目标本身就是最顶层），输出 <ROUTE>READY</ROUTE>\n- 如果缺失任何上级，请明确指出【当前最急需建立的一层上级】是什么，并输出 <ROUTE>BUILD_NEXT</ROUTE>\n仅作严谨的客观推断，严禁调用工具，严禁生成多余的描述性废话。",
+                        "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
+                        "branches": [
+                            {"condition": "READY", "next_node_id": "node_final"},
+                            {"condition": "BUILD_NEXT", "next_node_id": "node_build_next"}
+                        ],
+                        "next_node_id": "", "output": ""
+                    },
+                    {
+                        "id": "node_build_next", "x": 350, "y": 50,
+                        "premise": "仅建立当前最急需的一层上级。",
+                        "prompt": "【单层补齐】\n基于上一步的评估结果，调用 manage_world_element 工具，仅建立当前最急需的一层上级地点。\n要求：\n1. 确保 parent_name 正确关联至更上级（若为最顶层则留空）。\n2. 描述客观、严谨，符合系统设定。\n建完即止，不要擅自向下展开更多层级。",
+                        "target": [], "branches": [],
+                        "next_node_id": "node_eval", "output": ""
+                    },
+                    {
+                        "id": "node_final", "x": 100, "y": 300,
+                        "premise": "前置层级已全部就绪，正式建立目标地点。",
+                        "prompt": "【目标落子】\n前置层级已全部就绪。请调用 manage_world_element 工具，正式建立目标地点。\n要求：\n1. 精准设置 parent_name 为刚建立或已存在的直接上级。\n2. 赋予合理的 map_x 和 map_y 坐标（0-24的整数）。\n3. 描述需客观、严谨、精炼。",
+                        "target": [], "branches": [],
+                        "next_node_id": "", "output": ""
+                    },
                 ],
-                "next_node_id": "", "output": ""
-            },
-            {
-                "id": "node_build_next", "x": 350, "y": 50,
-                "premise": "仅建立当前最急需的一层上级。",
-                "prompt": "【单层补齐】\n基于上一步的评估结果，调用 manage_world_element 工具，仅建立当前最急需的一层上级地点。\n要求：\n1. 确保 parent_name 正确关联至更上级（若为最顶层则留空）。\n2. 描述客观、严谨，符合系统设定。\n建完即止，不要擅自向下展开更多层级。",
-                "target": [], "branches": [],
-                "next_node_id": "node_eval", "output": ""
-            },
-            {
-                "id": "node_final", "x": 100, "y": 300,
-                "premise": "前置层级已全部就绪，正式建立目标地点。",
-                "prompt": "【目标落子】\n前置层级已全部就绪。请调用 manage_world_element 工具，正式建立目标地点。\n要求：\n1. 精准设置 parent_name 为刚建立或已存在的直接上级。\n2. 赋予合理的 map_x 和 map_y 坐标（0-24的整数）。\n3. 描述需客观、严谨、精炼。",
-                "target": [], "branches": [],
-                "next_node_id": "", "output": ""
-            },
-        ]
-        db3.add(ReasoningChain(
-            title="🗺️ 严谨建图层级推演流",
-            context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
-            nodes=nodes_cyclic,
-        ))
+            ))
 
         db3.commit()
     yield
