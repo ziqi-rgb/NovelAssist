@@ -1381,6 +1381,10 @@ const promptTpl = document.getElementById("prompt-templates");
 const promptLabels = { chat: "自由对话", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
 
 function getCopilotScene(instruction) {
+    if (!instruction) return "chat";
+    var actionWords = ["创建", "新增", "建立", "修改", "添加", "设置", "删除", "更新"];
+    var isAction = actionWords.some(function(kw) { return instruction.includes(kw); });
+    if (isAction) return "chat";
     if (currentModule === "outline") return "outline_assist";
     if (currentModule === "map") return "map_assist";
     if (currentModule === "characters") return "character_assist";
