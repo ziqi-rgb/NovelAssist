@@ -1404,7 +1404,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
         nodes.forEach(function(n) { n.output = ""; });
         var currentNodeId = nodes[0].id;
         var executedNodeIds = new Set();
-        var prevOutput = "用户指令: " + userInput;
+        var fullChainContext = "【初始指令】: " + userInput + "\n";
 
         while (currentNodeId) {
             if (executedNodeIds.has(currentNodeId)) break;
@@ -1418,6 +1418,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
             bubbleEl.appendChild(progressEl);
             copilotHistory.scrollTop = copilotHistory.scrollHeight;
 
+            var nodeToolCalls = "";
             try {
                 var targetT = compileTarget(node.target);
                 var res = await fetch("/api/reasoning/execute", {
@@ -1427,7 +1428,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
                         premise: node.premise || "",
                         prompt: node.prompt || "",
                         target: targetT,
-                        previous_output: prevOutput,
+                        previous_output: fullChainContext,
                         api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
                         context_settings: rc.context_settings || {},
                     }),
@@ -1443,7 +1444,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
                         bubbleEl.appendChild(document.createTextNode(msg.content));
                         copilotHistory.scrollTop = copilotHistory.scrollHeight;
                     } else if (msg.type === "tool_proposal") {
-                        var argsB = JSON.stringify(msg.arguments);
                         var card = document.createElement("div");
                         card.className = "tool-proposal";
                         card.innerHTML = '<div class="tp-title">🛠 自动执行: ' + e(msg.tool_name) + '</div>'
@@ -1457,6 +1457,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
                         });
                         card.classList.add("tp-executed");
                         card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
+                        nodeToolCalls += "\n[系统记录：调用了工具 " + msg.tool_name + "，参数: " + JSON.stringify(msg.arguments) + "]";
                     }
                 }
                 var routeKey = null;
@@ -1464,7 +1465,11 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
                 if (rm) routeKey = rm[1].trim();
                 var cleanOutput = txt.replace(/<\/?ROUTE>/g, "").trim();
                 node.output = cleanOutput;
-                prevOutput = cleanOutput;
+
+                fullChainContext += "\n\n--- 【节点输出】 ---\n" + cleanOutput;
+                if (nodeToolCalls) {
+                    fullChainContext += nodeToolCalls;
+                }
 
                 var nextId = null;
                 if (node.branches && node.branches.length > 0) {

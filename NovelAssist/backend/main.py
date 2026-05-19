@@ -198,66 +198,70 @@ async def lifespan(app: FastAPI):
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
-    # Seed smart reasoning chains
+    # Seed smart reasoning chains — delete old first, then insert upgraded
     with SessionLocal() as db3:
-        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 深度生态与地图建构流").first():
-            nodes_map = [
-                {
-                    "id": "eco_analyze", "x": 100, "y": 50,
-                    "premise": "分析用户建图需求，推演该地点的生态环境、资源特产、隐藏势力。",
-                    "prompt": "【生态推演】\n结合：{locations_list}\n分析用户的建图需求，推演该地点的【生态环境、资源特产、隐藏势力】。\n完成后判断上级是否存在。缺失输出 <ROUTE>NO_PARENT</ROUTE>，完整输出 <ROUTE>READY</ROUTE>。",
-                    "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
-                    "branches": [
-                        {"condition": "NO_PARENT", "next_node_id": "eco_parent"},
-                        {"condition": "READY", "next_node_id": "eco_build"}
-                    ],
-                    "next_node_id": "", "output": ""
-                },
-                {
-                    "id": "eco_parent", "x": -100, "y": 250,
-                    "premise": "上级地点缺失，需补齐层级链。",
-                    "prompt": "【补齐上级】\n调用 manage_world_element 工具建立需要的上级地点框架（世界→星球→大陆→国家）。建完即停。",
-                    "target": [], "branches": [],
-                    "next_node_id": "eco_build", "output": ""
-                },
-                {
-                    "id": "eco_build", "x": 300, "y": 250,
-                    "premise": "上级已就绪，生态设定已完成。",
-                    "prompt": "【综合落子】\n结合前述生态与资源推演，调用 manage_world_element 工具建立最终地点。将丰富设定写入 description，生成 map_x/map_y 坐标。",
-                    "target": [], "branches": [],
-                    "next_node_id": "", "output": ""
-                },
-            ]
-            db3.add(ReasoningChain(
-                title="🗺️ 深度生态与地图建构流",
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
-                nodes=nodes_map,
-            ))
+        db3.query(ReasoningChain).filter(ReasoningChain.title.in_([
+            "🗺️ 深度生态与地图建构流",
+            "👤 深度人设与关系推演流",
+        ])).delete(synchronize_session=False)
+        db3.commit()
 
-        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与关系推演流").first():
-            nodes_char = [
-                {
-                    "id": "char_flesh", "x": 100, "y": 50,
-                    "premise": "丰满角色血肉，构造人际关系网。",
-                    "prompt": "【血肉丰满与关系网】\n已有角色：{characters_list}\n模板字段：{character_template}\n用户需要建一个角色。请发散思维，丰满其性格缺陷、隐藏动机。查阅名录，强行让他与名录中【至少1个】已有角色产生恩怨纠葛！输出推演报告。",
-                    "target": [{"id":"blk_1","type":"placeholder","value":"{characters_list}"},{"id":"blk_2","type":"placeholder","value":"{character_template}"}],
-                    "branches": [],
-                    "next_node_id": "char_build", "output": ""
-                },
-                {
-                    "id": "char_build", "x": 300, "y": 250,
-                    "premise": "基于推演报告，规范化落子。",
-                    "prompt": "【规范化落子】\n基于上一步的推演报告，严格按照嵌套字典格式（{character_template}），调用 manage_world_element 工具正式建立该角色！",
-                    "target": [{"id":"blk_1","type":"placeholder","value":"{character_template}"}],
-                    "branches": [],
-                    "next_node_id": "", "output": ""
-                },
-            ]
-            db3.add(ReasoningChain(
-                title="👤 深度人设与关系推演流",
-                context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
-                nodes=nodes_char,
-            ))
+        nodes_map = [
+            {
+                "id": "eco_analyze", "x": 100, "y": 50,
+                "premise": "分析用户建图需求，推演该地点的生态环境、资源特产、隐藏势力。",
+                "prompt": "你是一位顶尖世界架构师。分析用户指令。发挥极致想象力，推演该地点的：\n1. 【微气候与地质奇观】\n2. 【稀有特产与变异生物】\n3. 【潜伏势力与远古遗迹】\n排版要求精美。\n完成后，查阅世界快照，判定目标地点的最直接上级是否存在？\n缺失输出 <ROUTE>NO_PARENT</ROUTE>，存在输出 <ROUTE>READY</ROUTE>",
+                "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
+                "branches": [
+                    {"condition": "NO_PARENT", "next_node_id": "eco_parent"},
+                    {"condition": "READY", "next_node_id": "eco_build"}
+                ],
+                "next_node_id": "", "output": ""
+            },
+            {
+                "id": "eco_parent", "x": -100, "y": 250,
+                "premise": "目标地点的上级区域缺失！",
+                "prompt": "【前置补齐】目标地点的上级区域缺失！请阅读前文的生态报告，调用 manage_world_element，建立一个符合该生态基调的宏大上级区域（大洲/大荒/海域等）。严禁建立底层建筑，仅建框架！",
+                "target": [], "branches": [],
+                "next_node_id": "eco_build", "output": ""
+            },
+            {
+                "id": "eco_build", "x": 300, "y": 250,
+                "premise": "上级地点已就绪，生态推演已完成。",
+                "prompt": "【综合落子】上级地点已就绪。请仔细阅读第一步的生态推演报告，调用 manage_world_element 建立最终目标地点。要求：\n1. 将推演的特产、势力精简浓缩写入 description。\n2. parent_name 必须指向真实的、刚才建好或已有的上级。\n3. 生成合理的 map_x 和 map_y 坐标。",
+                "target": [], "branches": [],
+                "next_node_id": "", "output": ""
+            },
+        ]
+        db3.add(ReasoningChain(
+            title="🗺️ 深度生态与地图建构流",
+            context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
+            nodes=nodes_map,
+        ))
+
+        nodes_char = [
+            {
+                "id": "char_flesh", "x": 100, "y": 50,
+                "premise": "极致深化角色血肉，构建人际关系网。",
+                "prompt": "你是一位金牌小说人设师。分析用户指令。请极度深化该角色：\n1. 【核心矛盾与致命性格缺陷】\n2. 【独特的战斗流派或怪癖】\n3. 【宿命与隐秘动机】\n【强制羁绊】：查阅已有人物名录快照，你必须强行设定他与名录中至少 1-2 个已有角色存在极深的恩怨、血缘或利益纠葛！输出推演报告。",
+                "target": [{"id":"blk_1","type":"placeholder","value":"{characters_list}"}],
+                "branches": [],
+                "next_node_id": "char_build", "output": ""
+            },
+            {
+                "id": "char_build", "x": 300, "y": 250,
+                "premise": "基于推演报告，规范化落子创建角色。",
+                "prompt": "【规范化落子】请严格基于上一步的推演报告，调用 manage_world_element 建立角色。\n要求：\n1. 必须用嵌套字典格式填入 attributes。\n2. 遇到人物模板中没有的属性，必须自创【羁绊网络】、【战斗流派】等新分组！\n3. description 中写一段极具戏剧张力的人物小传。",
+                "target": [{"id":"blk_1","type":"placeholder","value":"{character_template}"}],
+                "branches": [],
+                "next_node_id": "", "output": ""
+            },
+        ]
+        db3.add(ReasoningChain(
+            title="👤 深度人设与关系推演流",
+            context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
+            nodes=nodes_char,
+        ))
         db3.commit()
     yield
 
