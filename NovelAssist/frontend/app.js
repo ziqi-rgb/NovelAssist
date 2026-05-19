@@ -1381,7 +1381,7 @@ async function executeTool(toolName, args, card) {
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { chat: "自由对话", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
+const promptLabels = { system_agent: "系统代理神谕", chat: "自由对话", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
 
 function getCopilotScene() {
     return "auto";
@@ -1392,7 +1392,7 @@ document.getElementById("prompt-settings-btn").addEventListener("click", async (
     promptTpl.innerHTML = '<div style="text-align:right;margin-bottom:10px;"><button class="sys-btn sys-btn-danger" style="font-size:.72rem;" onclick="if(confirm(\'确定恢复所有提示词为系统默认吗？您的修改将丢失！\')){fetch(\'/api/settings/reset_prompts\',{method:\'POST\'}).then(function(){location.reload();});}">🔄 恢复全部出厂默认</button></div>';
     Object.entries(promptLabels).forEach(([key, label]) => {
         var warning = "";
-        if (key === "chat" || key === "import_data") {
+        if (key === "chat" || key === "import_data" || key === "system_agent") {
             warning = ' <span style="color:#ef4444;font-size:0.75rem;">(⚠️ 核心动作系统词，勿随意删减指令)</span>';
         }
         const div = document.createElement("div"); div.style.marginBottom = "12px";

@@ -1976,17 +1976,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     prompt = resolve_placeholders(prompt, req.novel_id, db)
 
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "你是本小说的全知全能系统代理（Agent）。\n"
-                "【执行纪律 (绝对遵守)】：\n"
-                "1. 当用户要求创建、修改实体时，你必须默默调用 manage_world_element 工具执行，禁止口头敷衍。\n"
-                "2. 【严禁脑补与串线】：用户让你建人物就只建人物，让你建地点就只建地点！绝不允许自行关联或补全用户未提及的无关剧情或地点。\n"
-                "3. 【地点层级链】：若需新建地点，必须维持 [星球-大陆-国家-城池-街区-具体建筑] 的严格嵌套。如果用户指令跨级(如从星球直接到街区)，请自行推演创建合理的中间层级！\n"
-                "回答需直接、冰冷、精准，直接触发工具。"
-            ),
-        },
+        {"role": "system", "content": templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"])},
     ]
 
     if req.history:
@@ -2058,22 +2048,22 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         elif etype == "location":
             # Scale validation and downgrade
-            valid_scales = ["星球", "大陆", "国家", "城池", "街区", "具体建筑"]
+            valid_scales = ["世界", "星球", "大陆", "国家", "城池", "街区", "具体建筑"]
             input_scale = data.get("scale", "具体建筑")
             if input_scale not in valid_scales:
                 s_lower = str(input_scale).lower()
-                if "village" in s_lower or "村" in s_lower or "镇" in s_lower:
-                    input_scale = "街区"
-                elif "city" in s_lower or "城" in s_lower:
-                    input_scale = "城池"
-                elif "国" in s_lower or "kingdom" in s_lower or "empire" in s_lower:
-                    input_scale = "国家"
+                if "世界" in s_lower or "宇宙" in s_lower or "universe" in s_lower:
+                    input_scale = "世界"
+                elif "星球" in s_lower or "planet" in s_lower:
+                    input_scale = "星球"
                 elif "大陆" in s_lower or "continent" in s_lower:
                     input_scale = "大陆"
-                elif "星球" in s_lower or "planet" in s_lower or "世界" in s_lower:
-                    input_scale = "星球"
-                elif "建筑" in s_lower or "building" in s_lower:
-                    input_scale = "具体建筑"
+                elif "国" in s_lower or "empire" in s_lower:
+                    input_scale = "国家"
+                elif "城" in s_lower or "镇" in s_lower or "city" in s_lower or "town" in s_lower:
+                    input_scale = "城池"
+                elif "村" in s_lower or "village" in s_lower or "街" in s_lower:
+                    input_scale = "街区"
                 else:
                     input_scale = "具体建筑"
             data["scale"] = input_scale
@@ -2196,34 +2186,32 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(CharacterRelation).filter(CharacterRelation.id == eid).delete()
 
         elif etype == "character":
-            # Dynamic template expansion
+            # Dynamic template expansion (correct List[Dict] handling)
             attrs = data.get("attributes", {})
-            if attrs:
-                tmpl = list(novel.character_template) if novel.character_template else []
+            if attrs and isinstance(novel.character_template, list):
+                tmpl = list(novel.character_template)
+                existing_fields: set[str] = set()
+                for g in tmpl:
+                    if isinstance(g, dict) and "fields" in g:
+                        existing_fields.update(g["fields"])
+
                 added_new = False
+                custom_group = None
+                for g in tmpl:
+                    if isinstance(g, dict) and g.get("group") == "自定义":
+                        custom_group = g
+                        break
+
                 for k in attrs.keys():
-                    found = False
-                    for g in tmpl:
-                        if isinstance(g, dict) and (k in g.get("fields", []) or g.get("group") == k):
-                            found = True
-                            break
-                    if not found:
-                        # Check if field exists anywhere
-                        field_exists = any(
-                            isinstance(g, dict) and k in g.get("fields", [])
-                            for g in tmpl
-                        )
-                        if not field_exists:
-                            # Add to first group or create new one
-                            populated = False
-                            for g in tmpl:
-                                if isinstance(g, dict) and g.get("group") == "自定义":
-                                    g["fields"].append(k)
-                                    populated = True
-                                    break
-                            if not populated:
-                                tmpl.append({"group": "自定义", "fields": [k]})
+                    if k not in existing_fields:
+                        if custom_group is None:
+                            custom_group = {"group": "自定义", "fields": []}
+                            tmpl.append(custom_group)
+                        if k not in custom_group["fields"]:
+                            custom_group["fields"].append(k)
+                            existing_fields.add(k)
                             added_new = True
+
                 if added_new:
                     novel.character_template = tmpl
                     flag_modified(novel, "character_template")
