@@ -13,6 +13,7 @@ let mdViewing = false;
 window.novelTimeConfig = { months_per_year: 12, days_per_month: 30, hours_per_day: 24 };
 window.currentTick = 0;
 window.locationsCache = [];
+window.copilotChatHistory = [];
 
 function tickToDate(tick, cfg) {
     cfg = cfg || window.novelTimeConfig;
@@ -1179,9 +1180,10 @@ async function copilotChat(instruction) {
     copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
 
     try {
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: getCopilotScene(instruction) }) });
+        var currentAiResponse = "";
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: getCopilotScene(instruction), history: window.copilotChatHistory }) });
         for await (const msg of parseSSEStream(res)) {
-            if (msg.type === "chunk") { aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
+            if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
             else if (msg.type === "tool_proposal") {
                 var autoExec = document.getElementById("agent-auto-execute").checked;
@@ -1203,6 +1205,10 @@ async function copilotChat(instruction) {
                 row.appendChild(repBtn);
                 aiB.appendChild(row);
             }
+        }
+        if (instruction.trim() || currentAiResponse.trim()) {
+            window.copilotChatHistory.push({ role: "user", content: instruction });
+            window.copilotChatHistory.push({ role: "assistant", content: currentAiResponse });
         }
     } catch (e) { aiB.appendChild(document.createTextNode("\n[失败: " + e.message + "]")); }
     finally { aiB.classList.remove("streaming"); }

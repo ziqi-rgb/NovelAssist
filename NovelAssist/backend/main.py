@@ -105,7 +105,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增或更新的数据字段。outline 填 title/description; location 填 name/description; timeline 填 time_label/content; faction 填 name/description; relation 填 source_id/target_id/label/weight(数字)/description",
+                        "description": "新增或更新的数据字段。outline 填 title/description/category(强烈建议从: 世界观,世界势力,地理,人物设定,能力体系设定,剧情大纲 中选择); location 填 name/description; timeline 填 time_label/content; faction 填 name/description; relation 填 source_id/target_id/label/weight(数字)/description",
                         "additionalProperties": True,
                     },
                 },
@@ -1926,6 +1926,7 @@ class CopilotRequest(BaseModel):
     model: str = "gpt-3.5-turbo"
     scene: str = "chat"
     chain_data: str = ""
+    history: list = []
 
 
 @app.post("/api/writing/copilot")
@@ -1951,8 +1952,14 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 "如果你确认操作已完成，回复时请简要告知用户结果。"
             ),
         },
-        {"role": "user", "content": prompt},
     ]
+
+    if req.history:
+        for msg in req.history[-10:]:
+            if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({"role": "user", "content": prompt})
     return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
 
 
