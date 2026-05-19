@@ -1978,7 +1978,9 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     prompt = resolve_placeholders(prompt, req.novel_id, db)
 
     messages = [
-        {"role": "system", "content": templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"])},
+        {"role": "system", "content": resolve_placeholders(
+            templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"]),
+            req.novel_id, db)},
     ]
 
     if req.history:
