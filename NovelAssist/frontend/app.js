@@ -1766,6 +1766,12 @@ async function loadGraph() {
     const res = await fetch(`/api/reasoning_chains/${currentChainId}?novel_id=${currentNovelId}`);
     if (!res.ok) return;
     currentChain = await res.json();
+    var systemChains = ["🗺️ 蓝图规划与逐层搭建流","👤 严谨人设与模板质检流","📖 全维世界观与大纲流水线"];
+    var isSys = systemChains.indexOf(currentChain.title) >= 0;
+    var rbtn = document.getElementById("chain-restore-btn");
+    if (rbtn) rbtn.classList.toggle("hidden", !isSys);
+    var ti = document.getElementById("cs-title");
+    if (ti) { ti.disabled = isSys; if (isSys) ti.setAttribute("title","系统预设链不可重命名"); else ti.removeAttribute("title"); }
     renderAllNodes();
     renderLines();
 }
@@ -2266,6 +2272,16 @@ document.getElementById("cs-save-btn").addEventListener("click", async function(
     });
     await loadReasoningModule();
     csm.classList.add("hidden");
+});
+
+document.getElementById("chain-restore-btn")?.addEventListener("click", async function() {
+    if (!currentChainId) return;
+    if (!confirm("确定要将当前内置推理链恢复默认吗？这将清空所有自定义节点且无法撤销！")) return;
+    try {
+        var res = await fetch("/api/reasoning_chains/" + currentChainId + "/restore", { method: "POST" });
+        var data = await res.json();
+        if (res.ok) { showToast(data.message); loadGraph(); } else { alert("恢复失败: " + (data.detail || "未知")); }
+    } catch (e) { alert("请求失败: " + e.message); }
 });
 
 /* ═══════════ Settings ═══════════ */
