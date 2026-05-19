@@ -85,7 +85,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: 必须填 name/description。如有上下级必须填 parent_id(父地点ID) 和 scale(必须从 '星球','大陆','国家','城池','街区','具体建筑' 中选一)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(字典对象)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
+                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale/parent_id/parent_name(父地点名,无ID时的替代)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(新键自动扩模板)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
                         "additionalProperties": True,
                     },
                 },
@@ -130,6 +130,7 @@ AGENT_TOOLS = [
                                         "{outline:标题} - 提取特定大纲条目\n"
                                         "{novel_name} - 小说名称\n"
                                         "{chapter_title} - 当前章节标题\n"
+                                        "{character_template} - 当前世界人物模板字段列表\n"
                                         "绝对禁止生造不在白名单内的 {xxx} 占位符！其他信息请用自然语言描述。"
                                     ),
                                 },
@@ -1756,6 +1757,16 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             ).order_by(Chapter.order_index.desc()).limit(1)).first()
             return chapter.title if chapter else "(无章节)"
 
+        if ph == "character_template":
+            tmpl = novel.character_template if novel else []
+            if not tmpl:
+                return "(无人物模板)"
+            keys: list[str] = []
+            for g in tmpl:
+                if isinstance(g, dict):
+                    keys.extend(g.get("fields", []))
+            return ", ".join(keys) if keys else "(无字段)"
+
         if ph == "factions_list":
             factions = db.query(Faction).filter(Faction.novel_id == novel_id).all()
             if not factions:
@@ -2002,12 +2013,37 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(Outline).filter(Outline.id == eid).delete()
 
         elif etype == "location":
+            # Upsert: check existing by name
+            existing_loc = None
+            if "name" in data:
+                existing_loc = db.query(Location).filter(
+                    Location.novel_id == novel_id, Location.name == data["name"]
+                ).first()
+                if existing_loc and action == "add":
+                    action = "update"
+                    eid = existing_loc.id
+
+            # Auto-create parent from parent_name
+            parent_id = data.get("parent_id")
+            if not parent_id and data.get("parent_name"):
+                parent_loc = db.query(Location).filter(
+                    Location.novel_id == novel_id, Location.name == data["parent_name"]
+                ).first()
+                if not parent_loc:
+                    parent_loc = Location(
+                        novel_id=novel_id, name=data["parent_name"],
+                        scale_level="大陆", description="AI 自动溯源创建",
+                    )
+                    db.add(parent_loc)
+                    db.commit()
+                parent_id = parent_loc.id
+
             if action == "add":
                 db.add(Location(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
-                    parent_id=data.get("parent_id"),
+                    parent_id=parent_id,
                     scale_level=data.get("scale", ""),
                 ))
             elif action == "update" and eid:
@@ -2017,10 +2053,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.name = data["name"]
                     if "description" in data:
                         item.description = data["description"]
-                    if "parent_id" in data:
-                        item.parent_id = data["parent_id"]
                     if "scale" in data:
                         item.scale_level = data["scale"]
+                    if parent_id is not None:
+                        item.parent_id = parent_id
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 
@@ -2089,8 +2125,49 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(CharacterRelation).filter(CharacterRelation.id == eid).delete()
 
         elif etype == "character":
+            # Dynamic template expansion
+            attrs = data.get("attributes", {})
+            if attrs:
+                tmpl = list(novel.character_template) if novel.character_template else []
+                added_new = False
+                for k in attrs.keys():
+                    found = False
+                    for g in tmpl:
+                        if isinstance(g, dict) and (k in g.get("fields", []) or g.get("group") == k):
+                            found = True
+                            break
+                    if not found:
+                        # Check if field exists anywhere
+                        field_exists = any(
+                            isinstance(g, dict) and k in g.get("fields", [])
+                            for g in tmpl
+                        )
+                        if not field_exists:
+                            # Add to first group or create new one
+                            populated = False
+                            for g in tmpl:
+                                if isinstance(g, dict) and g.get("group") == "自定义":
+                                    g["fields"].append(k)
+                                    populated = True
+                                    break
+                            if not populated:
+                                tmpl.append({"group": "自定义", "fields": [k]})
+                            added_new = True
+                if added_new:
+                    novel.character_template = tmpl
+                    flag_modified(novel, "character_template")
+                    db.commit()
+
+            # Upsert: check existing by name
+            if "name" in data:
+                existing = db.query(Character).filter(
+                    Character.novel_id == novel_id, Character.name == data["name"]
+                ).first()
+                if existing and action == "add":
+                    action = "update"
+                    eid = existing.id
+
             if action == "add":
-                attrs = data.get("attributes", {})
                 db.add(Character(
                     novel_id=novel_id,
                     name=data.get("name", ""),

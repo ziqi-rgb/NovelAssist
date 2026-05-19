@@ -1271,7 +1271,13 @@ async function submitOutlineImport() {
                     try {
                         var msg = JSON.parse(l.slice(6));
                     } catch (e) { continue; }
-                    if (msg.type === "tool_proposal") {
+                    if (msg.type === "chunk") {
+                        var analysisBox = document.getElementById("import-analysis-text");
+                        if (analysisBox) {
+                            analysisBox.innerHTML += msg.content;
+                            analysisBox.scrollTop = analysisBox.scrollHeight;
+                        }
+                    } else if (msg.type === "tool_proposal") {
                         logEl.innerText = "正在写入: " + msg.tool_name + "...";
                         await fetch("/api/agent/execute/" + currentNovelId, {
                             method: "POST", headers: { "Content-Type": "application/json" },
@@ -1864,7 +1870,7 @@ function renderLines() {
 
 /* ═══════════ Target Builder ═══════════ */
 
-const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{characters_inactive}","{factions_list}","{relations_graph}","{locations_list}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
+const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{characters_list}","{characters_inactive}","{factions_list}","{relations_graph}","{locations_list}","{character_template}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
 
 function getNodeById(nid) { return (currentChain && currentChain.nodes) ? currentChain.nodes.find(function(n) { return n.id === nid; }) : null; }
 
