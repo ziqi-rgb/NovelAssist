@@ -87,7 +87,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale/parent_id/parent_name(父地点名)/map_x/map_y(0-24整数的相对坐标)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
+                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
                         "additionalProperties": True,
                     },
                 },
@@ -256,14 +256,14 @@ async def lifespan(app: FastAPI):
                 {
                     "id": "node_true_build", "x": 400, "y": 0,
                     "premise": "上级已存在，直接顺势落子。",
-                    "prompt": "【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系（规模 scale），直接调用 manage_world_element 工具生成目标地点。\n要求：\n1. 准确嵌套上级地图（parent_name）。\n2. 【强制】必须为该地点分配 map_x 和 map_y 坐标属性（0-24的随机或合理整数，代表在上一级地图中的位置）！",
+                    "prompt": "【顺势落子】（✅允许调用工具）\n直接上级已存在。请判断合适的层级关系（规模 scale），直接调用 manage_world_element 工具生成目标地点。\n要求：\n1. 准确嵌套上级地图（parent_name）。\n2. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表在上一级25x25网格中的具体方位）。\n3. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！",
                     "target": [], "branches": [],
                     "next_node_id": "", "output": ""
                 },
                 {
                     "id": "node_plan", "x": 0, "y": 200,
                     "premise": "上级缺失，从零规划完整嵌套链。",
-                    "prompt": "【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【空间标尺法则】：你规划的 scale 必须严格遵循以下层级，绝不允许跳级（特殊地形请对号入座）：\n[宇宙] -> [星球] -> [大陆] -> [国家](大荒/沙漠/海洋等巨型地形视同国家) -> [城池](绿洲/小镇/据点) -> [街区](门派外围/营地) -> [具体建筑](神殿/密室)。\n请仅用纯文本罗列清单。格式示例：\n1. 宇宙：XXX\n2. 星球：XXX\n...直到目标地点。\n明确标出谁是谁的 parent_name！严禁调用工具！",
+                    "prompt": "【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【绝对空间标尺】：你规划的 scale 必须、只能从以下 7 个词汇中挑选，严禁自创：\n[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n（注：特殊地形如沙漠、海洋请标为[国家]；绿洲、小镇标为[城池]；神殿、具体建筑标为[街区]）\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！",
                     "target": [], "branches": [],
                     "next_node_id": "node_desc", "output": ""
                 },
@@ -277,7 +277,7 @@ async def lifespan(app: FastAPI):
                 {
                     "id": "node_build_top", "x": 200, "y": 400,
                     "premise": "进入循环创建，每次只建最高层未建节点。",
-                    "prompt": "【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 map_x 和 map_y 属性（0-24之间的整数，代表它在上一级25x25网格中的具体方位）。",
+                    "prompt": "【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数，代表它在上一级25x25网格中的具体方位）。\n4. 【强制】写入 JSON 时，代表层级的字段名必须用 scale (取值为上文的 7 大标尺之一)！",
                     "target": [], "branches": [],
                     "next_node_id": "node_check_bottom", "output": ""
                 },
@@ -2146,12 +2146,14 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         elif etype == "location":
             # Scale validation and downgrade
-            valid_scales = ["世界", "星球", "大陆", "国家", "城池", "街区", "具体建筑"]
-            input_scale = data.get("scale", "具体建筑")
+            valid_scales = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区"]
+            input_scale = data.get("scale", "街区")
             if input_scale not in valid_scales:
                 s_lower = str(input_scale).lower()
-                if "世界" in s_lower or "宇宙" in s_lower or "universe" in s_lower:
-                    input_scale = "世界"
+                if "大千世界" in s_lower:
+                    input_scale = "大千世界"
+                elif "世界" in s_lower or "宇宙" in s_lower or "universe" in s_lower:
+                    input_scale = "宇宙"
                 elif "星球" in s_lower or "planet" in s_lower:
                     input_scale = "星球"
                 elif "大陆" in s_lower or "continent" in s_lower:
@@ -2160,10 +2162,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     input_scale = "国家"
                 elif "城" in s_lower or "镇" in s_lower or "city" in s_lower or "town" in s_lower:
                     input_scale = "城池"
-                elif "村" in s_lower or "village" in s_lower or "街" in s_lower:
+                elif "村" in s_lower or "village" in s_lower or "街" in s_lower or "建筑" in s_lower or "building" in s_lower:
                     input_scale = "街区"
                 else:
-                    input_scale = "具体建筑"
+                    input_scale = "街区"
             data["scale"] = input_scale
 
             # Upsert: check existing by name
@@ -2192,14 +2194,18 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 parent_id = parent_loc.id
 
             if action == "add":
+                final_x = data.get("grid_x") if data.get("grid_x") is not None else data.get("map_x")
+                final_y = data.get("grid_y") if data.get("grid_y") is not None else data.get("map_y")
                 db.add(Location(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
                     parent_id=parent_id,
                     scale_level=data.get("scale", ""),
-                    map_x=data.get("map_x"),
-                    map_y=data.get("map_y"),
+                    grid_x=final_x,
+                    grid_y=final_y,
+                    map_x=final_x,
+                    map_y=final_y,
                 ))
             elif action == "update" and eid:
                 item = db.get(Location, eid)
@@ -2212,10 +2218,14 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.scale_level = data["scale"]
                     if parent_id is not None:
                         item.parent_id = parent_id
-                    if "map_x" in data:
-                        item.map_x = int(data["map_x"]) if data["map_x"] is not None else None
-                    if "map_y" in data:
-                        item.map_y = int(data["map_y"]) if data["map_y"] is not None else None
+                    if "grid_x" in data or "map_x" in data:
+                        val = data.get("grid_x") if data.get("grid_x") is not None else data.get("map_x")
+                        item.grid_x = int(val) if val is not None else None
+                        item.map_x = item.grid_x
+                    if "grid_y" in data or "map_y" in data:
+                        val = data.get("grid_y") if data.get("grid_y") is not None else data.get("map_y")
+                        item.grid_y = int(val) if val is not None else None
+                        item.map_y = item.grid_y
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 
