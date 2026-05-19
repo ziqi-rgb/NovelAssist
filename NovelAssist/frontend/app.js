@@ -1126,7 +1126,23 @@ const copilotSend = document.getElementById("copilot-send");
 
 window.handleCopilotSend = function() {
     var t = copilotInput.value.trim();
-    if (t) { copilotInput.value = ""; copilotChat(t); }
+    if (!t) return;
+    copilotInput.value = "";
+    var scene = document.getElementById("chat-scene-select")?.value || "chat";
+    if (scene.startsWith("chain_")) {
+        var chainId = parseInt(scene.replace("chain_", ""));
+        if (chainId) {
+            var userB = document.createElement("div"); userB.className = "copilot-bubble user";
+            userB.innerHTML = '<div class="cp-label">你</div>' + e(t) + '<div style="text-align:right;margin-top:6px;"><span class="undo-capsule" onclick="truncateChat(this)">✕ 撤回</span></div>';
+            copilotHistory.appendChild(userB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
+            var aiB = document.createElement("div"); aiB.className = "copilot-bubble ai streaming";
+            aiB.innerHTML = '<div class="cp-label">AI</div>';
+            copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
+            runHeadlessChain(chainId, t, aiB);
+            return;
+        }
+    }
+    copilotChat(t);
 };
 
 function getActiveTextarea() {
@@ -1378,6 +1394,103 @@ async function executeTool(toolName, args, card) {
     }
 }
 
+async function runHeadlessChain(chainId, userInput, bubbleEl) {
+    var s = getSettings();
+    try {
+        var rc = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+        var nodes = rc.nodes || [];
+        if (nodes.length === 0) { bubbleEl.appendChild(document.createTextNode("[该推理链无节点]")); bubbleEl.classList.remove("streaming"); return; }
+
+        nodes.forEach(function(n) { n.output = ""; });
+        var currentNodeId = nodes[0].id;
+        var executedNodeIds = new Set();
+        var prevOutput = "用户指令: " + userInput;
+
+        while (currentNodeId) {
+            if (executedNodeIds.has(currentNodeId)) break;
+            executedNodeIds.add(currentNodeId);
+            var node = nodes.find(function(n) { return n.id === currentNodeId; });
+            if (!node) break;
+
+            var progressEl = document.createElement("div");
+            progressEl.style.cssText = "font-size:0.72rem;color:var(--text-muted);margin:4px 0;";
+            progressEl.textContent = "⚙️ 执行: " + ((node.prompt || "").split("\n")[0] || "").substring(0, 60);
+            bubbleEl.appendChild(progressEl);
+            copilotHistory.scrollTop = copilotHistory.scrollHeight;
+
+            try {
+                var targetT = compileTarget(node.target);
+                var res = await fetch("/api/reasoning/execute", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        novel_id: currentNovelId,
+                        premise: node.premise || "",
+                        prompt: node.prompt || "",
+                        target: targetT,
+                        previous_output: prevOutput,
+                        api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
+                        context_settings: rc.context_settings || {},
+                    }),
+                });
+                var txt = "";
+                var gen = parseSSEStream(res);
+                while (true) {
+                    var cr = await gen.next();
+                    if (cr.done) break;
+                    var msg = cr.value;
+                    if (msg.type === "chunk") {
+                        txt += msg.content;
+                        bubbleEl.appendChild(document.createTextNode(msg.content));
+                        copilotHistory.scrollTop = copilotHistory.scrollHeight;
+                    } else if (msg.type === "tool_proposal") {
+                        var argsB = JSON.stringify(msg.arguments);
+                        var card = document.createElement("div");
+                        card.className = "tool-proposal";
+                        card.innerHTML = '<div class="tp-title">🛠 自动执行: ' + e(msg.tool_name) + '</div>'
+                            + '<div class="tp-args">' + e(JSON.stringify(msg.arguments, null, 2)) + '</div>'
+                            + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⏳ 链式执行中...</span></div>';
+                        bubbleEl.appendChild(card);
+                        copilotHistory.scrollTop = copilotHistory.scrollHeight;
+                        await fetch("/api/agent/execute/" + currentNovelId, {
+                            method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
+                        });
+                        card.classList.add("tp-executed");
+                        card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
+                    }
+                }
+                var routeKey = null;
+                var rm = txt.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+                if (rm) routeKey = rm[1].trim();
+                var cleanOutput = txt.replace(/<\/?ROUTE>/g, "").trim();
+                node.output = cleanOutput;
+                prevOutput = cleanOutput;
+
+                var nextId = null;
+                if (node.branches && node.branches.length > 0) {
+                    for (var bi = 0; bi < node.branches.length; bi++) {
+                        var br = node.branches[bi];
+                        if (br.condition && (routeKey === br.condition || cleanOutput.includes(br.condition))) {
+                            nextId = br.next_node_id;
+                            break;
+                        }
+                    }
+                }
+                if (!nextId) nextId = node.next_node_id || null;
+                currentNodeId = nextId;
+            } catch (e) {
+                bubbleEl.appendChild(document.createTextNode("\n[节点错误: " + e.message + "]"));
+                currentNodeId = null;
+            }
+        }
+        bubbleEl.appendChild(document.createTextNode("\n\n✅ 推理链执行完毕。"));
+    } catch (e) {
+        bubbleEl.appendChild(document.createTextNode("\n[链加载失败: " + e.message + "]"));
+    } finally {
+        bubbleEl.classList.remove("streaming");
+    }
+}
+
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
@@ -1439,6 +1552,14 @@ async function loadChainSelect() {
     chainSelect.innerHTML = '<option value="">-- 选择推演方案 --</option>';
     const chains = await (await fetch("/api/reasoning_chains" + nidQ())).json();
     chains.forEach(rc => { chainSelect.innerHTML += `<option value="${rc.id}">${e(rc.title)}</option>`; });
+    // Also populate chat scene dropdown with SOP chains
+    var sceneSel = document.getElementById("chat-scene-select");
+    if (sceneSel) {
+        sceneSel.querySelectorAll("option[value^='chain_']").forEach(function(o) { o.remove(); });
+        chains.forEach(function(rc) {
+            sceneSel.innerHTML += '<option value="chain_' + rc.id + '">🔗 SOP: ' + e(rc.title) + '</option>';
+        });
+    }
 }
 
 chainSelect.addEventListener("change", async () => {

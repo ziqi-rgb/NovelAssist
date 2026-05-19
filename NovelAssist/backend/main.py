@@ -198,44 +198,67 @@ async def lifespan(app: FastAPI):
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
-    # Seed smart map reasoning chain
+    # Seed smart reasoning chains
     with SessionLocal() as db3:
-        existing = db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 智能建图判定流").first()
-        if not existing:
-            nodes = [
+        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 深度生态与地图建构流").first():
+            nodes_map = [
                 {
-                    "id": "node_check", "x": 100, "y": 50,
-                    "premise": "目标: 在此处输入你想建立的地点。例如【在江南旁边建一个桃花岛】",
-                    "prompt": "【现状判定】\n分析世界快照中的已有地点。\n判断目标地点的上级地点是否已存在？\n如果已存在，输出 <ROUTE>YES</ROUTE>\n如果不存在，输出 <ROUTE>NO</ROUTE>\n不要有多余废话。",
-                    "target": [{"id":"blk_1", "type":"placeholder", "value":"{locations_list}"}],
+                    "id": "eco_analyze", "x": 100, "y": 50,
+                    "premise": "分析用户建图需求，推演该地点的生态环境、资源特产、隐藏势力。",
+                    "prompt": "【生态推演】\n结合：{locations_list}\n分析用户的建图需求，推演该地点的【生态环境、资源特产、隐藏势力】。\n完成后判断上级是否存在。缺失输出 <ROUTE>NO_PARENT</ROUTE>，完整输出 <ROUTE>READY</ROUTE>。",
+                    "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
                     "branches": [
-                        {"condition": "NO", "next_node_id": "node_build_parent"},
-                        {"condition": "YES", "next_node_id": "node_build_target"}
+                        {"condition": "NO_PARENT", "next_node_id": "eco_parent"},
+                        {"condition": "READY", "next_node_id": "eco_build"}
                     ],
                     "next_node_id": "", "output": ""
                 },
                 {
-                    "id": "node_build_parent", "x": -100, "y": 250,
-                    "premise": "前置: 上级地点缺失，需补齐。",
-                    "prompt": "【前置建设】\n请调用 manage_world_element 工具，建设必须的上级地点（严禁建底层建筑）。建完即停。",
+                    "id": "eco_parent", "x": -100, "y": 250,
+                    "premise": "上级地点缺失，需补齐层级链。",
+                    "prompt": "【补齐上级】\n调用 manage_world_element 工具建立需要的上级地点框架（世界→星球→大陆→国家）。建完即停。",
                     "target": [], "branches": [],
-                    "next_node_id": "node_build_target", "output": ""
+                    "next_node_id": "eco_build", "output": ""
                 },
                 {
-                    "id": "node_build_target", "x": 300, "y": 250,
-                    "premise": "前置: 上级地点已就绪。",
-                    "prompt": "【精准落子】\n请调用 manage_world_element 工具，正式建立目标地点。务必正确挂载 parent_name 到上级，并生成坐标。",
+                    "id": "eco_build", "x": 300, "y": 250,
+                    "premise": "上级已就绪，生态设定已完成。",
+                    "prompt": "【综合落子】\n结合前述生态与资源推演，调用 manage_world_element 工具建立最终地点。将丰富设定写入 description，生成 map_x/map_y 坐标。",
                     "target": [], "branches": [],
                     "next_node_id": "", "output": ""
                 },
             ]
-            chain = ReasoningChain(
-                title="🗺️ 智能建图判定流",
+            db3.add(ReasoningChain(
+                title="🗺️ 深度生态与地图建构流",
                 context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
-                nodes=nodes,
-            )
-            db3.add(chain)
-            db3.commit()
+                nodes=nodes_map,
+            ))
+
+        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "👤 深度人设与关系推演流").first():
+            nodes_char = [
+                {
+                    "id": "char_flesh", "x": 100, "y": 50,
+                    "premise": "丰满角色血肉，构造人际关系网。",
+                    "prompt": "【血肉丰满与关系网】\n已有角色：{characters_list}\n模板字段：{character_template}\n用户需要建一个角色。请发散思维，丰满其性格缺陷、隐藏动机。查阅名录，强行让他与名录中【至少1个】已有角色产生恩怨纠葛！输出推演报告。",
+                    "target": [{"id":"blk_1","type":"placeholder","value":"{characters_list}"},{"id":"blk_2","type":"placeholder","value":"{character_template}"}],
+                    "branches": [],
+                    "next_node_id": "char_build", "output": ""
+                },
+                {
+                    "id": "char_build", "x": 300, "y": 250,
+                    "premise": "基于推演报告，规范化落子。",
+                    "prompt": "【规范化落子】\n基于上一步的推演报告，严格按照嵌套字典格式（{character_template}），调用 manage_world_element 工具正式建立该角色！",
+                    "target": [{"id":"blk_1","type":"placeholder","value":"{character_template}"}],
+                    "branches": [],
+                    "next_node_id": "", "output": ""
+                },
+            ]
+            db3.add(ReasoningChain(
+                title="👤 深度人设与关系推演流",
+                context_settings={"use_outlines": False, "use_characters": True, "use_timeline": False},
+                nodes=nodes_char,
+            ))
+        db3.commit()
     yield
 
 
