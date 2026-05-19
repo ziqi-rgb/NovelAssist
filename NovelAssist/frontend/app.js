@@ -1315,7 +1315,7 @@ document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("clic
 function renderToolProposal(parentBubble, proposal, autoExecute) {
     var argsText = JSON.stringify(proposal.arguments || {}, null, 2);
     var toolLabel = proposal.tool_name === "advance_world_time" ? "🌏 推进世界时间" :
-                    proposal.tool_name === "modify_character" ? "👤 修改人物" : "🔧 " + proposal.tool_name;
+                    proposal.tool_name === "manage_world_element" ? "⚙️ 元素操作" : "🔧 " + proposal.tool_name;
     var tp = document.createElement("div");
     tp.className = "tool-proposal";
     tp.innerHTML = '<div class="tp-title">📋 提议操作: ' + toolLabel + '</div>' +
@@ -1365,13 +1365,16 @@ async function executeTool(toolName, args, card) {
             if (toolName === "generate_reasoning_chain") {
                 if (typeof loadReasoningModule === "function") loadReasoningModule();
             }
+            return true;
         } else {
             card.querySelector(".tp-title").textContent = "❌ 执行失败: " + (result.msg || "未知错误");
             card.classList.add("tp-rejected");
+            return false;
         }
     } catch (e) {
         card.querySelector(".tp-title").textContent = "❌ 网络错误: " + e.message;
         card.classList.add("tp-rejected");
+        return false;
     }
 }
 
@@ -1386,10 +1389,14 @@ function getCopilotScene() {
 
 document.getElementById("prompt-settings-btn").addEventListener("click", async () => {
     const prompts = await (await fetch("/api/settings/prompts")).json();
-    promptTpl.innerHTML = "";
+    promptTpl.innerHTML = '<div style="text-align:right;margin-bottom:10px;"><button class="sys-btn sys-btn-danger" style="font-size:.72rem;" onclick="if(confirm(\'确定恢复所有提示词为系统默认吗？您的修改将丢失！\')){fetch(\'/api/settings/reset_prompts\',{method:\'POST\'}).then(function(){location.reload();});}">🔄 恢复全部出厂默认</button></div>';
     Object.entries(promptLabels).forEach(([key, label]) => {
+        var warning = "";
+        if (key === "chat" || key === "import_data") {
+            warning = ' <span style="color:#ef4444;font-size:0.75rem;">(⚠️ 核心动作系统词，勿随意删减指令)</span>';
+        }
         const div = document.createElement("div"); div.style.marginBottom = "12px";
-        div.innerHTML = `<label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">${label}<button class="sys-btn sys-btn-ghost reset-prompt-btn" data-key="${key}" title="恢复此项的默认提示词" style="font-size:.7rem;margin-left:8px;padding:1px 8px;">🔄 恢复默认</button></label><textarea data-scene="${key}" style="width:100%;min-height:80px;font-size:.75rem;font-family:Consolas,monospace;padding:6px 8px;border:1px solid var(--border);border-radius:4px;resize:vertical;">${e(prompts[key]||"")}</textarea>`;
+        div.innerHTML = `<label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">${label}${warning}<button class="sys-btn sys-btn-ghost reset-prompt-btn" data-key="${key}" title="恢复此项的默认提示词" style="font-size:.7rem;margin-left:8px;padding:1px 8px;">🔄 恢复默认</button></label><textarea data-scene="${key}" style="width:100%;min-height:80px;font-size:.75rem;font-family:Consolas,monospace;padding:6px 8px;border:1px solid var(--border);border-radius:4px;resize:vertical;">${e(prompts[key]||"")}</textarea>`;
         promptTpl.appendChild(div);
     });
     promptModal.classList.remove("hidden");

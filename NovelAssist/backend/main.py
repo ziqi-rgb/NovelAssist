@@ -87,7 +87,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale/parent_id/parent_name(父地点名,无ID时的替代)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(新键自动扩模板)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
+                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: name/description/scale/parent_id/parent_name(父地点名)/map_x/map_y(0-24整数的相对坐标)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(新键自动扩模板)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
                         "additionalProperties": True,
                     },
                 },
@@ -1935,6 +1935,19 @@ def get_default_prompts():
     return DEFAULT_PROMPT_TEMPLATES
 
 
+@app.post("/api/settings/reset_prompts")
+def reset_prompt_templates(db: Session = Depends(get_db)):
+    gs = db.get(GlobalSettings, 1)
+    if gs is None:
+        gs = GlobalSettings(id=1, prompt_templates=DEFAULT_PROMPT_TEMPLATES)
+        db.add(gs)
+    else:
+        gs.prompt_templates = copy.deepcopy(DEFAULT_PROMPT_TEMPLATES)
+        flag_modified(gs, "prompt_templates")
+    db.commit()
+    return {"status": "success"}
+
+
 # ═══════════ Writing Copilot ═══════════
 
 class CopilotRequest(BaseModel):
@@ -2097,6 +2110,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     description=data.get("description", ""),
                     parent_id=parent_id,
                     scale_level=data.get("scale", ""),
+                    map_x=data.get("map_x"),
+                    map_y=data.get("map_y"),
                 ))
             elif action == "update" and eid:
                 item = db.get(Location, eid)
@@ -2109,6 +2124,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.scale_level = data["scale"]
                     if parent_id is not None:
                         item.parent_id = parent_id
+                    if "map_x" in data:
+                        item.map_x = int(data["map_x"]) if data["map_x"] is not None else None
+                    if "map_y" in data:
+                        item.map_y = int(data["map_y"]) if data["map_y"] is not None else None
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 

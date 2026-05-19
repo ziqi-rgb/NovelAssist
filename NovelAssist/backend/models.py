@@ -154,6 +154,8 @@ class Location(Base):
     )
     grid_x: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     grid_y: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    map_x: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    map_y: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     attributes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
 

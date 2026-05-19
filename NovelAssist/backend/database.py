@@ -88,6 +88,14 @@ def run_migration() -> None:
         if "faction_role" not in char_cols:
             db.execute(text("ALTER TABLE characters ADD COLUMN faction_role TEXT DEFAULT ''"))
             db.commit()
+
+        loc_cols2 = [c["name"] for c in insp.get_columns("locations")]
+        if "map_x" not in loc_cols2:
+            db.execute(text("ALTER TABLE locations ADD COLUMN map_x INTEGER"))
+            db.commit()
+        if "map_y" not in loc_cols2:
+            db.execute(text("ALTER TABLE locations ADD COLUMN map_y INTEGER"))
+            db.commit()
     finally:
         db.close()
 
