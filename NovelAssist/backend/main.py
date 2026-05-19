@@ -205,6 +205,7 @@ async def lifespan(app: FastAPI):
             "🤖 智能建图 SOP",
             "🗺️ 智能建图判定流",
             "🗺️ 深度生态与地图建构流",
+            "🗺️ 严谨建图层级推演流",
         ]
         db3.query(ReasoningChain).filter(ReasoningChain.title.in_(legacy)).delete(synchronize_session=False)
         db3.commit()
@@ -234,39 +235,64 @@ async def lifespan(app: FastAPI):
                 ],
             ))
 
-        # 3. 🗺️ 严谨建图层级推演流 (cyclic)
-        if not db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 严谨建图层级推演流").first():
-            db3.add(ReasoningChain(
-                title="🗺️ 严谨建图层级推演流",
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
-                nodes=[
-                    {
-                        "id": "node_eval", "x": 100, "y": 50,
-                        "premise": "严谨评估当前世界快照，判断最急需建立的层级。",
-                        "prompt": "【层级评估】\n查阅当前的世界快照：{locations_list}。\n目标地点：用户最初的指令需求。\n请按照严谨的地理层级（如：世界->大陆->国家->城池->具体建筑）进行自顶向下的梳理。\n分析当前数据库中【缺失的最高层级】是什么？\n- 如果目标地点的直接上级已存在（或者目标本身就是最顶层），输出 <ROUTE>READY</ROUTE>\n- 如果缺失任何上级，请明确指出【当前最急需建立的一层上级】是什么，并输出 <ROUTE>BUILD_NEXT</ROUTE>\n仅作严谨的客观推断，严禁调用工具，严禁生成多余的描述性废话。",
-                        "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
-                        "branches": [
-                            {"condition": "READY", "next_node_id": "node_final"},
-                            {"condition": "BUILD_NEXT", "next_node_id": "node_build_next"}
-                        ],
-                        "next_node_id": "", "output": ""
-                    },
-                    {
-                        "id": "node_build_next", "x": 350, "y": 50,
-                        "premise": "仅建立当前最急需的一层上级。",
-                        "prompt": "【单层补齐】\n基于上一步的评估结果，调用 manage_world_element 工具，仅建立当前最急需的一层上级地点。\n要求：\n1. 确保 parent_name 正确关联至更上级（若为最顶层则留空）。\n2. 描述客观、严谨，符合系统设定。\n建完即止，不要擅自向下展开更多层级。",
-                        "target": [], "branches": [],
-                        "next_node_id": "node_eval", "output": ""
-                    },
-                    {
-                        "id": "node_final", "x": 100, "y": 300,
-                        "premise": "前置层级已全部就绪，正式建立目标地点。",
-                        "prompt": "【目标落子】\n前置层级已全部就绪。请调用 manage_world_element 工具，正式建立目标地点。\n要求：\n1. 精准设置 parent_name 为刚建立或已存在的直接上级。\n2. 赋予合理的 map_x 和 map_y 坐标（0-24的整数）。\n3. 描述需客观、严谨、精炼。",
-                        "target": [], "branches": [],
-                        "next_node_id": "", "output": ""
-                    },
-                ],
-            ))
+        # 3. 🗺️ 蓝图规划与逐层搭建流 (6-node DAG)
+        db3.query(ReasoningChain).filter(ReasoningChain.title == "🗺️ 蓝图规划与逐层搭建流").delete(synchronize_session=False)
+        db3.commit()
+        db3.add(ReasoningChain(
+            title="🗺️ 蓝图规划与逐层搭建流",
+            context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
+            nodes=[
+                {
+                    "id": "node_eval", "x": 100, "y": 50,
+                    "premise": "探明当前世界快照，判断上级是否存在。",
+                    "prompt": "【现状探明】查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，输出 <ROUTE>FALSE</ROUTE>",
+                    "target": [{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],
+                    "branches": [
+                        {"condition": "TRUE", "next_node_id": "node_true_build"},
+                        {"condition": "FALSE", "next_node_id": "node_plan"}
+                    ],
+                    "next_node_id": "", "output": ""
+                },
+                {
+                    "id": "node_true_build", "x": 400, "y": 0,
+                    "premise": "上级已存在，直接顺势落子。",
+                    "prompt": "【顺势落子】直接上级已存在。请判断合适的层级关系，直接调用 manage_world_element 工具生成目标地点。要求准确嵌套上级地图。",
+                    "target": [], "branches": [],
+                    "next_node_id": "", "output": ""
+                },
+                {
+                    "id": "node_plan", "x": 0, "y": 200,
+                    "premise": "上级缺失，从零规划完整嵌套链。",
+                    "prompt": "【蓝图规划】上级地图缺失，需从零搭建。请生成一条从最高层级到目标地点的地点嵌套链（例如：九州世界 -> 苍玄大陆 -> 青云国 -> 目标地点）。列出完整的层级目录，并明确谁是谁的上级。",
+                    "target": [], "branches": [],
+                    "next_node_id": "node_desc", "output": ""
+                },
+                {
+                    "id": "node_desc", "x": 0, "y": 400,
+                    "premise": "填充各层级的详细设定描述。",
+                    "prompt": "【设定填充】基于刚才生成的地点嵌套链，为目录中的每一层级生成详细的描述（生态、势力、背景）。传入下一层节点作为设定参考。",
+                    "target": [], "branches": [],
+                    "next_node_id": "node_build_top", "output": ""
+                },
+                {
+                    "id": "node_build_top", "x": 200, "y": 400,
+                    "premise": "进入循环创建，每次只建最高层未建节点。",
+                    "prompt": "【执行创建】进入创建流程！请查阅之前生成的嵌套链目录。\n找出目前最高级别且尚未被建立的那一个地点，调用 manage_world_element 工具建立它！\n注意：每一步只能建立一个节点，确保 parent_name 与目录规划一致。",
+                    "target": [], "branches": [],
+                    "next_node_id": "node_check_bottom", "output": ""
+                },
+                {
+                    "id": "node_check_bottom", "x": 200, "y": 600,
+                    "premise": "判断是否已到达嵌套链的最底层。",
+                    "prompt": "【进度判定】刚才建立的地点，是嵌套链最底层的那个目标地点吗？\n- 如果已经是目标地点（到底了），输出 <ROUTE>DONE</ROUTE>\n- 如果还没有到底（还有下级没建），输出 <ROUTE>CONTINUE</ROUTE>",
+                    "target": [], "branches": [
+                        {"condition": "DONE", "next_node_id": ""},
+                        {"condition": "CONTINUE", "next_node_id": "node_build_top"}
+                    ],
+                    "next_node_id": "", "output": ""
+                },
+            ],
+        ))
 
         db3.commit()
     yield

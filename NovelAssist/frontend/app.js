@@ -1139,8 +1139,8 @@ window.handleCopilotSend = function() {
             aiB.innerHTML = '<div class="cp-label">AI</div>';
             copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
             runHeadlessChain(chainId, t, aiB);
-            return;
         }
+        return;
     }
     copilotChat(t);
 };
