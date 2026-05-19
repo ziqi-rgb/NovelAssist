@@ -180,6 +180,8 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .cp-extra{margin-top:4px}
 .cp-truncate-btn{font-size:.6rem;color:var(--text-muted);background:transparent;border:1px solid var(--border);border-radius:3px;padding:1px 5px;cursor:pointer}
 .cp-truncate-btn:hover{color:#ef4444;border-color:#ef4444}
+.undo-capsule{display:inline-flex;align-items:center;justify-content:center;background-color:#f1f5f9;color:#64748b;border-radius:999px;padding:2px 8px;font-size:0.65rem;cursor:pointer;border:1px solid #e2e8f0;transition:all .2s}
+.undo-capsule:hover{background-color:#fee2e2;color:#ef4444;border-color:#fca5a5}
 .cp-insert-btn{display:inline-block;margin-top:4px;padding:3px 8px;font-size:.68rem;font-weight:600;color:var(--accent);background:#fff0ed;border:1px solid var(--accent);border-radius:4px;cursor:pointer}
 .cp-insert-btn:hover{background:var(--accent);color:#fff}
 .cp-action-row{display:flex;gap:6px;margin-top:2px}

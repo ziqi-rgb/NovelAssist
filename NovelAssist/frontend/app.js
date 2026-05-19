@@ -1172,8 +1172,7 @@ async function copilotChat(instruction, forceScene) {
 
     // show user message
     const userB = document.createElement("div"); userB.className = "copilot-bubble user";
-    userB.innerHTML = `<div class="cp-label">你</div>${e(instruction)}<div class="cp-extra"><button class="cp-truncate-btn" title="从此处悔棋截断">✂️ 悔棋</button></div>`;
-    userB.querySelector(".cp-truncate-btn")?.addEventListener("click", function(e) { e.stopPropagation(); truncateChat(this); });
+    userB.innerHTML = `<div class="cp-label">你</div>${e(instruction)}<div style="text-align:right;margin-top:6px;"><span class="undo-capsule" onclick="truncateChat(this)">✕ 撤回</span></div>`;
     copilotHistory.appendChild(userB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
 
     const aiB = document.createElement("div"); aiB.className = "copilot-bubble ai streaming";
@@ -1235,8 +1234,67 @@ function truncateChat(btnElement) {
 async function submitOutlineImport() {
     var text = document.getElementById("import-textarea").value.trim();
     if (!text) { showToast("请贴入设定文档"); return; }
-    document.getElementById("import-modal").classList.add("hidden");
-    copilotChat(text, "import_data");
+    if (!currentNovelId) return;
+
+    var prog = document.getElementById("import-progress-box");
+    var logEl = document.getElementById("import-log");
+    var submitBtn = document.getElementById("import-submit-btn");
+    prog.classList.remove("hidden");
+    logEl.innerText = "正在连接 AI 引擎...";
+    submitBtn.disabled = true;
+
+    try {
+        var s = getSettings();
+        var res = await fetch("/api/writing/copilot", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                novel_id: currentNovelId, instruction: text, scene: "import_data",
+                api_key: s.apiKey, base_url: s.baseUrl, model: s.model, history: [],
+            }),
+        });
+
+        var reader = res.body.getReader();
+        var dec = new TextDecoder();
+        var buf = "";
+
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buf += dec.decode(chunk.value, { stream: true });
+            var parts = buf.split("\n\n"); buf = parts.pop() || "";
+            for (var pi = 0; pi < parts.length; pi++) {
+                var p = parts[pi];
+                var lines = p.split("\n");
+                for (var li = 0; li < lines.length; li++) {
+                    var l = lines[li];
+                    if (!l.startsWith("data: ")) continue;
+                    try {
+                        var msg = JSON.parse(l.slice(6));
+                    } catch (e) { continue; }
+                    if (msg.type === "tool_proposal") {
+                        logEl.innerText = "正在写入: " + msg.tool_name + "...";
+                        await fetch("/api/agent/execute/" + currentNovelId, {
+                            method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
+                        });
+                    }
+                }
+            }
+        }
+        logEl.innerText = "✅ 导入全部完成！";
+        setTimeout(function() {
+            document.getElementById("import-modal").classList.add("hidden");
+            prog.classList.add("hidden");
+            document.getElementById("import-textarea").value = "";
+            if (typeof refreshAll === "function") refreshAll();
+            if (typeof loadLocationsCache === "function") loadLocationsCache();
+            if (typeof loadLocationTree === "function") loadLocationTree();
+        }, 1500);
+    } catch (err) {
+        logEl.innerHTML = '<span style="color:red;">❌ 错误: ' + (err.message || String(err)) + '</span>';
+    } finally {
+        submitBtn.disabled = false;
+    }
 }
 
 document.getElementById("clear-memory-btn")?.addEventListener("click", clearCopilotChat);

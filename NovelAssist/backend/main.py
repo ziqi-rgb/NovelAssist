@@ -80,12 +80,12 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "element_type": {"type": "string", "enum": ["outline", "location", "timeline", "faction", "relation", "character", "volume"]},
+                    "element_type": {"type": "string", "enum": ["outline", "location", "timeline", "faction", "relation", "character", "volume", "character_template"]},
                     "action": {"type": "string", "enum": ["add", "update", "delete"]},
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "新增/更新数据。\noutline: title/description/category。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(字典对象)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
+                        "description": "新增/更新数据。\noutline: title/description/category。\nlocation: 必须填 name/description。如有上下级必须填 parent_id(父地点ID) 和 scale(必须从 '星球','大陆','国家','城池','街区','具体建筑' 中选一)。\ncharacter: name/status/is_active(布尔)/faction_id/faction_role/location_id/attributes(字典对象)。\nvolume: title/order_index。\nfaction: name/description。\nrelation: source_id/target_id/label/weight。",
                         "additionalProperties": True,
                     },
                 },
@@ -1685,10 +1685,11 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             locs = db.scalars(select(Location).where(Location.novel_id == novel_id)).all()
             if not locs:
                 return "(无地点)"
-            lines = ["## 地点列表"]
+            lines = ["## 地点列表 (含ID与层级)"]
             for lc in locs:
-                sc = lc.scale.value if hasattr(lc.scale, "value") else str(lc.scale)
-                lines.append(f"- **{lc.name}** [{sc}]")
+                sc = lc.scale_level or (lc.scale.value if hasattr(lc.scale, "value") else "")
+                parent_info = f" (父ID:{lc.parent_id})" if lc.parent_id else ""
+                lines.append(f"- ID:{lc.id} **{lc.name}** [{sc}]{parent_info}")
             return "\n".join(lines)
 
         if ph == "timeline_history":
@@ -2006,6 +2007,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
+                    parent_id=data.get("parent_id"),
+                    scale_level=data.get("scale", ""),
                 ))
             elif action == "update" and eid:
                 item = db.get(Location, eid)
@@ -2014,6 +2017,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.name = data["name"]
                     if "description" in data:
                         item.description = data["description"]
+                    if "parent_id" in data:
+                        item.parent_id = data["parent_id"]
+                    if "scale" in data:
+                        item.scale_level = data["scale"]
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 
@@ -2152,6 +2159,11 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         v.order_index = int(data["order_index"])
             elif action == "delete" and eid:
                 db.query(Volume).filter(Volume.id == eid).delete()
+
+        elif etype == "character_template":
+            if action == "update" and "attributes" in data:
+                novel.character_template = data["attributes"]
+                flag_modified(novel, "character_template")
 
         db.commit()
         return {"status": "success", "msg": f"{etype} {action} 成功。"}
