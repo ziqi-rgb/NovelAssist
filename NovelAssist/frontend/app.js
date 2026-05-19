@@ -1294,10 +1294,12 @@ async function submitOutlineImport() {
 
     try {
         var s = getSettings();
+        var mode = document.getElementById("import-submit-btn").getAttribute("data-mode") || "import";
+        var sceneValue = (mode === "extract") ? "extract_outline" : "import_data";
         var res = await fetch("/api/writing/copilot", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                novel_id: currentNovelId, instruction: text, scene: "import_data",
+                novel_id: currentNovelId, instruction: text, scene: sceneValue,
                 api_key: s.apiKey, base_url: s.baseUrl, model: s.model, history: [],
             }),
         });
@@ -1353,9 +1355,43 @@ async function submitOutlineImport() {
 }
 
 document.getElementById("clear-memory-btn")?.addEventListener("click", clearCopilotChat);
-document.getElementById("outline-import-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.remove("hidden"); });
+document.getElementById("outline-import-btn")?.addEventListener("click", function() {
+    document.getElementById("import-modal-title").textContent = "📥 智能导入设定原件";
+    document.getElementById("import-modal-desc").textContent = "请输入世界观、历史、修仙境界、地理地名等综合设定原件。AI 将开启宏大世界观重构流程！";
+    document.getElementById("import-textarea").value = "";
+    document.getElementById("import-textarea").placeholder = "例如：\n【西部荒野设定集】\n能力划分：超凡阶、领主阶、神话阶...\n地标：深金矿坑、迷雾丛林...";
+    document.getElementById("import-submit-btn").setAttribute("data-mode", "import");
+    document.getElementById("import-submit-btn").textContent = "🚀 开始智能重构";
+    document.getElementById("import-progress-box").classList.add("hidden");
+    document.getElementById("import-modal").classList.remove("hidden");
+});
+document.getElementById("outline-extract-btn")?.addEventListener("click", function() {
+    document.getElementById("import-modal-title").textContent = "📖 小说正文逆向提炼";
+    document.getElementById("import-modal-desc").textContent = "请输入您编写的小说正文、章节草稿或大段剧情。AI 将逆向提炼境界、地标与角色并入档！";
+    document.getElementById("import-textarea").value = "";
+    document.getElementById("import-textarea").placeholder = "请直接将已经写好的小说章节文字、大段小说正文内容粘贴到这里...";
+    document.getElementById("import-submit-btn").setAttribute("data-mode", "extract");
+    document.getElementById("import-submit-btn").textContent = "👁️ 启动逆向提取";
+    document.getElementById("import-progress-box").classList.add("hidden");
+    document.getElementById("import-modal").classList.remove("hidden");
+});
+document.getElementById("outline-export-btn")?.addEventListener("click", async function() {
+    if (!currentNovelId) return;
+    showToast("⏳ 正在编译全量小说设定集...");
+    try {
+        var res2 = await fetch("/api/outlines/export-markdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId }) });
+        if (res2.ok) {
+            var d2 = await res2.json();
+            var blob = new Blob([d2.markdown], { type: "text/markdown;charset=utf-8;" });
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement("a"); link.href = url; link.setAttribute("download", "全景大纲设定集.md");
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            showToast("📤 设定集 Markdown 下载成功！");
+        }
+    } catch (e2) { console.error(e2); }
+});
 document.getElementById("import-submit-btn")?.addEventListener("click", submitOutlineImport);
-document.getElementById("import-cancel-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
+document.getElementById("import-close-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
 document.querySelector("#import-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
 
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
@@ -1535,7 +1571,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl) {
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
+const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", extract_outline: "正文逆向提炼", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
 
 function getCopilotScene() {
     return "auto";

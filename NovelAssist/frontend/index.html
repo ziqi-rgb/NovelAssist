@@ -159,7 +159,13 @@
                 </div>
                 <!-- 大纲模块：分类导航 -->
                 <div id="module-outline" class="module-panel hidden">
-                    <div class="sidebar-header"><h2>大纲分类</h2><button id="outline-import-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;" title="AI智能解析导入设定文档">📥 智能导入</button></div>
+                    <div class="sidebar-header"><h2>大纲分类</h2>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <button id="outline-import-btn" class="sys-btn sys-btn-primary" style="font-size:0.75rem;">📥 智能导入</button>
+                            <button id="outline-extract-btn" class="sys-btn sys-btn-secondary" style="font-size:0.75rem;">📖 正文提炼</button>
+                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size:0.75rem;border:1px solid var(--border);font-weight:700;">📤 导出 MD</button>
+                        </div>
+                    </div>
                     <ul id="outline-category-nav" class="category-nav">
                         <li data-cat="世界观" class="active">世界观</li>
                         <li data-cat="世界势力">世界势力</li>
@@ -482,19 +488,27 @@
         </div>
     </div>
 
-    <!-- 智能导入模态框 -->
+    <!-- 📥 创世大导入/逆向提炼模态框 -->
     <div id="import-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
-        <div class="modal-box" style="width:640px;max-height:85vh;overflow-y:auto;">
-            <h3>📥 智能解析导入</h3>
-            <p style="font-size:.75rem;color:var(--text-muted);">贴入设定文档，AI 将自动拆解为人物/地点/势力/大纲并录入数据库。</p>
-            <textarea id="import-textarea" placeholder="在此粘贴你的小说百科、设定文档、角色速记..." style="width:100%;height:300px;font-size:.8rem;padding:8px;border:1px solid var(--border);border-radius:4px;resize:vertical;"></textarea>
-            <div id="import-progress-box" class="hidden" style="margin-top:10px;padding:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;font-size:0.8rem;color:#166534;">
-                ⏳ AI 正在后台高速拆解并导入数据，请勿关闭弹窗...<br>
-                <div id="import-analysis-text" style="margin-bottom:8px;padding:8px;background:#fff;border:1px dashed #cbd5e1;color:#334155;font-size:0.8rem;white-space:pre-wrap;max-height:150px;overflow-y:auto;"></div>
+        <div class="modal-box" style="width:650px;max-height:90vh;overflow-y:auto;">
+            <h3 id="import-modal-title">📥 智能导入设定</h3>
+            <p id="import-modal-desc" style="font-size:.72rem;color:var(--text-muted);margin-bottom:12px;">请输入您的设定文本。AI 将严格遵循天条优先级重构数据库。</p>
+            <textarea id="import-textarea" placeholder="请在这里粘贴您的原始文本..." style="width:100%;height:200px;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;resize:vertical;box-sizing:border-box;background:var(--bg);"></textarea>
+            <div id="import-progress-box" class="hidden" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;">
+                <h5 style="margin:0 0 6px 0;font-size:.78rem;display:flex;justify-content:space-between;align-items:center;">
+                    <span>🤖 创世引擎执行状态:</span>
+                    <span id="import-status-tag" style="color:var(--accent);font-size:.7rem;font-weight:700;">解析中...</span>
+                </h5>
+                <pre id="import-analysis-text" style="margin:0;font-size:.7rem;white-space:pre-wrap;max-height:150px;overflow-y:auto;color:var(--text-muted);line-height:1.4;"></pre>
                 <span id="import-log"></span>
             </div>
-            <div class="modal-actions" style="margin-top:12px;">
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="import-submit-btn" class="btn-primary" data-mode="import">🚀 开始智能解析</button>
+                <button id="import-close-btn">关闭</button>
+            </div>
+        </div>
+    </div>
                 <button id="import-submit-btn" class="btn-primary">🚀 开始智能解析</button>
                 <button id="import-cancel-btn">取消</button>
             </div>

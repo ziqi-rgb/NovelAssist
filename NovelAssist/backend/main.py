@@ -828,12 +828,36 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                     Location.name.like(f"%{loc_name}%"),
                                 ).first()
                                 if loc:
+                                    novel2 = db.get(Novel, ch.novel_id)
                                     db.add(CharacterTrajectory(
                                         character_id=target.id,
                                         location_id=loc.id,
-                                        start_tick=novel2.current_tick if (novel2 := db.get(Novel, ch.novel_id)) else 0,
+                                        start_tick=novel2.current_tick if novel2 else 0,
                                         reason=f"正文归档：{loc_name}",
                                     ))
+                            # Handle faction_change
+                            fac_change = upd.get("faction_change")
+                            if fac_change:
+                                fac_name = str(fac_change).strip()
+                                if fac_name in ["无", "None", "退出", "叛逃", "脱离"]:
+                                    target.faction_id = None
+                                else:
+                                    faction_obj = db.query(Faction).filter(
+                                        Faction.novel_id == ch.novel_id,
+                                        Faction.name == fac_name,
+                                    ).first()
+                                    if faction_obj:
+                                        target.faction_id = faction_obj.id
+                                    else:
+                                        new_fac = Faction(
+                                            novel_id=ch.novel_id,
+                                            name=fac_name,
+                                            description=f"由归档事件自动创建：{fac_name}",
+                                        )
+                                        db.add(new_fac)
+                                        db.commit()
+                                        db.refresh(new_fac)
+                                        target.faction_id = new_fac.id
                             name = target.name
                             if target.attributes and isinstance(target.attributes, dict):
                                 base = target.attributes.get("基础信息", {})
@@ -2168,6 +2192,42 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
 
 
 # ═══════════ Agent Tool Execution ═══════════
+
+@app.post("/api/outlines/export-markdown")
+def export_outlines_markdown(data: dict, db: Session = Depends(get_db)):
+    novel_id = data.get("novel_id")
+    if not novel_id:
+        raise HTTPException(400, "novel_id is required")
+    items = db.scalars(select(Outline).where(Outline.novel_id == novel_id).order_by(Outline.order_index)).all()
+    by_parent: dict = {}
+    for it in items:
+        by_parent.setdefault(it.parent_id, []).append(it)
+    lines: list[str] = []
+    categories = ["世界观", "世界势力", "地理", "能力体系设定", "人物设定", "剧情大纲"]
+    lines.append("# 📖 小说设定大纲全本设定集")
+    lines.append("> 生成时间: 基于创世重构引擎实时导出\n")
+
+    def render_branch(node, depth):
+        indent = "  " * depth
+        lines.append(f"{indent}- **{node.title}**")
+        if node.description:
+            for desc_line in node.description.splitlines():
+                lines.append(f"{indent}  {desc_line}")
+        for child in by_parent.get(node.id, []):
+            render_branch(child, depth + 1)
+
+    for cat in categories:
+        cat_items = [it for it in items if it.category == cat]
+        if not cat_items:
+            continue
+        lines.append(f"## 📁 {cat}")
+        lines.append("---")
+        cat_ids = {it.id for it in cat_items}
+        roots = [it for it in cat_items if it.parent_id not in cat_ids]
+        for rt in roots:
+            render_branch(rt, 0)
+        lines.append("")
+    return {"markdown": "\n".join(lines)}
 
 @app.get("/api/factions")
 def get_factions(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
