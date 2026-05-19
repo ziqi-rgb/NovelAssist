@@ -224,7 +224,7 @@ contentInput.addEventListener("input", () => {
 
 function showArchiveOverlay() { document.getElementById("archive-overlay").classList.remove("hidden"); }
 function hideArchiveOverlay() { document.getElementById("archive-overlay").classList.add("hidden"); }
-function showToast(msg) { const t = document.getElementById("archive-toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 4000); }
+function showToast(msg) { const t = document.getElementById("archive-toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 4000); }
 
 document.getElementById("archive-selected-btn").addEventListener("click", async () => {
     if (!currentChapterId) { showToast("请先选中一个章节"); return; }
@@ -1164,7 +1164,7 @@ function replaceActiveTextarea(text) {
     ta.dispatchEvent(new Event("input"));
 }
 
-async function copilotChat(instruction) {
+async function copilotChat(instruction, forceScene) {
     const s = getSettings();
     if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
     const content = getActiveContent();
@@ -1172,7 +1172,8 @@ async function copilotChat(instruction) {
 
     // show user message
     const userB = document.createElement("div"); userB.className = "copilot-bubble user";
-    userB.innerHTML = `<div class="cp-label">你</div>${e(instruction)}`;
+    userB.innerHTML = `<div class="cp-label">你</div>${e(instruction)}<div class="cp-extra"><button class="cp-truncate-btn" title="从此处悔棋截断">✂️ 悔棋</button></div>`;
+    userB.querySelector(".cp-truncate-btn")?.addEventListener("click", function(e) { e.stopPropagation(); truncateChat(this); });
     copilotHistory.appendChild(userB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
 
     const aiB = document.createElement("div"); aiB.className = "copilot-bubble ai streaming";
@@ -1181,7 +1182,7 @@ async function copilotChat(instruction) {
 
     try {
         var currentAiResponse = "";
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: getCopilotScene(instruction), history: window.copilotChatHistory }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || getCopilotScene(instruction), history: window.copilotChatHistory }) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
@@ -1213,6 +1214,36 @@ async function copilotChat(instruction) {
     } catch (e) { aiB.appendChild(document.createTextNode("\n[失败: " + e.message + "]")); }
     finally { aiB.classList.remove("streaming"); }
 }
+
+function clearCopilotChat() {
+    window.copilotChatHistory = [];
+    copilotHistory.innerHTML = "";
+    showToast("对话记忆已清空");
+}
+
+function truncateChat(btnElement) {
+    var bubble = btnElement.closest(".copilot-bubble");
+    if (!bubble) return;
+    var idx = Array.from(copilotHistory.children).indexOf(bubble);
+    while (copilotHistory.children.length > idx) {
+        copilotHistory.removeChild(copilotHistory.lastChild);
+    }
+    window.copilotChatHistory = window.copilotChatHistory.slice(0, Math.floor(idx / 2) * 2);
+    showToast("已从此处悔棋截断");
+}
+
+async function submitOutlineImport() {
+    var text = document.getElementById("import-textarea").value.trim();
+    if (!text) { showToast("请贴入设定文档"); return; }
+    document.getElementById("import-modal").classList.add("hidden");
+    copilotChat(text, "import_data");
+}
+
+document.getElementById("clear-memory-btn")?.addEventListener("click", clearCopilotChat);
+document.getElementById("outline-import-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.remove("hidden"); });
+document.getElementById("import-submit-btn")?.addEventListener("click", submitOutlineImport);
+document.getElementById("import-cancel-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
+document.querySelector("#import-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
 
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
 document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
@@ -1283,7 +1314,7 @@ async function executeTool(toolName, args, card) {
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { chat: "自由对话", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武" };
+const promptLabels = { chat: "自由对话", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
 
 function getCopilotScene(instruction) {
     if (currentModule === "outline") return "outline_assist";

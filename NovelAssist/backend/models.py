@@ -340,6 +340,18 @@ DEFAULT_PROMPT_TEMPLATES = {
         "{content}\n\n"
         "推演指令：{instruction}"
     ),
+    "import_data": (
+        "你是一个顶级的世界观架构师与数据整理专家。\n"
+        "用户为你提供了一份原始的设定文档（可能是大纲、地理、势力或人物速记）。请彻底理解它，并调用你拥有的工具，将它们拆解录入到数据库中。\n"
+        "【严格执行指南】\n"
+        "1. 必须使用 manage_world_element 工具批量录入。\n"
+        "2. 文档中出现的新人物，请 action=add, element_type=character，将种族/功法等细节存入 attributes 字典。\n"
+        "3. 出现的新地点，类型选 location。\n"
+        "4. 出现的新势力，类型选 faction。\n"
+        "5. 其余的世界背景、剧情大纲、能力体系设定，类型选 outline，并在 data 中明确填写合适的 category（必须从：世界观, 世界势力, 地理, 人物设定, 能力体系设定, 剧情大纲 中选择匹配）。\n\n"
+        "待解析的原始文档内容如下：\n"
+        "{instruction}"
+    ),
 }
 
 

@@ -177,6 +177,9 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .copilot-bubble.ai{background:var(--bubble-ai)}
 .copilot-bubble.ai.streaming{border-left:2px solid var(--accent)}
 .copilot-bubble .cp-label{font-size:.62rem;font-weight:700;color:var(--text-muted);margin-bottom:2px}
+.cp-extra{margin-top:4px}
+.cp-truncate-btn{font-size:.6rem;color:var(--text-muted);background:transparent;border:1px solid var(--border);border-radius:3px;padding:1px 5px;cursor:pointer}
+.cp-truncate-btn:hover{color:#ef4444;border-color:#ef4444}
 .cp-insert-btn{display:inline-block;margin-top:4px;padding:3px 8px;font-size:.68rem;font-weight:600;color:var(--accent);background:#fff0ed;border:1px solid var(--accent);border-radius:4px;cursor:pointer}
 .cp-insert-btn:hover{background:var(--accent);color:#fff}
 .cp-action-row{display:flex;gap:6px;margin-top:2px}
