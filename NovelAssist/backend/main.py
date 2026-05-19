@@ -975,12 +975,18 @@ def update_location(location_id: int, body: LocationCreate, db: Session = Depend
         raise HTTPException(404, "地点不存在")
     loc.name = body.name
     loc.description = body.description
+    if body.scale_level:
+        loc.scale_level = body.scale_level
     if body.parent_id is not None:
+        if int(body.parent_id) == location_id:
+            raise HTTPException(400, "不能将上级设置为自己")
         loc.parent_id = body.parent_id
     if body.grid_x is not None:
         loc.grid_x = body.grid_x
+        loc.map_x = body.grid_x
     if body.grid_y is not None:
         loc.grid_y = body.grid_y
+        loc.map_y = body.grid_y
     if body.attributes is not None:
         loc.attributes = body.attributes
         flag_modified(loc, "attributes")
@@ -2166,6 +2172,47 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
 @app.get("/api/factions")
 def get_factions(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
     return db.query(Faction).filter(Faction.novel_id == novel_id).all()
+
+
+@app.post("/api/factions")
+def create_faction(data: dict, db: Session = Depends(get_db)):
+    novel_id = data.get("novel_id")
+    if not novel_id:
+        raise HTTPException(400, "novel_id is required")
+    faction = Faction(
+        novel_id=novel_id,
+        name=data.get("name", "新势力"),
+        description=data.get("description", ""),
+        base_location_id=data.get("base_location_id"),
+    )
+    db.add(faction)
+    db.commit()
+    db.refresh(faction)
+    return {"status": "success", "id": faction.id}
+
+
+@app.put("/api/factions/{faction_id}")
+def update_faction(faction_id: int, data: dict, db: Session = Depends(get_db)):
+    faction = db.get(Faction, faction_id)
+    if not faction:
+        raise HTTPException(404, "Faction not found")
+    faction.name = data.get("name", faction.name)
+    faction.description = data.get("description", faction.description)
+    b_id = data.get("base_location_id")
+    faction.base_location_id = int(b_id) if b_id else None
+    db.commit()
+    return {"status": "success"}
+
+
+@app.delete("/api/factions/{faction_id}")
+def delete_faction(faction_id: int, db: Session = Depends(get_db)):
+    faction = db.get(Faction, faction_id)
+    if not faction:
+        raise HTTPException(404, "Faction not found")
+    db.query(Character).filter(Character.faction_id == faction_id).update({"faction_id": None})
+    db.delete(faction)
+    db.commit()
+    return {"status": "success"}
 
 
 @app.get("/api/character_relations")

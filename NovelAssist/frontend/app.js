@@ -900,6 +900,26 @@ function renderLocTmplEditor() {
 
 /* ═══════════ Location Detail with Inherited Attributes ═══════════ */
 function renderLocationDetail(loc) {
+    document.getElementById("loc-name-input").value = loc.name || "";
+    document.getElementById("loc-desc-input").value = loc.description || "";
+    document.getElementById("loc-scale-select").value = loc.scale_level || "城池";
+    document.getElementById("loc-grid-x").value = (loc.grid_x != null) ? loc.grid_x : "";
+    document.getElementById("loc-grid-y").value = (loc.grid_y != null) ? loc.grid_y : "";
+
+    var parentSelect = document.getElementById("loc-parent-select");
+    parentSelect.innerHTML = '<option value="">-- 无上级 (根节点) --</option>';
+    fetch("/api/locations?novel_id=" + currentNovelId).then(function(r){return r.json();}).then(function(locList){
+        locList.forEach(function(l){
+            if (l.id !== loc.id) {
+                var opt = document.createElement("option");
+                opt.value = l.id;
+                opt.textContent = l.name + " [" + (l.scale_level||"") + "]";
+                if (l.id === loc.parent_id) opt.selected = true;
+                parentSelect.appendChild(opt);
+            }
+        });
+    }).catch(function(){});
+
     const container = document.getElementById("loc-attrs-editor");
     container.innerHTML = "";
     if (!loc) return;
@@ -1050,8 +1070,21 @@ async function loadLocationTree() {
     roots.forEach(r => renderTree(r, 0));
 }
 document.getElementById("save-location-btn").addEventListener("click", async () => { if (!currentLocationId) return;
-    await fetch(`/api/locations/${currentLocationId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: document.getElementById("loc-name-input").value, description: document.getElementById("loc-desc-input").value, attributes: collectLocationAttributes() }) });
-    await loadLocationTree(); });
+    var parentVal = document.getElementById("loc-parent-select").value;
+    var gx = document.getElementById("loc-grid-x").value;
+    var gy = document.getElementById("loc-grid-y").value;
+    var payload = {
+        name: document.getElementById("loc-name-input").value,
+        description: document.getElementById("loc-desc-input").value,
+        scale_level: document.getElementById("loc-scale-select").value,
+        parent_id: parentVal ? parseInt(parentVal) : null,
+        grid_x: gx !== "" ? parseInt(gx) : null,
+        grid_y: gy !== "" ? parseInt(gy) : null,
+        attributes: collectLocationAttributes(),
+    };
+    var res = await fetch(`/api/locations/${currentLocationId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (res.ok) { showToast("📍 地点元数据保存成功！"); await loadLocationTree(); } else { var e2 = await res.json(); alert("失败: " + (e2.detail||"未知")); }
+});
 
 /* ═══════════ Right bar ═══════════ */
 async function loadCharacters() {
@@ -2429,8 +2462,9 @@ async function loadRelationsGraph() {
 
         var ul = document.getElementById("factions-list-ul");
         if (ul) {
-            ul.innerHTML = (factions || []).map(function(f) {
-                return '<li style="padding:8px;border-bottom:1px solid var(--border);"><strong>' + e(f.name) + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
+            ul.innerHTML = (factions || []).map(function(_, i) {
+                var f = factions[i];
+                return '<li style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer;" data-fid="' + f.id + '" onclick="openFactionModal(' + f.id + ')"><strong>' + e(f.name) + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
             }).join("") || "<li>(无势力)</li>";
         }
     } catch (err) {
@@ -2527,6 +2561,70 @@ function renderVisNetwork(chars, factions, rels) {
     }
 }
 document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRelationsGraph);
+
+/* ═══════════ Faction Modal CRUD ═══════════ */
+var activeFactionId = null;
+
+window.openFactionModal = async function(fid) {
+    var modal = document.getElementById("faction-modal");
+    var nameInput = document.getElementById("faction-name-input");
+    var descInput = document.getElementById("faction-desc-input");
+    var locSelect = document.getElementById("faction-loc-select");
+    var delBtn = document.getElementById("faction-delete-btn");
+    document.getElementById("faction-modal-title").textContent = fid ? "⚙️ 编辑势力设定" : "🏛️ 创建全新世界势力";
+    locSelect.innerHTML = '<option value="">-- 选择总部地点 --</option>';
+    try {
+        var locList = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
+        locList.forEach(function(l) {
+            var opt = document.createElement("option");
+            opt.value = l.id;
+            opt.textContent = l.name + " [" + (l.scale_level||"") + "]";
+            locSelect.appendChild(opt);
+        });
+    } catch(e) {}
+
+    if (fid) {
+        activeFactionId = fid;
+        var factions = await (await fetch("/api/factions?novel_id=" + currentNovelId)).json();
+        var f = factions.find(function(x) { return x.id == fid; });
+        if (f) {
+            nameInput.value = f.name || "";
+            descInput.value = f.description || "";
+            locSelect.value = f.base_location_id || "";
+        }
+        delBtn.style.display = "inline-block";
+    } else {
+        activeFactionId = null;
+        nameInput.value = "";
+        descInput.value = "";
+        locSelect.value = "";
+        delBtn.style.display = "none";
+    }
+    modal.classList.remove("hidden");
+};
+
+document.getElementById("new-faction-btn")?.addEventListener("click", function() { openFactionModal(null); });
+document.getElementById("faction-cancel-btn")?.addEventListener("click", function() { document.getElementById("faction-modal").classList.add("hidden"); });
+document.getElementById("faction-save-btn")?.addEventListener("click", async function() {
+    var nameInput = document.getElementById("faction-name-input").value.trim();
+    if (!nameInput) { showToast("势力名称不能为空"); return; }
+    var payload = { novel_id: currentNovelId, name: nameInput, description: document.getElementById("faction-desc-input").value, base_location_id: document.getElementById("faction-loc-select").value ? parseInt(document.getElementById("faction-loc-select").value) : null };
+    var url = activeFactionId ? "/api/factions/" + activeFactionId : "/api/factions";
+    var method = activeFactionId ? "PUT" : "POST";
+    try {
+        var res = await fetch(url, { method: method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (res.ok) { showToast("🏛️ 势力数据更新成功！"); document.getElementById("faction-modal").classList.add("hidden"); loadRelationsGraph(); }
+    } catch(e) { console.error(e); }
+});
+document.getElementById("faction-delete-btn")?.addEventListener("click", async function() {
+    if (!activeFactionId) return;
+    if (!confirm("确定要将当前势力物理删除吗？\n删除后，属于该势力的所有人物其所属势力属性将自动脱钩，且该操作无法撤销！")) return;
+    try {
+        var res = await fetch("/api/factions/" + activeFactionId, { method: "DELETE" });
+        if (res.ok) { showToast("💥 势力已成功移除！"); document.getElementById("faction-modal").classList.add("hidden"); loadRelationsGraph(); }
+    } catch(e) { console.error(e); }
+});
+document.querySelector("#faction-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("faction-modal").classList.add("hidden"); });
 
 /* ═══════════ Export ═══════════ */
 document.getElementById("export-btn").addEventListener("click", async () => {

@@ -95,28 +95,39 @@
 
     <div id="cheat-sheet-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
-        <div class="modal-box" style="width:720px;max-height:85vh;overflow-y:auto;">
-            <h3 style="margin:0 0 12px;">💡 占位符速查表</h3>
-            <table style="width:100%;font-size:.75rem;border-collapse:collapse;">
-                <tr style="background:var(--bg);"><th style="text-align:left;padding:5px 8px;border:1px solid var(--border);">语法</th><th style="text-align:left;padding:5px 8px;border:1px solid var(--border);">用途</th></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{lore}</td><td style="padding:4px 8px;border:1px solid var(--border);">全部常驻上下文（大纲+人物+地点+时间线）</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{content}</td><td style="padding:4px 8px;border:1px solid var(--border);">当前模块编辑器全部文本</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{selection}</td><td style="padding:4px 8px;border:1px solid var(--border);">用户选中的文本，仅在正文创作板块中可用</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{instruction}</td><td style="padding:4px 8px;border:1px solid var(--border);">用户输入的指令文本</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{outlines_list}</td><td style="padding:4px 8px;border:1px solid var(--border);">列出全部大纲条目目录</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{characters_list}</td><td style="padding:4px 8px;border:1px solid var(--border);">活跃人物名录（含常驻退场人物）</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{characters_inactive}</td><td style="padding:4px 8px;border:1px solid var(--border);">退场人物名录（不含常驻人物）</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{locations_list}</td><td style="padding:4px 8px;border:1px solid var(--border);">列出全部地点目录</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{timeline_history}</td><td style="padding:4px 8px;border:1px solid var(--border);">历史时间线事件列表</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{timeline_world}</td><td style="padding:4px 8px;border:1px solid var(--border);">世界时间线事件列表</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{timeline_main}</td><td style="padding:4px 8px;border:1px solid var(--border);">正文时间线事件列表</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{character:姓名}</td><td style="padding:4px 8px;border:1px solid var(--border);">精准检索特定角色完整档案</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{outline:标题}</td><td style="padding:4px 8px;border:1px solid var(--border);">根据标题检索特定大纲条目</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{location:名称}</td><td style="padding:4px 8px;border:1px solid var(--border);">精准检索特定地点档案</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{chain_data}</td><td style="padding:4px 8px;border:1px solid var(--border);">推演链所有节点输出拼接(一般用不上)</td></tr>
-                <tr><td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;">{current_time}</td><td style="padding:4px 8px;border:1px solid var(--border);">当前世界历法时间（如：天启 甲子年 孟春 初一 子时）</td></tr>
-            </table>
-            <p style="font-size:.68rem;color:var(--muted);margin-top:8px;">点击任意占位符语法可选中</p>
+        <div class="modal-box" style="width:780px;max-height:85vh;overflow-y:auto;">
+            <h3 style="margin:0 0 12px;">💡 创世系统占位符百科全书</h3>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;font-size:.72rem;border-collapse:collapse;white-space:nowrap;">
+                    <thead>
+                        <tr style="background:var(--bg);text-align:left;">
+                            <th style="padding:6px 10px;border:1px solid var(--border);">占位符语法</th>
+                            <th style="padding:6px 10px;border:1px solid var(--border);">返回格式</th>
+                            <th style="padding:6px 10px;border:1px solid var(--border);">高阶用途 & 内容详情</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:var(--accent);">{lore}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">聚合 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量常驻生效上下文（常驻大纲+活跃角色+全地点名录+全时间线）</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_world}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 世界观分类大纲全文。保留层级缩进与全部设定细节。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_faction}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 势力大纲全文。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_geo}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 地理知识分类大纲全文。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_power}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 能力体系分类大纲全文。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_story}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 剧情大纲全文。严格遵循 [卷]->[章]->[幕]。</td></tr>
+                        <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#16a34a;">{locations_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 全量地点层级树。包含地名/scale/坐标/描述。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{outlines_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量大纲条目扁平名录。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{locations_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量地点扁平名录（含ID/scale/父ID）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{characters_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">活跃角色名录简档（含当前位置及势力）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{characters_inactive}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">已退场角色名录简档。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{factions_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全势力名录（含描述/驻地/成员清单）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{character_template}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">JSON 文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前小说自定义人物档案属性模板。</td></tr>
+                        <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{character:姓名}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 精准提取特定角色完整档案。</td></tr>
+                        <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{location:名称}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 精准提取特定地点完整档案。</td></tr>
+                        <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{outline:标题}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 根据标题精准调取特定大纲条目。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{current_time}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">时间标签</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前世界历法时间（如：天宝 甲子年 孟春 初一 子时）。</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p style="font-size:.65rem;color:var(--muted);margin-top:8px;">点击任意占位符语法可双击选中。系统支持多重高密度大纲与地点互借对齐。</p>
             <div class="modal-actions"><button id="cheat-sheet-close" class="btn-primary">关闭</button></div>
         </div>
     </div>
@@ -182,8 +193,9 @@
                     <ul id="chain-list"></ul>
                 </div>
                 <div id="module-relations" class="module-panel hidden">
-                    <div class="list-header" style="margin-bottom:10px;">
+                    <div class="list-header" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
                         <span>🏛️ 势力名录</span>
+                        <button id="new-faction-btn" class="sys-btn sys-btn-secondary" style="font-size:.72rem;padding:3px 8px;">+ 新建势力</button>
                     </div>
                     <ul id="factions-list-ul" class="item-list" style="overflow-y:auto;flex:1;"></ul>
                 </div>
@@ -281,6 +293,31 @@
                             <div class="loc-left-pane">
                                 <input type="text" id="loc-name-input" placeholder="地点名称...">
                                 <textarea id="loc-desc-input" placeholder="详细描述..."></textarea>
+                                <div class="loc-meta-box" style="margin-top:16px;border-top:1px dashed var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px;">
+                                    <div style="display:flex;gap:8px;align-items:center;">
+                                        <label style="font-size:0.75rem;font-weight:700;min-width:60px;color:var(--accent);">空间标尺:</label>
+                                        <select id="loc-scale-select" style="flex:1;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                            <option value="大千世界">大千世界</option><option value="宇宙">宇宙</option><option value="星球">星球</option>
+                                            <option value="大陆">大陆</option><option value="国家">国家</option><option value="城池">城池</option><option value="街区">街区</option>
+                                        </select>
+                                    </div>
+                                    <div style="display:flex;gap:8px;align-items:center;">
+                                        <label style="font-size:0.75rem;font-weight:700;min-width:60px;color:var(--accent);">嵌套上级:</label>
+                                        <select id="loc-parent-select" style="flex:1;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                            <option value="">-- 无上级 (根节点) --</option>
+                                        </select>
+                                    </div>
+                                    <div style="display:flex;gap:12px;align-items:center;margin-top:4px;">
+                                        <div style="display:flex;gap:4px;align-items:center;flex:1;">
+                                            <label style="font-size:0.75rem;font-weight:700;color:var(--accent);">网格 X:</label>
+                                            <input type="number" id="loc-grid-x" min="0" max="24" placeholder="无" style="width:55px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                        </div>
+                                        <div style="display:flex;gap:4px;align-items:center;flex:1;">
+                                            <label style="font-size:0.75rem;font-weight:700;color:var(--accent);">网格 Y:</label>
+                                            <input type="number" id="loc-grid-y" min="0" max="24" placeholder="无" style="width:55px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div id="loc-attrs-editor" class="loc-right-pane"></div>
                         </div>
@@ -460,6 +497,26 @@
             <div class="modal-actions" style="margin-top:12px;">
                 <button id="import-submit-btn" class="btn-primary">🚀 开始智能解析</button>
                 <button id="import-cancel-btn">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="faction-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:400px;">
+            <h3 id="faction-modal-title">编辑势力</h3>
+            <label style="font-size:.78rem;font-weight:600;display:block;margin-top:8px;">势力名称</label>
+            <input type="text" id="faction-name-input" placeholder="请输入势力名称..." style="width:100%;padding:6px;margin-top:4px;margin-bottom:12px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+            <label style="font-size:.78rem;font-weight:600;display:block;">势力描述</label>
+            <textarea id="faction-desc-input" placeholder="简述势力历史、宗旨与组织架构..." style="width:100%;height:100px;padding:6px;margin-top:4px;margin-bottom:12px;border:1px solid var(--border);border-radius:4px;resize:vertical;box-sizing:border-box;font-size:.8rem;"></textarea>
+            <label style="font-size:.78rem;font-weight:600;display:block;">总部驻地 (可选)</label>
+            <select id="faction-loc-select" style="width:100%;padding:6px;margin-top:4px;margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);box-sizing:border-box;font-size:.8rem;">
+                <option value="">-- 选择总部地点 --</option>
+            </select>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="faction-save-btn" class="btn-primary">保存</button>
+                <button id="faction-delete-btn" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:.8rem;">删除势力</button>
+                <button id="faction-cancel-btn">取消</button>
             </div>
         </div>
     </div>
