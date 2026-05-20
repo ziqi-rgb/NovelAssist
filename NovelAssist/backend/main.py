@@ -258,10 +258,10 @@ async def lifespan(app: FastAPI):
         if gs and isinstance(gs.prompt_templates, dict):
             tpl = dict(gs.prompt_templates)
             healed = False
-            if "archive_timeline" in tpl and "elapsed_days" not in tpl["archive_timeline"]:
+            if "archive_timeline" not in tpl or "elapsed_years" not in tpl["archive_timeline"]:
                 tpl["archive_timeline"] = DEFAULT_PROMPT_TEMPLATES["archive_timeline"]
                 healed = True
-            if "archive_character" in tpl and "move_to_location" not in tpl["archive_character"]:
+            if "archive_character" not in tpl or "faction_change" not in tpl["archive_character"]:
                 tpl["archive_character"] = DEFAULT_PROMPT_TEMPLATES["archive_character"]
                 healed = True
             if healed:
@@ -687,8 +687,14 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
 
     # 2. Timeline summary
+    elapsed_years = 0
+    elapsed_months = 0
+    elapsed_days = 0
+    elapsed_hours = 0
     timeline_added = False
+    timeline_events_added: list[str] = []
     timeline_error: Optional[str] = None
+    novel = db.get(Novel, ch.novel_id)
     try:
         tl_resp = await client.chat.completions.create(
             model=model,
@@ -696,56 +702,25 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
             temperature=0.5,
         )
         raw_tl = (tl_resp.choices[0].message.content or "").strip()
-        # Try new JSON object format first, fall back to old "时间:/事件:" text format
-        try:
-            mj = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw_tl, re.DOTALL)
-            if mj:
-                parsed_tl = json.loads(mj.group(1))
-            else:
-                # Maybe it's bare JSON without markdown fences
-                parsed_tl = json.loads(raw_tl)
-            if isinstance(parsed_tl, dict):
-                # New format: {"elapsed_days": X, "elapsed_hours": X, "events": [...]}
-                novel = db.get(Novel, ch.novel_id)
-                elapsed_days = int(parsed_tl.get("elapsed_days", 0))
-                elapsed_hours = int(parsed_tl.get("elapsed_hours", 0))
-                config = novel.calendar_config if novel else {}
-                hpd = config.get("hours_per_day", 24)
-                total_elapsed_ticks = (elapsed_days * hpd) + elapsed_hours
-                if total_elapsed_ticks > 0 and novel:
-                    novel.current_tick += total_elapsed_ticks
-                cal_time = format_ticks_to_calendar(novel.current_tick) if novel else ""
-                events_list = parsed_tl.get("events", [])
-                for evt in events_list:
-                    te = TimelineEvent(
-                        novel_id=ch.novel_id,
-                        event_type=TimelineEventType.MAIN_STORY.name,
-                        timeline_index=((db.scalar(
-                            select(func.max(TimelineEvent.timeline_index)).where(
-                                TimelineEvent.novel_id == ch.novel_id,
-                                TimelineEvent.event_type == TimelineEventType.MAIN_STORY.name,
-                            )
-                        ) or 0) + 1),
-                        time_label=evt.get("time", cal_time),
-                        content=evt.get("event", ""),
-                    )
-                    db.add(te)
-                    timeline_added = True
-        except (json.JSONDecodeError, AttributeError):
-            # Fallback: old "时间:/事件:" text format
-            time_label = ""
-            tl_content = ""
-            for line in raw_tl.split("\n"):
-                line = line.strip()
-                if line.startswith("时间:") or line.startswith("时间："):
-                    time_label = line.replace("时间:", "").replace("时间：", "").strip()
-                elif line.startswith("事件:") or line.startswith("事件："):
-                    tl_content = line.replace("事件:", "").replace("事件：", "").strip()
-            if not tl_content:
-                tl_content = raw_tl[:100]
-            if not time_label:
-                time_label = f"归档 ch{chapter_id}"
-            if tl_content:
+        # Robust JSON extraction — handle markdown fences and bare JSON
+        mj = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw_tl, re.DOTALL)
+        if mj:
+            raw_clean = mj.group(1).strip()
+        else:
+            raw_clean = raw_tl
+        parsed_tl = json.loads(raw_clean)
+        if isinstance(parsed_tl, dict):
+            elapsed_years = int(parsed_tl.get("elapsed_years", 0))
+            elapsed_months = int(parsed_tl.get("elapsed_months", 0))
+            elapsed_days = int(parsed_tl.get("elapsed_days", 0))
+            elapsed_hours = int(parsed_tl.get("elapsed_hours", 0))
+            # Multi-dimensional tick conversion: 1 year=8640h, 1 month=720h, 1 day=24h
+            tick_increment = (elapsed_years * 8640) + (elapsed_months * 720) + (elapsed_days * 24) + elapsed_hours
+            if tick_increment > 0 and novel:
+                novel.current_tick += tick_increment
+            cal_time = format_ticks_to_calendar(novel.current_tick) if novel else ""
+            events_list = parsed_tl.get("events", [])
+            for evt in events_list:
                 max_idx = db.scalar(
                     select(func.max(TimelineEvent.timeline_index)).where(
                         TimelineEvent.novel_id == ch.novel_id,
@@ -753,16 +728,18 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                     )
                 )
                 new_idx = (max_idx or 0) + 1
+                evt_desc = f"📍 [{evt.get('location', '未知')}] ({evt.get('characters', '群像')}) {evt.get('event', '')}"
                 te = TimelineEvent(
                     novel_id=ch.novel_id,
                     event_type=TimelineEventType.MAIN_STORY.name,
                     timeline_index=new_idx,
-                    time_label=time_label,
-                    content=tl_content,
+                    time_label=cal_time,
+                    content=evt_desc,
+                    absolute_tick=novel.current_tick if novel else 0,
                 )
-                print(f"[ARCHIVE] TimelineEvent insert: idx={new_idx} type={te.event_type} label={time_label} content={tl_content[:40]}...")
                 db.add(te)
                 timeline_added = True
+                timeline_events_added.append(f"[{cal_time}] {evt_desc}")
     except Exception as e:
         timeline_error = str(e)
 
@@ -770,7 +747,6 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     updated_names: list[str] = []
     character_error: Optional[str] = None
     try:
-        novel = db.get(Novel, ch.novel_id)
         char_template = novel.character_template if novel and novel.character_template else []
         chars = db.scalars(select(Character).where(Character.novel_id == ch.novel_id)).all()
         if chars:
@@ -801,6 +777,8 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                     is_new = upd.get("is_new", False)
                     cid = upd.get("character_id")
                     u = upd.get("updates", {})
+                    target = None
+                    name = ""
 
                     if is_new or not cid:
                         attrs_init: dict = {}
@@ -844,49 +822,61 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                 target.status = str(upd["status_change"])
                             if "is_active" in upd:
                                 target.is_active = bool(upd["is_active"])
-                            # Auto-create trajectory from move_to_location
-                            if upd.get("move_to_location") and isinstance(upd["move_to_location"], str) and upd["move_to_location"].strip():
-                                loc_name = upd["move_to_location"].strip()
-                                loc = db.query(Location).filter(
-                                    Location.novel_id == ch.novel_id,
-                                    Location.name.like(f"%{loc_name}%"),
-                                ).first()
-                                if loc:
-                                    novel2 = db.get(Novel, ch.novel_id)
-                                    db.add(CharacterTrajectory(
-                                        character_id=target.id,
-                                        location_id=loc.id,
-                                        start_tick=novel2.current_tick if novel2 else 0,
-                                        reason=f"正文归档：{loc_name}",
-                                    ))
-                            # Handle faction_change
-                            fac_change = upd.get("faction_change")
-                            if fac_change:
-                                fac_name = str(fac_change).strip()
-                                if fac_name in ["无", "None", "退出", "叛逃", "脱离"]:
-                                    target.faction_id = None
-                                else:
-                                    faction_obj = db.query(Faction).filter(
-                                        Faction.novel_id == ch.novel_id,
-                                        Faction.name == fac_name,
-                                    ).first()
-                                    if faction_obj:
-                                        target.faction_id = faction_obj.id
-                                    else:
-                                        new_fac = Faction(
-                                            novel_id=ch.novel_id,
-                                            name=fac_name,
-                                            description=f"由归档事件自动创建：{fac_name}",
-                                        )
-                                        db.add(new_fac)
-                                        db.commit()
-                                        db.refresh(new_fac)
-                                        target.faction_id = new_fac.id
                             name = target.name
                             if target.attributes and isinstance(target.attributes, dict):
                                 base = target.attributes.get("基础信息", {})
                                 if isinstance(base, dict) and base.get("姓名"):
                                     name = str(base["姓名"])
+
+                    # === Unified post-processing for both new and existing characters ===
+                    if target:
+                        # Auto-create trajectory from move_to_location
+                        if upd.get("move_to_location") and isinstance(upd["move_to_location"], str) and upd["move_to_location"].strip():
+                            loc_name = upd["move_to_location"].strip()
+                            loc_candidates = db.query(Location).filter(
+                                Location.novel_id == ch.novel_id,
+                                Location.name.like(f"%{loc_name}%"),
+                            ).all()
+                            if loc_candidates:
+                                best_loc = sorted(
+                                    loc_candidates,
+                                    key=lambda loc: (0 if loc.name == loc_name else 1, len(loc.name))
+                                )[0]
+                                db.add(CharacterTrajectory(
+                                    character_id=target.id,
+                                    location_id=best_loc.id,
+                                    start_tick=novel.current_tick if novel else 0,
+                                    reason=f"正文归档：移动至 {best_loc.name}",
+                                ))
+                                updated_names.append(f"📍 {name} 成功移动至 [{best_loc.name}]")
+                            else:
+                                updated_names.append(f"⚠️ {name} 试图去往 [{loc_name}] (地理库中无匹配地点)")
+
+                        # Handle faction_change
+                        fac_change = upd.get("faction_change")
+                        if fac_change:
+                            fac_name = str(fac_change).strip()
+                            if fac_name in ["无", "None", "退出", "叛逃", "脱离"]:
+                                target.faction_id = None
+                            else:
+                                faction_obj = db.query(Faction).filter(
+                                    Faction.novel_id == ch.novel_id,
+                                    Faction.name == fac_name,
+                                ).first()
+                                if faction_obj:
+                                    target.faction_id = faction_obj.id
+                                else:
+                                    new_fac = Faction(
+                                        novel_id=ch.novel_id,
+                                        name=fac_name,
+                                        description=f"由归档事件自动创建：{fac_name}",
+                                    )
+                                    db.add(new_fac)
+                                    db.commit()
+                                    db.refresh(new_fac)
+                                    target.faction_id = new_fac.id
+
+                        if not is_new:
                             updated_names.append(name)
     except Exception as e:
         character_error = str(e)
@@ -894,9 +884,15 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     db.commit()
     return {
         "message": "归档完成",
+        "elapsed_years": elapsed_years,
+        "elapsed_months": elapsed_months,
+        "elapsed_days": elapsed_days,
+        "elapsed_hours": elapsed_hours,
         "timeline_added": timeline_added,
         "timeline_error": timeline_error,
+        "timeline_events": timeline_events_added,
         "characters_updated": updated_names,
+        "updated_characters": updated_names,
         "character_error": character_error,
     }
 

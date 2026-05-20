@@ -250,15 +250,32 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
         archivedViewer.classList.remove("hidden");
         contentInput.value = contentInput.value.replace(sel, "");
         contentInput.dispatchEvent(new Event("input"));
-        // build toast
-        let msg = data.message || "归档完成";
-        const t = document.getElementById("archive-toast");
-        t.style.background = "#333";
-        if (data.timeline_added) msg += "\n✅ 时间线已生成";
-        if (data.timeline_error) { msg += "\n⚠ 时间线失败: " + data.timeline_error; t.style.background = "#e65100"; }
-        if (data.characters_updated && data.characters_updated.length) msg += "\n✅ 已更新人物: " + data.characters_updated.join("、");
-        if (data.character_error) { msg += "\n⚠ 人物更新失败: " + data.character_error; t.style.background = "#e65100"; }
-        showToast(msg);
+        // build detailed archive report
+        let timeSkipStr = "";
+        if (data.elapsed_years) timeSkipStr += data.elapsed_years + " 年 ";
+        if (data.elapsed_months) timeSkipStr += data.elapsed_months + " 月 ";
+        if (data.elapsed_days) timeSkipStr += data.elapsed_days + " 日 ";
+        if (data.elapsed_hours) timeSkipStr += data.elapsed_hours + " 小时";
+        if (!timeSkipStr) timeSkipStr = "无时间流逝";
+        let report = "📦 【世界归档大成报告】\n";
+        report += "-------------------------------------------\n";
+        report += "⏰ 世界历时钟流逝：+ " + timeSkipStr + "\n";
+        if (data.updated_characters && data.updated_characters.length > 0) {
+            report += "\n👤 创世人设同步与生命体征反馈：\n";
+            data.updated_characters.forEach(function(line) {
+                report += "  • " + line + "\n";
+            });
+        } else {
+            report += "\n👤 角色状态在本次归档中无更新。\n";
+        }
+        if (data.timeline_events && data.timeline_events.length > 0) {
+            report += "\n📅 生成的历史时间线印记：\n";
+            data.timeline_events.forEach(function(evt) {
+                report += "  • " + evt + "\n";
+            });
+        }
+        alert(report);
+        showToast("🌎 归档万年历时钟推进、地理轨迹智能匹配成功！");
         await saveCurrentChapter();
         await loadCharacters();
         await loadTimeline();
