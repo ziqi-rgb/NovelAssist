@@ -714,6 +714,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                 total_elapsed_ticks = (elapsed_days * hpd) + elapsed_hours
                 if total_elapsed_ticks > 0 and novel:
                     novel.current_tick += total_elapsed_ticks
+                cal_time = format_ticks_to_calendar(novel.current_tick) if novel else ""
                 events_list = parsed_tl.get("events", [])
                 for evt in events_list:
                     te = TimelineEvent(
@@ -725,7 +726,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                 TimelineEvent.event_type == TimelineEventType.MAIN_STORY.name,
                             )
                         ) or 0) + 1),
-                        time_label=evt.get("time", ""),
+                        time_label=evt.get("time", cal_time),
                         content=evt.get("event", ""),
                     )
                     db.add(te)
@@ -797,9 +798,32 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
             parsed = json.loads(raw)
             if isinstance(parsed, list):
                 for upd in parsed:
+                    is_new = upd.get("is_new", False)
                     cid = upd.get("character_id")
                     u = upd.get("updates", {})
-                    if cid:
+
+                    if is_new or not cid:
+                        attrs_init: dict = {}
+                        if u and isinstance(u, dict):
+                            for gk, gv in u.items():
+                                if isinstance(gv, dict):
+                                    attrs_init[gk] = {fk: str(fv) for fk, fv in gv.items()}
+                                else:
+                                    attrs_init[gk] = str(gv)
+                        new_char = Character(
+                            novel_id=ch.novel_id,
+                            name=upd.get("name", "未命名角色"),
+                            status=upd.get("status_change", "初登场"),
+                            is_active=bool(upd.get("is_active", True)),
+                            attributes=attrs_init,
+                        )
+                        db.add(new_char)
+                        db.commit()
+                        db.refresh(new_char)
+                        name = new_char.name
+                        updated_names.append(f"✨ [新登场] {name} ({new_char.status})")
+                        target = new_char
+                    else:
                         target = db.get(Character, cid)
                         if target:
                             old_attrs = copy.deepcopy(target.attributes or {})
@@ -2131,6 +2155,17 @@ def update_prompts(body: dict, db: Session = Depends(get_db)):
         gs.prompt_templates = body
     db.commit()
     return {"ok": True}
+
+
+def format_ticks_to_calendar(ticks: int) -> str:
+    total_hours = max(0, ticks)
+    hour = total_hours % 24
+    total_days = total_hours // 24
+    day = (total_days % 30) + 1
+    total_months = total_days // 30
+    month = (total_months % 12) + 1
+    year = (total_months // 12) + 1
+    return f"{year}年 {month}月 {day}日 {hour}时"
 
 
 @app.get("/api/settings/prompts/defaults")
