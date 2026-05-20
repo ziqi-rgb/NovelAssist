@@ -8,6 +8,7 @@ let currentLocationId = null;
 let currentModule = "writing";
 let currentOutlineCat = "世界观";
 let mdViewing = false;
+let isGenesisRunning = false;
 
 /* ═══════════ Clock Engine ═══════════ */
 window.novelTimeConfig = { months_per_year: 12, days_per_month: 30, hours_per_day: 24 };
@@ -1313,8 +1314,28 @@ document.getElementById("outline-export-btn")?.addEventListener("click", async f
         }
     } catch (e2) { console.error(e2); }
 });
-document.getElementById("import-close-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
-document.querySelector("#import-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
+document.getElementById("import-close-btn")?.addEventListener("click", function() {
+    if (isGenesisRunning) {
+        showToast("⚠️ 创世引擎正在高维度重组宇宙中，请勿关闭视口！");
+        return;
+    }
+    document.getElementById("import-modal").classList.add("hidden");
+});
+document.getElementById("genesis-backdrop")?.addEventListener("click", function() {
+    if (isGenesisRunning) {
+        showToast("⚠️ 创世引擎正在高维度重组宇宙中，请勿中途打断神圣法则！");
+        return;
+    }
+    document.getElementById("import-modal").classList.add("hidden");
+});
+
+document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape" && isGenesisRunning) {
+        e.preventDefault();
+        e.stopPropagation();
+        showToast("⚠️ 创世引擎正在高维度重组宇宙中，ESC 键已被物理拦截！");
+    }
+});
 
 /* ═══════════ 🌌 智能创世大重构引擎 ═══════════ */
 document.getElementById("outline-genesis-btn")?.addEventListener("click", function() {
@@ -1366,6 +1387,7 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
     }
 
     try {
+        isGenesisRunning = true;
         logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
         var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
         var chains = await chainsRes.json();
@@ -1409,10 +1431,25 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
         statusBadge.textContent = "执行失败";
         statusBadge.style.color = "#ef4444";
     } finally {
+        isGenesisRunning = false;
         submitBtn.disabled = false;
         closeBtn.disabled = false;
         textarea.disabled = false;
         backdrop.classList.remove("genesis-running-backdrop");
+
+        var chatInput = document.getElementById("copilot-input");
+        if (chatInput) {
+            chatInput.removeAttribute("disabled");
+            chatInput.style.pointerEvents = "auto";
+            chatInput.style.opacity = "1";
+        }
+        var copilotSend = document.getElementById("copilot-send");
+        if (copilotSend) {
+            copilotSend.removeAttribute("disabled");
+            copilotSend.style.pointerEvents = "auto";
+            copilotSend.style.opacity = "1";
+        }
+        console.log("[System] 全局创世流结束，AI 助手聊天控制权已完美归还用户。");
     }
 });
 
