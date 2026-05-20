@@ -1815,15 +1815,20 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
 
 @app.post("/api/reasoning/execute")
 async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(get_db)):
-    novel = db.get(Novel, req.novel_id)
-    system_text = resolve_placeholders(
-        "你是小说推演引擎，严格按用户指令输出。\n{outlines_list}\n{characters_list}",
-        req.novel_id, db,
-    )
-    system_msg = f"【解析系统已生效】：用户提供的文本中可能包含数据库检索结果。请依据这些精准设定的事实基础进行推演，保持逻辑严密。\n\n{system_text}"
+    # 🛡️ 核心大修补：强力穿透占位符，将 raw 字符串转换为饱满的数据库真实数据
+    try:
+        resolved_premise = resolve_placeholders(req.premise or "", req.novel_id, db)
+        resolved_prompt = resolve_placeholders(req.prompt or "", req.novel_id, db)
+        resolved_target = resolve_placeholders(req.target or "", req.novel_id, db)
+    except Exception as ph_err:
+        print(f"[Placeholder Penetration Error] 占位符解析失败，使用原文本兜底: {str(ph_err)}")
+        resolved_premise = req.premise or ""
+        resolved_prompt = req.prompt or ""
+        resolved_target = req.target or ""
 
-    final_prompt = req.prompt
+    novel = db.get(Novel, req.novel_id)
     ctx = req.context_settings or {}
+    final_prompt = resolved_prompt
     if ctx.get("use_outlines") or ctx.get("use_characters") or ctx.get("use_timeline"):
         current_tick = novel.current_tick if novel else 0
         cfg = novel.calendar_config if novel else {}
@@ -1862,20 +1867,23 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
                 blocks.append("【已发生的时间线事件】: (暂无)")
 
         context_header = "==== 当前世界状态参考 ====\n" + "\n\n".join(blocks) + "\n==========================\n\n"
-        final_prompt = context_header + req.prompt
+        final_prompt = context_header + resolved_prompt
 
     user_parts = []
     if req.previous_output:
         user_parts.append(f"[前置内容/上文]:\n{req.previous_output}")
-    if req.premise:
-        user_parts.append(f"[当前情景]:\n{resolve_placeholders(req.premise, req.novel_id, db)}")
+    if resolved_premise:
+        user_parts.append(f"[当前情景]:\n{resolved_premise}")
     if final_prompt:
         user_parts.append(f"[推演指令]:\n{final_prompt}")
-    if req.target:
-        user_parts.append(f"[输出要求]:\n{req.target}")
+    if resolved_target:
+        user_parts.append(f"[输出要求]:\n{resolved_target}")
 
     messages = [
-        {"role": "system", "content": system_msg},
+        {"role": "system", "content": resolve_placeholders(
+            "你是小说推演引擎，严格按用户指令输出。\n{outlines_list}\n{characters_list}",
+            req.novel_id, db,
+        )},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
     return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
