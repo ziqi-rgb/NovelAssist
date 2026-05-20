@@ -202,7 +202,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "id": "c_n2_check_faction", "x": 200, "y": 0,
                 "premise": "判定是否需要建立新势力。",
                 "prompt": "【势力存在判定】（⚠️绝对禁止调用工具！）\n对比当前初步人设中的所属势力，并仔细核对已有的势力名录：{locations_list}（地理大纲中已有的势力也视同存在）。\n- 如果该势力在名录中已存在，【绝对禁止重复创建】，直接输出 <ROUTE>NO</ROUTE> 路由至编号节点；\n- 只有在确属全新的空白势力时，才输出 <ROUTE>YES</ROUTE> 前往建立节点。",
-                "target": [{"id": "blk_1", "type": "placeholder", "value": "{locations_list}"}],
+                "target": [],
                 "branches": [
                     {"condition": "YES", "next_node_id": "c_n3_build_faction"},
                     {"condition": "NO", "next_node_id": "c_n4_number"}
@@ -235,10 +235,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                     "4. 如果存在缺失的角色，【你必须且只能选择其中 1 个缺失的角色】，调用 `manage_world_element` (etype: character, action: add) 创建它！\n"
                     "   - 每次只允许创建 1 个角色！所有的键值必须严格对齐上面的属性模板，禁止自创残缺属性！"
                 ),
-                "target": [
-                    {"id": "blk_1", "type": "placeholder", "value": "{character_template}"},
-                    {"id": "blk_2", "type": "placeholder", "value": "{characters_full_detail}"}
-                ],
+                "target": [],
                 "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
@@ -256,10 +253,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                     "- 若【有任何一个角色】存在残缺属性，你必须输出 `<ROUTE>NEEDS_FIX</ROUTE>` 路由去修复它。\n"
                     "- 只有当【所有已建立的角色】属性均 100% 饱满、完备且符合模板时，才输出 `<ROUTE>PERFECT</ROUTE>` 路由流向数量核对节点。"
                 ),
-                "target": [
-                    {"id": "blk_1", "type": "placeholder", "value": "{character_template}"},
-                    {"id": "blk_2", "type": "placeholder", "value": "{characters_full_detail}"}
-                ],
+                "target": [],
                 "branches": [
                     {"condition": "PERFECT", "next_node_id": "c_n8_verify_quantity"},
                     {"condition": "NEEDS_FIX", "next_node_id": "c_n7_fix"}
@@ -275,10 +269,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                     "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
                     "请针对上一步质检中被指出存在残缺属性的那个特定角色，调用 `manage_world_element` (etype: character, action: update, name: 对应的姓名) 精准补齐并丰富其 `attributes` 字典。填完即止，随后导回属性模板质检！"
                 ),
-                "target": [
-                    {"id": "blk_1", "type": "placeholder", "value": "{character_template}"},
-                    {"id": "blk_2", "type": "placeholder", "value": "{characters_full_detail}"}
-                ],
+                "target": [],
                 "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
@@ -291,9 +282,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                     "- 若数量尚未达到计划要求（仍有计划中的角色未被实际创建），输出 `<ROUTE>NEEDS_MORE</ROUTE>` 路由返回落子节点，继续去创建下一个人。\n"
                     "- 若所有计划中的角色已经足额全部建成，输出 `<ROUTE>DONE</ROUTE>` 结束整个流程。"
                 ),
-                "target": [
-                    {"id": "blk_1", "type": "placeholder", "value": "{characters_full_detail}"}
-                ],
+                "target": [],
                 "branches": [
                     {"condition": "NEEDS_MORE", "next_node_id": "c_n5_build_char"},
                     {"condition": "DONE", "next_node_id": ""}
