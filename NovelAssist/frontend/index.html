@@ -160,10 +160,9 @@
                 <!-- 大纲模块：分类导航 -->
                 <div id="module-outline" class="module-panel hidden">
                     <div class="sidebar-header"><h2>大纲分类</h2>
-                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                            <button id="outline-import-btn" class="sys-btn sys-btn-primary" style="font-size:0.75rem;">📥 智能导入</button>
-                            <button id="outline-extract-btn" class="sys-btn sys-btn-secondary" style="font-size:0.75rem;">📖 正文提炼</button>
-                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size:0.75rem;border:1px solid var(--border);font-weight:700;">📤 导出 MD</button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button id="outline-genesis-btn" class="sys-btn sys-btn-primary" style="font-size: 0.75rem; background: linear-gradient(135deg, #4f46e5, #9333ea); font-weight: 700;">🌌 智能创世重构</button>
+                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;">📤 导出 MD</button>
                         </div>
                     </div>
                     <ul id="outline-category-nav" class="category-nav">
@@ -488,32 +487,75 @@
         </div>
     </div>
 
-    <!-- 📥 创世大导入/逆向提炼模态框 -->
+    <!-- 🌌 宇宙级智能创世大重构模态框 -->
     <div id="import-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-box" style="width:650px;max-height:90vh;overflow-y:auto;">
-            <h3 id="import-modal-title">📥 智能导入设定</h3>
-            <p id="import-modal-desc" style="font-size:.72rem;color:var(--text-muted);margin-bottom:12px;">请输入您的设定文本。AI 将严格遵循天条优先级重构数据库。</p>
-            <textarea id="import-textarea" placeholder="请在这里粘贴您的原始文本..." style="width:100%;height:200px;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;resize:vertical;box-sizing:border-box;background:var(--bg);"></textarea>
-            <div id="import-progress-box" class="hidden" style="margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;">
-                <h5 style="margin:0 0 6px 0;font-size:.78rem;display:flex;justify-content:space-between;align-items:center;">
-                    <span>🤖 创世引擎执行状态:</span>
-                    <span id="import-status-tag" style="color:var(--accent);font-size:.7rem;font-weight:700;">解析中...</span>
-                </h5>
-                <pre id="import-analysis-text" style="margin:0;font-size:.7rem;white-space:pre-wrap;max-height:150px;overflow-y:auto;color:var(--text-muted);line-height:1.4;"></pre>
-                <span id="import-log"></span>
+        <!-- 遮罩层 (在运行中会被赋予 genesis-running 类来阻断一切外部点击) -->
+        <div class="modal-backdrop" id="genesis-backdrop"></div>
+        <div class="modal-box" style="width:720px; max-height:92vh; overflow-y:auto; border: 2px solid #4f46e5; box-shadow: 0 0 25px rgba(79, 70, 229, 0.45);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 id="import-modal-title" style="margin:0; font-size: 1.1rem; color: #9333ea; font-weight: 800;">🌌 智能创世大重构中心</h3>
+                <span id="genesis-status-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--border);">待命中</span>
             </div>
-            <div class="modal-actions" style="margin-top:16px;">
-                <button id="import-submit-btn" class="btn-primary" data-mode="import">🚀 开始智能解析</button>
-                <button id="import-close-btn">关闭</button>
+            
+            <p style="font-size:.72rem; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">
+                请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。创世引擎将调度三大推理链（大纲流 → 地图流 → 人设流）进行高精度顺序提炼，在沙盘中无缝落子！
+            </p>
+            
+            <textarea id="import-textarea" placeholder="在这里贴入您的设定或正文章节...&#10;&#10;- 如果是设定：AI将为您搭建好全书的大纲框架并生成基础设定。&#10;- 如果是小说正文：AI将自动提炼正文里的门派总部、新人物卡、功法境界并回填落子！" style="width:100%; height:150px; padding:8px; border:1px solid var(--border); border-radius:4px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; box-sizing:border-box; background:var(--bg); margin-bottom: 12px;"></textarea>
+            
+            <!-- 🌟 三步骤高亮进度条 -->
+            <div class="genesis-progress-bar" style="display: flex; gap: 8px; margin-bottom: 12px; font-size: 0.7rem; font-weight: 700;">
+                <div id="step-outline" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    📖 1. 世界观与大纲
+                </div>
+                <div id="step-map" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    🗺️ 2. 地理蓝图落子
+                </div>
+                <div id="step-char" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    👤 3. 群像人设质检
+                </div>
+            </div>
+            
+            <!-- 🖥️ 赛博朋克深海控制台 -->
+            <div id="genesis-console-box" style="margin-bottom: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; color: var(--text-muted);">🖥️ 创世控制台实时执行流:</div>
+                <div id="genesis-console" style="height: 220px; background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; font-family: 'Courier New', Courier, monospace; font-size: 0.7rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; box-shadow: inset 0 0 15px rgba(0,0,0,0.95); scroll-behavior: smooth;">
+[System] 创世核心就绪。等待输入指令...</div>
+            </div>
+            
+            <div class="modal-actions" style="margin-top:16px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button id="genesis-submit-btn" class="btn-primary" style="background: linear-gradient(135deg, #4f46e5, #9333ea); border: none; font-weight: 700;">🌌 启动创世大重构</button>
+                <button id="import-close-btn" class="sys-btn sys-btn-ghost" style="border: 1px solid var(--border);">关闭窗口</button>
             </div>
         </div>
     </div>
-                <button id="import-submit-btn" class="btn-primary">🚀 开始智能解析</button>
-                <button id="import-cancel-btn">取消</button>
-            </div>
-        </div>
-    </div>
+    
+    <!-- CSS 动画定义：闪烁与禁止穿透类 -->
+    <style>
+        .genesis-running-backdrop {
+            pointer-events: auto !important;
+            cursor: not-allowed !important;
+        }
+        @keyframes genesis-pulse {
+            0% { border-color: #4f46e5; box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); }
+            50% { border-color: #e0f2fe; box-shadow: 0 0 15px #38bdf8; }
+            100% { border-color: #4f46e5; box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); }
+        }
+        .step-active {
+            opacity: 1.0 !important;
+            border-color: #38bdf8 !important;
+            color: #38bdf8 !important;
+            background: #0f172a !important;
+            animation: genesis-pulse 1.5s infinite;
+        }
+        .step-completed {
+            opacity: 1.0 !important;
+            border-color: #22c55e !important;
+            color: #22c55e !important;
+            background: #022c22 !important;
+            text-decoration: line-through;
+        }
+    </style>
 
     <div id="faction-modal" class="modal hidden">
         <div class="modal-backdrop"></div>

@@ -2585,6 +2585,31 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(CharacterRelation).filter(CharacterRelation.id == eid).delete()
 
         elif etype == "character":
+            # 🛡️ 终极角色命名容错清洗器
+            current_name = data.get("name")
+            if not current_name or not str(current_name).strip() or str(current_name).strip() == "未知":
+                fallback_fields = [
+                    data.get("character_name"),
+                    data.get("char_name"),
+                    data.get("title"),
+                    data.get("character"),
+                ]
+                for val in fallback_fields:
+                    if val and str(val).strip() and str(val).strip() != "未知":
+                        data["name"] = str(val).strip()
+                        break
+                if (not data.get("name") or str(data.get("name")).strip() == "未知") and isinstance(data.get("attributes"), dict):
+                    attrs = data["attributes"]
+                    base_info = attrs.get("基本信息") or attrs.get("基础信息") or attrs.get("基本情况") or attrs.get("属性")
+                    if isinstance(base_info, dict):
+                        for name_key in ["姓名", "name", "名字", "角色名"]:
+                            if base_info.get(name_key) and str(base_info[name_key]).strip() != "未知":
+                                data["name"] = str(base_info[name_key]).strip()
+                                break
+                if not data.get("name") or str(data.get("name")).strip() == "未知":
+                    import random
+                    data["name"] = f"隐世散人_{random.randint(100, 999)}"
+
             raw_attrs = data.get("attributes", {})
             normalized_attrs: dict[str, dict[str, str]] = {}
 

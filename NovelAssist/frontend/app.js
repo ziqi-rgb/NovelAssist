@@ -1297,101 +1297,7 @@ function truncateChat(btnElement) {
     showToast("已从此处悔棋截断");
 }
 
-async function submitOutlineImport() {
-    var text = document.getElementById("import-textarea").value.trim();
-    if (!text) { showToast("请贴入设定文档"); return; }
-    if (!currentNovelId) return;
-
-    var prog = document.getElementById("import-progress-box");
-    var logEl = document.getElementById("import-log");
-    var submitBtn = document.getElementById("import-submit-btn");
-    prog.classList.remove("hidden");
-    logEl.innerText = "正在连接 AI 引擎...";
-    submitBtn.disabled = true;
-
-    try {
-        var s = getSettings();
-        var mode = document.getElementById("import-submit-btn").getAttribute("data-mode") || "import";
-        var sceneValue = (mode === "extract") ? "extract_outline" : "import_data";
-        var res = await fetch("/api/writing/copilot", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                novel_id: currentNovelId, instruction: text, scene: sceneValue,
-                api_key: s.apiKey, base_url: s.baseUrl, model: s.model, history: [],
-            }),
-        });
-
-        var reader = res.body.getReader();
-        var dec = new TextDecoder();
-        var buf = "";
-
-        while (true) {
-            var chunk = await reader.read();
-            if (chunk.done) break;
-            buf += dec.decode(chunk.value, { stream: true });
-            var parts = buf.split("\n\n"); buf = parts.pop() || "";
-            for (var pi = 0; pi < parts.length; pi++) {
-                var p = parts[pi];
-                var lines = p.split("\n");
-                for (var li = 0; li < lines.length; li++) {
-                    var l = lines[li];
-                    if (!l.startsWith("data: ")) continue;
-                    try {
-                        var msg = JSON.parse(l.slice(6));
-                    } catch (e) { continue; }
-                    if (msg.type === "chunk") {
-                        var analysisBox = document.getElementById("import-analysis-text");
-                        if (analysisBox) {
-                            analysisBox.innerHTML += msg.content;
-                            analysisBox.scrollTop = analysisBox.scrollHeight;
-                        }
-                    } else if (msg.type === "tool_proposal") {
-                        logEl.innerText = "正在写入: " + msg.tool_name + "...";
-                        await fetch("/api/agent/execute/" + currentNovelId, {
-                            method: "POST", headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
-                        });
-                    }
-                }
-            }
-        }
-        logEl.innerText = "✅ 导入全部完成！";
-        setTimeout(function() {
-            document.getElementById("import-modal").classList.add("hidden");
-            prog.classList.add("hidden");
-            document.getElementById("import-textarea").value = "";
-            if (typeof refreshAll === "function") refreshAll();
-            if (typeof loadLocationsCache === "function") loadLocationsCache();
-            if (typeof loadLocationTree === "function") loadLocationTree();
-        }, 1500);
-    } catch (err) {
-        logEl.innerHTML = '<span style="color:red;">❌ 错误: ' + (err.message || String(err)) + '</span>';
-    } finally {
-        submitBtn.disabled = false;
-    }
-}
-
 document.getElementById("clear-memory-btn")?.addEventListener("click", clearCopilotChat);
-document.getElementById("outline-import-btn")?.addEventListener("click", function() {
-    document.getElementById("import-modal-title").textContent = "📥 智能导入设定原件";
-    document.getElementById("import-modal-desc").textContent = "请输入世界观、历史、修仙境界、地理地名等综合设定原件。AI 将开启宏大世界观重构流程！";
-    document.getElementById("import-textarea").value = "";
-    document.getElementById("import-textarea").placeholder = "例如：\n【西部荒野设定集】\n能力划分：超凡阶、领主阶、神话阶...\n地标：深金矿坑、迷雾丛林...";
-    document.getElementById("import-submit-btn").setAttribute("data-mode", "import");
-    document.getElementById("import-submit-btn").textContent = "🚀 开始智能重构";
-    document.getElementById("import-progress-box").classList.add("hidden");
-    document.getElementById("import-modal").classList.remove("hidden");
-});
-document.getElementById("outline-extract-btn")?.addEventListener("click", function() {
-    document.getElementById("import-modal-title").textContent = "📖 小说正文逆向提炼";
-    document.getElementById("import-modal-desc").textContent = "请输入您编写的小说正文、章节草稿或大段剧情。AI 将逆向提炼境界、地标与角色并入档！";
-    document.getElementById("import-textarea").value = "";
-    document.getElementById("import-textarea").placeholder = "请直接将已经写好的小说章节文字、大段小说正文内容粘贴到这里...";
-    document.getElementById("import-submit-btn").setAttribute("data-mode", "extract");
-    document.getElementById("import-submit-btn").textContent = "👁️ 启动逆向提取";
-    document.getElementById("import-progress-box").classList.add("hidden");
-    document.getElementById("import-modal").classList.remove("hidden");
-});
 document.getElementById("outline-export-btn")?.addEventListener("click", async function() {
     if (!currentNovelId) return;
     showToast("⏳ 正在编译全量小说设定集...");
@@ -1407,9 +1313,108 @@ document.getElementById("outline-export-btn")?.addEventListener("click", async f
         }
     } catch (e2) { console.error(e2); }
 });
-document.getElementById("import-submit-btn")?.addEventListener("click", submitOutlineImport);
 document.getElementById("import-close-btn")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
 document.querySelector("#import-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("import-modal").classList.add("hidden"); });
+
+/* ═══════════ 🌌 智能创世大重构引擎 ═══════════ */
+document.getElementById("outline-genesis-btn")?.addEventListener("click", function() {
+    var modal = document.getElementById("import-modal");
+    document.getElementById("import-textarea").value = "";
+    document.getElementById("genesis-status-badge").textContent = "待命中";
+    document.getElementById("genesis-status-badge").style.color = "var(--text-muted)";
+    ["step-outline", "step-map", "step-char"].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.className = "";
+    });
+    document.getElementById("genesis-console").textContent = "[System] 创世核心就绪。请输入文字指令并启动...\n";
+    document.getElementById("import-textarea").disabled = false;
+    document.getElementById("genesis-submit-btn").disabled = false;
+    document.getElementById("import-close-btn").disabled = false;
+    modal.classList.remove("hidden");
+});
+
+document.getElementById("genesis-submit-btn")?.addEventListener("click", async function() {
+    var text = document.getElementById("import-textarea").value.trim();
+    if (!text) { alert("请输入需要重构或提炼的文本设定！"); return; }
+
+    var submitBtn = document.getElementById("genesis-submit-btn");
+    var closeBtn = document.getElementById("import-close-btn");
+    var textarea = document.getElementById("import-textarea");
+    var backdrop = document.getElementById("genesis-backdrop");
+    var consoleEl = document.getElementById("genesis-console");
+    var statusBadge = document.getElementById("genesis-status-badge");
+
+    submitBtn.disabled = true;
+    closeBtn.disabled = true;
+    textarea.disabled = true;
+    backdrop.classList.add("genesis-running-backdrop");
+    statusBadge.textContent = "创世大重构执行中...";
+    statusBadge.style.color = "#38bdf8";
+    consoleEl.innerHTML = "";
+
+    function logToConsole(content, type) {
+        var color = "#38bdf8";
+        if (type === "step") color = "#eab308";
+        if (type === "tool") color = "#22c55e";
+        if (type === "error") color = "#ef4444";
+        if (type === "warning") color = "#f59e0b";
+        var span = document.createElement("span");
+        span.style.color = color;
+        span.textContent = content;
+        consoleEl.appendChild(span);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    try {
+        logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
+        var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
+        var chains = await chainsRes.json();
+
+        var chainOutline = chains.find(function(c) { return c.title === "📖 全维世界观与大纲流水线"; });
+        var chainMap = chains.find(function(c) { return c.title === "🗺️ 蓝图规划与逐层搭建流"; });
+        var chainChar = chains.find(function(c) { return c.title === "👤 严谨人设与模板质检流"; });
+
+        if (!chainOutline || !chainMap || !chainChar) {
+            throw new Error("系统缺失预设的 3 大创世推理方案，请点击顶部的 [恢复默认] 按钮初始化方案！");
+        }
+
+        logToConsole("[System] \n===== 🚀 阶段 1: 全维世界大纲推演启动 =====\n", "step");
+        document.getElementById("step-outline").className = "step-active";
+        var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) { logToConsole(txt, typ); });
+        if (!res1.success) throw new Error("阶段 1 大纲推演失败: " + (res1.reason || "未知错误"));
+        document.getElementById("step-outline").className = "step-completed";
+
+        logToConsole("[System] \n===== 🗺️ 阶段 2: 空间地理蓝图搭建启动 =====\n", "step");
+        document.getElementById("step-map").className = "step-active";
+        var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) { logToConsole(txt, typ); });
+        if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
+        document.getElementById("step-map").className = "step-completed";
+
+        logToConsole("[System] \n===== 👤 阶段 3: 群像人设质检与繁衍启动 =====\n", "step");
+        document.getElementById("step-char").className = "step-active";
+        var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) { logToConsole(txt, typ); });
+        if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
+        document.getElementById("step-char").className = "step-completed";
+
+        logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 世界大纲推演、地理蓝图落地、群像角色繁衍全部圆满成功！\n", "tool");
+        statusBadge.textContent = "创世圆满成功";
+        statusBadge.style.color = "#22c55e";
+        showToast("🌌 智能创世三链大重构圆满成功！");
+        if (typeof refreshAll === "function") await refreshAll();
+        if (typeof loadLocationsCache === "function") loadLocationsCache();
+        if (typeof loadLocationTree === "function") loadLocationTree();
+    } catch (err) {
+        console.error(err);
+        logToConsole("[System] \n\n❌ 创世中途流产: " + (err.message || String(err)) + "\n", "error");
+        statusBadge.textContent = "执行失败";
+        statusBadge.style.color = "#ef4444";
+    } finally {
+        submitBtn.disabled = false;
+        closeBtn.disabled = false;
+        textarea.disabled = false;
+        backdrop.classList.remove("genesis-running-backdrop");
+    }
+});
 
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
 document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
@@ -1480,109 +1485,131 @@ async function executeTool(toolName, args, card) {
     }
 }
 
-async function runHeadlessChain(chainId, userInput, bubbleEl) {
-    var s = getSettings();
-    try {
-        var rc = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
-        var nodes = rc.nodes || [];
-        if (nodes.length === 0) { bubbleEl.appendChild(document.createTextNode("[该推理链无节点]")); bubbleEl.classList.remove("streaming"); return; }
-
-        nodes.forEach(function(n) { n.output = ""; });
-        var currentNodeId = nodes[0].id;
-        var loopCount = 0;
-        var fullChainContext = "【初始指令】: " + userInput + "\n";
-
-        while (currentNodeId) {
-            loopCount++;
-            if (loopCount > 100) {
-                bubbleEl.appendChild(document.createTextNode("\n[⚠️ 达到最大循环层数 20，强制熔断]"));
-                break;
+async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = null) {
+    return new Promise(async (resolve) => {
+        var s = getSettings();
+        try {
+            var rc = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+            var nodes = rc.nodes || [];
+            if (nodes.length === 0) {
+                if (onLogCallback) onLogCallback("❌ 此方案无节点，执行终止。\n", "error");
+                resolve({ success: false, reason: "no_nodes" });
+                return;
             }
-            var node = nodes.find(function(n) { return n.id === currentNodeId; });
-            if (!node) break;
 
-            var progressEl = document.createElement("div");
-            progressEl.style.cssText = "font-size:0.72rem;color:var(--text-muted);margin:4px 0;";
-            progressEl.textContent = "⚙️ 执行: " + ((node.prompt || "").split("\n")[0] || "").substring(0, 60);
-            bubbleEl.appendChild(progressEl);
-            copilotHistory.scrollTop = copilotHistory.scrollHeight;
+            nodes.forEach(function(n) { n.output = ""; });
+            var currentNodeId = nodes[0].id;
+            var loopCount = 0;
+            var fullChainContext = "【初始指令】: " + userInput + "\n";
 
-            var nodeToolCalls = "";
-            try {
-                var targetT = compileTarget(node.target);
-                var res = await fetch("/api/reasoning/execute", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        novel_id: currentNovelId,
-                        premise: node.premise || "",
-                        prompt: node.prompt || "",
-                        target: targetT,
-                        previous_output: fullChainContext,
-                        api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
-                        context_settings: rc.context_settings || {},
-                    }),
-                });
-                var txt = "";
-                var gen = parseSSEStream(res);
-                while (true) {
-                    var cr = await gen.next();
-                    if (cr.done) break;
-                    var msg = cr.value;
-                    if (msg.type === "chunk") {
-                        txt += msg.content;
-                        bubbleEl.appendChild(document.createTextNode(msg.content));
-                        copilotHistory.scrollTop = copilotHistory.scrollHeight;
-                    } else if (msg.type === "tool_proposal") {
-                        var card = document.createElement("div");
-                        card.className = "tool-proposal";
-                        card.innerHTML = '<div class="tp-title">🛠 自动执行: ' + e(msg.tool_name) + '</div>'
-                            + '<div class="tp-args">' + e(JSON.stringify(msg.arguments, null, 2)) + '</div>'
-                            + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⏳ 链式执行中...</span></div>';
-                        bubbleEl.appendChild(card);
-                        copilotHistory.scrollTop = copilotHistory.scrollHeight;
-                        await fetch("/api/agent/execute/" + currentNovelId, {
-                            method: "POST", headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
-                        });
-                        card.classList.add("tp-executed");
-                        card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
-                        nodeToolCalls += "\n[系统记录：调用了工具 " + msg.tool_name + "，参数: " + JSON.stringify(msg.arguments) + "]";
-                    }
+            while (currentNodeId) {
+                loopCount++;
+                if (loopCount > 100) {
+                    if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过100个循环)。\n", "warning");
+                    break;
                 }
-                var routeKey = null;
-                var rm = txt.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
-                if (rm) routeKey = rm[1].trim();
-                var cleanOutput = txt.replace(/<\/?ROUTE>/g, "").trim();
-                node.output = cleanOutput;
+                var node = nodes.find(function(n) { return n.id === currentNodeId; });
+                if (!node) break;
 
-                fullChainContext += "\n\n--- 【节点输出】 ---\n" + cleanOutput;
-                if (nodeToolCalls) {
-                    fullChainContext += nodeToolCalls;
+                var progressEl = document.createElement("div");
+                progressEl.style.cssText = "font-size:0.72rem;color:var(--text-muted);margin:4px 0;";
+                progressEl.textContent = "⚙️ 执行: " + ((node.prompt || "").split("\n")[0] || "").substring(0, 60);
+                if (bubbleEl) { bubbleEl.appendChild(progressEl); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
+
+                if (onLogCallback) {
+                    onLogCallback("\n▶️ [执行节点] " + (node.premise || node.id) + "\n", "step");
                 }
 
-                var nextId = null;
-                if (node.branches && node.branches.length > 0) {
-                    for (var bi = 0; bi < node.branches.length; bi++) {
-                        var br = node.branches[bi];
-                        if (br.condition && (routeKey === br.condition || cleanOutput.includes(br.condition))) {
-                            nextId = br.next_node_id;
-                            break;
+                var nodeToolCalls = "";
+                try {
+                    var targetT = compileTarget(node.target);
+                    var res = await fetch("/api/reasoning/execute", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            novel_id: currentNovelId,
+                            premise: node.premise || "",
+                            prompt: node.prompt || "",
+                            target: targetT,
+                            previous_output: fullChainContext,
+                            api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
+                            context_settings: rc.context_settings || {},
+                        }),
+                    });
+                    var txt = "";
+                    var gen = parseSSEStream(res);
+                    while (true) {
+                        var cr = await gen.next();
+                        if (cr.done) break;
+                        var msg = cr.value;
+                        if (msg.type === "chunk") {
+                            txt += msg.content;
+                            if (bubbleEl) { bubbleEl.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
+                            if (onLogCallback) onLogCallback(msg.content, "chunk");
+                        } else if (msg.type === "tool_proposal") {
+                            if (bubbleEl) {
+                                var card = document.createElement("div");
+                                card.className = "tool-proposal";
+                                card.innerHTML = '<div class="tp-title">🛠 自动执行: ' + e(msg.tool_name) + '</div>'
+                                    + '<div class="tp-args">' + e(JSON.stringify(msg.arguments, null, 2)) + '</div>'
+                                    + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⏳ 链式执行中...</span></div>';
+                                bubbleEl.appendChild(card);
+                                copilotHistory.scrollTop = copilotHistory.scrollHeight;
+                            }
+                            if (onLogCallback) {
+                                var toolName = msg.tool_name || msg.arguments?.element_type || "";
+                                var toolTitle = (msg.arguments?.data?.title || msg.arguments?.data?.name || "");
+                                onLogCallback("\n⚙️ 自动录入实体: [" + toolName + "] -> " + toolTitle + "\n", "tool");
+                            }
+                            await fetch("/api/agent/execute/" + currentNovelId, {
+                                method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
+                            });
+                            if (bubbleEl) {
+                                card.classList.add("tp-executed");
+                                card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
+                            }
+                            nodeToolCalls += "\n[系统记录：调用了工具 " + msg.tool_name + "，参数: " + JSON.stringify(msg.arguments) + "]";
                         }
                     }
+                    var routeKey = null;
+                    var rm = txt.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+                    if (rm) routeKey = rm[1].trim();
+                    var cleanOutput = txt.replace(/<\/?ROUTE>/g, "").trim();
+                    node.output = cleanOutput;
+
+                    fullChainContext += "\n\n--- 【节点输出】 ---\n" + cleanOutput;
+                    if (nodeToolCalls) {
+                        fullChainContext += nodeToolCalls;
+                    }
+
+                    var nextId = null;
+                    if (node.branches && node.branches.length > 0) {
+                        for (var bi = 0; bi < node.branches.length; bi++) {
+                            var br = node.branches[bi];
+                            if (br.condition && (routeKey === br.condition || cleanOutput.includes(br.condition))) {
+                                nextId = br.next_node_id;
+                                break;
+                            }
+                        }
+                    }
+                    if (!nextId) nextId = node.next_node_id || null;
+                    currentNodeId = nextId;
+                } catch (e) {
+                    if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n[节点错误: " + e.message + "]"));
+                    if (onLogCallback) onLogCallback("\n❌ 节点执行错误: " + e.message + "\n", "error");
+                    currentNodeId = null;
                 }
-                if (!nextId) nextId = node.next_node_id || null;
-                currentNodeId = nextId;
-            } catch (e) {
-                bubbleEl.appendChild(document.createTextNode("\n[节点错误: " + e.message + "]"));
-                currentNodeId = null;
             }
+            if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n\n✅ 推理链执行完毕。"));
+            resolve({ success: true });
+        } catch (e) {
+            if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n[链加载失败: " + e.message + "]"));
+            if (onLogCallback) onLogCallback("\n❌ 执行中途崩溃: " + e.message + "\n", "error");
+            resolve({ success: false, reason: e.message });
+        } finally {
+            if (bubbleEl) bubbleEl.classList.remove("streaming");
         }
-        bubbleEl.appendChild(document.createTextNode("\n\n✅ 推理链执行完毕。"));
-    } catch (e) {
-        bubbleEl.appendChild(document.createTextNode("\n[链加载失败: " + e.message + "]"));
-    } finally {
-        bubbleEl.classList.remove("streaming");
-    }
+    });
 }
 
 /* ═══════════ Prompt Settings ═══════════ */
