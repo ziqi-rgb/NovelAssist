@@ -192,13 +192,70 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         ]
     if title == "👤 严谨人设与模板质检流":
         return [
-            {"id":"c_n1_prepare","x":0,"y":0,"premise":"整理用户要求，建立初步人设文本。","prompt":"【初步整理】（⚠️绝对禁止调用工具！）\n整理用户要求，推导出需要创建的人物名称、势力、性格特征。建立初步人设文本。纯文本输出！","target":[],"branches":[],"next_node_id":"c_n2_check_faction","output":""},
-            {"id":"c_n2_check_faction","x":200,"y":0,"premise":"判定是否需要建立新势力。","prompt":"【势力存在判定】（⚠️绝对禁止调用工具！）\n对比当前初步人设中的所属势力，并仔细核对已有的势力名录：{locations_list}。\n- 如果该势力在名录中已存在，【绝对禁止重复创建】，直接输出 <ROUTE>NO</ROUTE>；\n- 只有在确属全新的空白势力时，才输出 <ROUTE>YES</ROUTE>。","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"YES","next_node_id":"c_n3_build_faction"},{"condition":"NO","next_node_id":"c_n4_number"}],"next_node_id":"","output":""},
-            {"id":"c_n3_build_faction","x":400,"y":0,"premise":"建立新势力。","prompt":"【建立势力】（✅允许调用工具）\n调用 manage_world_element (etype: faction) 建立势力。提供 base_location_name 关联驻地。建完即止！","target":[],"branches":[],"next_node_id":"c_n2_check_faction","output":""},
-            {"id":"c_n4_number","x":200,"y":150,"premise":"判定人设数量并编号。","prompt":"【数量判定】（⚠️绝对禁止调用工具！）\n判断需要创建的人物数量（1-N个），为他们编号。纯文本输出清单。","target":[],"branches":[],"next_node_id":"c_n5_build_char","output":""},
-            {"id":"c_n5_build_char","x":200,"y":300,"premise":"调用工具创建人设。","prompt":"【人物落子】（✅允许调用工具）\n请调取系统人物属性模板：{character_template}。\n调用 manage_world_element 建立角色。必须生成极其丰富的嵌套 attributes 字典。所有的键值必须严格对齐模板分组，禁止自造残缺属性。","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[],"next_node_id":"c_n6_verify","output":""},
-            {"id":"c_n6_verify","x":200,"y":480,"premise":"模板质检。","prompt":"【模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n请对比刚刚创建的人设属性与系统人物属性模板：{character_template}。\n1. 数量是否达标？\n2. attributes 字典是否包含模板要求的所有必填分组？\n- 若完美合格，输出 <ROUTE>PERFECT</ROUTE>。\n- 若数量不足，输出 <ROUTE>NEEDS_MORE</ROUTE>。\n- 若存在残缺属性，输出 <ROUTE>NEEDS_FIX</ROUTE>。","target":[{"id":"blk_1","type":"placeholder","value":"{character_template}"}],"branches":[{"condition":"PERFECT","next_node_id":""},{"condition":"NEEDS_FIX","next_node_id":"c_n7_fix"},{"condition":"NEEDS_MORE","next_node_id":"c_n5_build_char"}],"next_node_id":"","output":""},
-            {"id":"c_n7_fix","x":400,"y":480,"premise":"补齐残缺属性。","prompt":"【补齐修复】（✅允许调用工具）\n调用 manage_world_element (etype: character, action: update) 为残缺的角色补齐缺失的属性字段。填完返回质检。","target":[],"branches":[],"next_node_id":"c_n6_verify","output":""},
+            {
+                "id": "c_n1_prepare", "x": 0, "y": 0,
+                "premise": "整理用户要求，建立初步人设文本。",
+                "prompt": "【初步整理】（⚠️绝对禁止调用工具！）\n整理用户要求，推导出需要创建的人物名称、所属势力、性格特征。建立初步人设文本。纯文本输出！",
+                "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
+            },
+            {
+                "id": "c_n2_check_faction", "x": 200, "y": 0,
+                "premise": "判定是否需要建立新势力。",
+                "prompt": "【势力存在判定】（⚠️绝对禁止调用工具！）\n对比当前初步人设中的所属势力，并仔细核对已有的势力名录：{locations_list}（地理大纲中已有的势力也视同存在）。\n- 如果该势力在名录中已存在，【绝对禁止重复创建】，直接输出 <ROUTE>NO</ROUTE> 路由至编号节点；\n- 只有在确属全新的空白势力时，才输出 <ROUTE>YES</ROUTE> 前往建立节点。",
+                "target": [{"id": "blk_1", "type": "placeholder", "value": "{locations_list}"}],
+                "branches": [
+                    {"condition": "YES", "next_node_id": "c_n3_build_faction"},
+                    {"condition": "NO", "next_node_id": "c_n4_number"}
+                ],
+                "next_node_id": "", "output": ""
+            },
+            {
+                "id": "c_n3_build_faction", "x": 400, "y": 0,
+                "premise": "建立新势力。",
+                "prompt": "【建立势力】（✅允许调用工具）\n调用 manage_world_element (etype: faction) 建立势力。提供 base_location_name 关联驻地。建完即止！",
+                "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
+            },
+            {
+                "id": "c_n4_number", "x": 200, "y": 150,
+                "premise": "判定人设数量并编号。",
+                "prompt": "【数量判定】（⚠️绝对禁止调用工具！）\n判断需要创建的人物数量（1-N个），为他们编号。纯文本输出清单。",
+                "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
+            },
+            {
+                "id": "c_n5_build_char", "x": 200, "y": 300,
+                "premise": "调用工具创建人设。",
+                "prompt": "【人物落子】（✅允许调用工具）\n请调取系统人物属性模板：{character_template}。\n调用 manage_world_element 建立角色。必须生成极其丰富的嵌套 attributes 字典。所有的键值必须严格对齐模板分组，禁止自造残缺属性。",
+                "target": [{"id": "blk_1", "type": "placeholder", "value": "{character_template}"}],
+                "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
+            },
+            {
+                "id": "c_n6_verify_template", "x": 200, "y": 450,
+                "premise": "第一漏斗：已建角色属性模板质检。",
+                "prompt": "【属性模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n请对比刚刚创建的人设属性与系统人物属性模板：{character_template}。\n你需要仔细检查当前已建立的角色，其 attributes 字典里是否包含了模板中所有必填的分组与字段（如性格特征、能力数据、功法等）？\n是否存在不合理的空白、残缺或空置项？\n- 若已有的角色属性全部合格、完备且无残缺，输出 <ROUTE>PERFECT</ROUTE> 路由至数量核对节点。\n- 若存在任何残缺属性，输出 <ROUTE>NEEDS_FIX</ROUTE> 前往修复节点。",
+                "target": [{"id": "blk_1", "type": "placeholder", "value": "{character_template}"}],
+                "branches": [
+                    {"condition": "PERFECT", "next_node_id": "c_n8_verify_quantity"},
+                    {"condition": "NEEDS_FIX", "next_node_id": "c_n7_fix"}
+                ],
+                "next_node_id": "", "output": ""
+            },
+            {
+                "id": "c_n7_fix", "x": 400, "y": 450,
+                "premise": "补齐残缺属性。",
+                "prompt": "【补齐修复】（✅允许调用工具）\n针对刚刚质检节点提出的残缺项或空缺属性（如缺少某种功法描述或弱点说明），\n调用 manage_world_element (etype: character, action: update) 精准更新该角色的 attributes 字典，补齐缺项，随后导回属性模板质检节点！",
+                "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
+            },
+            {
+                "id": "c_n8_verify_quantity", "x": 200, "y": 560,
+                "premise": "第二漏斗：已建角色数量核对。",
+                "prompt": "【角色数量核对】（⚠️绝对禁止调用工具！仅限输出路由！）\n请统计当前数据库里已经创建成功的角色总数量，并与计划中需要创建的人物清单数量进行点算与比对。\n- 若数量尚未达到计划要求（仍有角色未被创建），输出 <ROUTE>NEEDS_MORE</ROUTE> 路由回创建节点，继续补充落子。\n- 若所有计划中的角色已经足额全部建成，输出 <ROUTE>DONE</ROUTE> 圆满结束工作流。",
+                "target": [],
+                "branches": [
+                    {"condition": "NEEDS_MORE", "next_node_id": "c_n5_build_char"},
+                    {"condition": "DONE", "next_node_id": ""}
+                ],
+                "next_node_id": "", "output": ""
+            }
         ]
     if title == "📖 全维世界观与大纲流水线":
         modules = [
@@ -268,6 +325,23 @@ async def lifespan(app: FastAPI):
                 gs.prompt_templates = tpl
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
+    # 🛡️ 创世系统推理链自愈热修复迁移器 (Chain Auto-Migration Hotfix)
+    try:
+        with SessionLocal() as db_hf:
+            target_chain = db_hf.query(ReasoningChain).filter(
+                ReasoningChain.title == "👤 严谨人设与模板质检流"
+            ).first()
+            if target_chain and isinstance(target_chain.nodes, list):
+                has_old = any(n.get("id") == "c_n6_verify" for n in target_chain.nodes if isinstance(n, dict))
+                has_new = any(n.get("id") == "c_n8_verify_quantity" for n in target_chain.nodes if isinstance(n, dict))
+                if has_old or not has_new:
+                    print(f"[Hotfix Migration] 检测到人设链 '{target_chain.title}' 节点过旧，启动自愈物理擦洗重灌...")
+                    target_chain.nodes = _get_system_chain_nodes(target_chain.title)
+                    flag_modified(target_chain, "nodes")
+                    db_hf.commit()
+                    print("[Hotfix Migration] 人设双极质检漏斗节点重灌成功，热升级已热应用！")
+    except Exception as migration_error:
+        print(f"[Hotfix Migration Warning] 启动迁移器报错（已安全拦截）: {str(migration_error)}")
     # Seed official reasoning chains — protected: only create if not exists
     with SessionLocal() as db3:
         legacy = [
