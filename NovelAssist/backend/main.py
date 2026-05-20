@@ -224,15 +224,42 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n5_build_char", "x": 200, "y": 300,
                 "premise": "调用工具创建人设。",
-                "prompt": "【人物落子】（✅允许调用工具）\n请调取系统人物属性模板：{character_template}。\n调用 manage_world_element 建立角色。必须生成极其丰富的嵌套 attributes 字典。所有的键值必须严格对齐模板分组，禁止自造残缺属性。",
-                "target": [{"id": "blk_1", "type": "placeholder", "value": "{character_template}"}],
+                "prompt": (
+                    "【人物落子】（✅允许调用工具）\n"
+                    "系统当前配置的完整属性模板如下：\n{character_template}\n\n"
+                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
+                    "【增量落子法则】：\n"
+                    "1. 请仔细对比你在 `c_n4_number` 中规划的人物编号清单与【当前已建立的人物详细档案】。\n"
+                    "2. 挑出那些处于规划中、但【目前数据库里完全不存在】的角色。（名字拼写相近或别名已存的，视为已存在，绝对禁止重复创建！）\n"
+                    "3. 如果所有规划的角色都已经成功在数据库中建立了，请直接输出空并进入下一个质检节点，绝对不要重复创建。\n"
+                    "4. 如果存在缺失的角色，【你必须且只能选择其中 1 个缺失的角色】，调用 `manage_world_element` (etype: character, action: add) 创建它！\n"
+                    "   - 每次只允许创建 1 个角色！所有的键值必须严格对齐上面的属性模板，禁止自创残缺属性！"
+                ),
+                "target": [
+                    {"id": "blk_1", "type": "placeholder", "value": "{character_template}"},
+                    {"id": "blk_2", "type": "placeholder", "value": "{characters_full_detail}"}
+                ],
                 "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
                 "id": "c_n6_verify_template", "x": 200, "y": 450,
                 "premise": "第一漏斗：已建角色属性模板质检。",
-                "prompt": "【属性模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n请对比刚刚创建的人设属性与系统人物属性模板：{character_template}。\n你需要仔细检查当前已建立的角色，其 attributes 字典里是否包含了模板中所有必填的分组与字段（如性格特征、能力数据、功法等）？\n是否存在不合理的空白、残缺或空置项？\n- 若已有的角色属性全部合格、完备且无残缺，输出 <ROUTE>PERFECT</ROUTE> 路由至数量核对节点。\n- 若存在任何残缺属性，输出 <ROUTE>NEEDS_FIX</ROUTE> 前往修复节点。",
-                "target": [{"id": "blk_1", "type": "placeholder", "value": "{character_template}"}],
+                "prompt": (
+                    "【属性模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n"
+                    "系统当前配置的人物属性模板如下：\n{character_template}\n\n"
+                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
+                    "【质检契约】：\n"
+                    "请逐一审计【当前已建立的人物详细档案】中的每一个角色，比对他们的 attributes 字典与系统模板：\n"
+                    "1. 检查这些角色的 attributes 是否包含了模板要求的核心分组（如\"基础信息\"、\"性格特质\"、\"能力数据\"等）？\n"
+                    "2. 是否存在空白、残缺或不合理的空置项？\n"
+                    "判定路由：\n"
+                    "- 若【有任何一个角色】存在残缺属性，你必须输出 `<ROUTE>NEEDS_FIX</ROUTE>` 路由去修复它。\n"
+                    "- 只有当【所有已建立的角色】属性均 100% 饱满、完备且符合模板时，才输出 `<ROUTE>PERFECT</ROUTE>` 路由流向数量核对节点。"
+                ),
+                "target": [
+                    {"id": "blk_1", "type": "placeholder", "value": "{character_template}"},
+                    {"id": "blk_2", "type": "placeholder", "value": "{characters_full_detail}"}
+                ],
                 "branches": [
                     {"condition": "PERFECT", "next_node_id": "c_n8_verify_quantity"},
                     {"condition": "NEEDS_FIX", "next_node_id": "c_n7_fix"}
@@ -242,14 +269,31 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n7_fix", "x": 400, "y": 450,
                 "premise": "补齐残缺属性。",
-                "prompt": "【补齐修复】（✅允许调用工具）\n针对刚刚质检节点提出的残缺项或空缺属性（如缺少某种功法描述或弱点说明），\n调用 manage_world_element (etype: character, action: update) 精准更新该角色的 attributes 字典，补齐缺项，随后导回属性模板质检节点！",
-                "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
+                "prompt": (
+                    "【补齐修复】（✅允许调用工具）\n"
+                    "属性模板如下：\n{character_template}\n\n"
+                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
+                    "请针对上一步质检中被指出存在残缺属性的那个特定角色，调用 `manage_world_element` (etype: character, action: update, name: 对应的姓名) 精准补齐并丰富其 `attributes` 字典。填完即止，随后导回属性模板质检！"
+                ),
+                "target": [
+                    {"id": "blk_1", "type": "placeholder", "value": "{character_template}"},
+                    {"id": "blk_2", "type": "placeholder", "value": "{characters_full_detail}"}
+                ],
+                "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
                 "id": "c_n8_verify_quantity", "x": 200, "y": 560,
                 "premise": "第二漏斗：已建角色数量核对。",
-                "prompt": "【角色数量核对】（⚠️绝对禁止调用工具！仅限输出路由！）\n请统计当前数据库里已经创建成功的角色总数量，并与计划中需要创建的人物清单数量进行点算与比对。\n- 若数量尚未达到计划要求（仍有角色未被创建），输出 <ROUTE>NEEDS_MORE</ROUTE> 路由回创建节点，继续补充落子。\n- 若所有计划中的角色已经足额全部建成，输出 <ROUTE>DONE</ROUTE> 圆满结束工作流。",
-                "target": [],
+                "prompt": (
+                    "【角色数量核对】（⚠️绝对禁止调用工具！仅限输出路由！）\n"
+                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
+                    "请仔细点算【当前已建立的人物详细档案】中的角色总数量，比对你在 `c_n4_number` 中规划的人设清单总数：\n"
+                    "- 若数量尚未达到计划要求（仍有计划中的角色未被实际创建），输出 `<ROUTE>NEEDS_MORE</ROUTE>` 路由返回落子节点，继续去创建下一个人。\n"
+                    "- 若所有计划中的角色已经足额全部建成，输出 `<ROUTE>DONE</ROUTE>` 结束整个流程。"
+                ),
+                "target": [
+                    {"id": "blk_1", "type": "placeholder", "value": "{characters_full_detail}"}
+                ],
                 "branches": [
                     {"condition": "NEEDS_MORE", "next_node_id": "c_n5_build_char"},
                     {"condition": "DONE", "next_node_id": ""}
@@ -334,8 +378,14 @@ async def lifespan(app: FastAPI):
             if target_chain and isinstance(target_chain.nodes, list):
                 has_old = any(n.get("id") == "c_n6_verify" for n in target_chain.nodes if isinstance(n, dict))
                 has_new = any(n.get("id") == "c_n8_verify_quantity" for n in target_chain.nodes if isinstance(n, dict))
-                if has_old or not has_new:
-                    print(f"[Hotfix Migration] 检测到人设链 '{target_chain.title}' 节点过旧，启动自愈物理擦洗重灌...")
+                # 🛡️ 强制热升级判定：若 c_n5_build_char 节点尚未引入 characters_full_detail 高精占位符，执行强制覆盖重灌
+                needs_upgrade = has_old or not has_new
+                if not needs_upgrade:
+                    c5 = next((n for n in target_chain.nodes if isinstance(n, dict) and n.get("id") == "c_n5_build_char"), None)
+                    if c5 and not any(t.get("value") == "{characters_full_detail}" for t in c5.get("target", [])):
+                        needs_upgrade = True
+                if needs_upgrade:
+                    print("[Hotfix Migration] 检测到人设链节点过旧或缺少高精占位符，启动自愈物理擦洗重灌...")
                     target_chain.nodes = _get_system_chain_nodes(target_chain.title)
                     flag_modified(target_chain, "nodes")
                     db_hf.commit()
@@ -1956,6 +2006,24 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     if isinstance(base, dict) and base.get("姓名"):
                         name = str(base["姓名"])
                 lines.append(f"- **{name}** [{c.status}] 🚪退场")
+            return "\n".join(lines)
+
+        if ph == "characters_full_detail":
+            chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+            if not chars:
+                return "【当前系统内暂无任何人物档案，等待创建中】"
+            lines = []
+            for c in chars:
+                lines.append(f"### 👤 {c.name} [ID: {c.id}] (当前状态: {c.status or '活跃'}, 生命周期: {'存活/活跃' if c.is_active else '退场/冷冻'})")
+                if hasattr(c, "faction") and c.faction:
+                    lines.append(f"- **所属势力**: {c.faction.name}")
+                else:
+                    lines.append("- **所属势力**: 无")
+                lines.append(f"- **人物基本描述**: {c.description or '无'}")
+                if c.attributes:
+                    lines.append("- **核心 nested attributes 详细字典**:")
+                    lines.append(f"```json\n{json.dumps(c.attributes, ensure_ascii=False, indent=2)}\n```")
+                lines.append("---")
             return "\n".join(lines)
 
         if ph == "locations_list":
