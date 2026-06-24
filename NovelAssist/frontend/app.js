@@ -2747,7 +2747,7 @@ const REASONING_FORMATS = {
             "每条大纲一个完整块，格式如下：\n\n" +
             "【title】条目标题（必填）\n" +
             "【category】世界观/世界势力/地理/人物设定/能力体系设定/剧情大纲\n" +
-            "【parent_name】父大纲标题（顶级写'无'）\n" +
+            "【parent_name】父大纲标题（顶级写'无'；多级路径用/分隔，如'第一卷/第一章'）\n" +
             "【is_always_context】true 或 false\n" +
             "【order_index】排序序号（整数）\n" +
             "【description】详细 Markdown 描述\n" +
