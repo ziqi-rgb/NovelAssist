@@ -2483,6 +2483,7 @@ const WRITE_FIELDS = {
     outline: ["title","description","category"],
     faction: ["name","description"],
     timeline: ["time_label","content"],
+    chain_todos: ["content"],
 };
 
 function buildWriteToHTML(node) {
@@ -2496,7 +2497,8 @@ function buildWriteToHTML(node) {
         + '<option value="location"' + (entity==="location"?" selected":"") + '>地点</option>'
         + '<option value="outline"' + (entity==="outline"?" selected":"") + '>大纲</option>'
         + '<option value="faction"' + (entity==="faction"?" selected":"") + '>势力</option>'
-        + '<option value="timeline"' + (entity==="timeline"?" selected":"") + '>时间线</option>';
+        + '<option value="timeline"' + (entity==="timeline"?" selected":"") + '>时间线</option>'
+        + '<option value="chain_todos"' + (entity==="chain_todos"?" selected":"") + '>📋 任务清单</option>';
     var fieldsList = WRITE_FIELDS[entity] || [];
     var fieldOpts = '<option value="">-- 字段 --</option>';
     fieldsList.forEach(function(f) {
@@ -2672,7 +2674,12 @@ async function runNode(card, node) {
             };
             // 构建 data 对象
             var dataObj = {};
-            if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline") {
+            var toolName = "manage_world_element";
+            if (wt.entity === "chain_todos") {
+                // 📋 任务清单写入
+                toolName = "manage_chain_todos";
+                toolArgs = { action: "add", content: content };
+            } else if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline") {
                 if (wt.field === "attributes") {
                     // 尝试解析 content 为 JSON，否则存入嵌套字段
                     dataObj[wt.field] = {};
@@ -2699,7 +2706,7 @@ async function runNode(card, node) {
             }
             var execRes = await fetch("/api/agent/execute/" + currentNovelId, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tool_name: "manage_world_element", arguments: toolArgs, write_to: wt || null, chain_id: currentChainId || null }),
+                body: JSON.stringify({ tool_name: toolName, arguments: toolArgs, write_to: wt.entity === "chain_todos" ? null : (wt || null), chain_id: currentChainId || null }),
             });
             if (execRes.ok) {
                 var result = await execRes.json();

@@ -208,6 +208,9 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         ]
         col_x = [30, 450, 870, 1290]
         nodes: list[dict] = []
+        # 📋 初始化任务清单
+        nodes.append({"id":"m_init_plan","x":col_x[0],"y":-500,"premise":"分析用户输入的世界设定，列出本次地图搭建需要完成的所有层级任务清单。","prompt":"【创世任务规划】\n请根据用户输入和已有设定，列出本次地图搭建的完整任务清单。按层级分组：大千世界→宇宙→星球→大陆→国家→城池→街区。每项一行，格式：- [ ] 任务描述。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"m_init_todos","output":""})
+        nodes.append({"id":"m_init_todos","type":"write","x":col_x[2],"y":-500,"premise":"将任务清单写入推理链 Todo 列表。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_check","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (s_id, s_name, s_scales, s_top, s_bottom) in enumerate(stages):
             base_y = 60 + i * 600
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
@@ -219,6 +222,19 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         return nodes
     if title == "👤 严谨人设与模板质检流":
         return [
+            {
+                "id": "c_n0_init_plan", "x": 400, "y": -500,
+                "premise": "分析用户输入，列出本次需要创建和质检的所有人物任务清单。",
+                "prompt": "【人设任务规划】\n根据用户输入，列出需要创建的所有人物及其所属势力。格式：- [ ] 角色名 (所属势力)。末尾输出 <ROUTE>DONE</ROUTE>。",
+                "target": [], "branches": [], "next_node_id": "c_n0_init_todos", "output": ""
+            },
+            {
+                "id": "c_n0_init_todos", "type": "write", "x": 750, "y": -500,
+                "premise": "将人物任务清单写入推理链 Todo 列表。",
+                "prompt": "",
+                "target": [], "branches": [], "next_node_id": "c_n1_prepare", "output": "",
+                "write_to": {"entity": "chain_todos", "field": "content", "action": "create"}
+            },
             {
                 "id": "c_n1_prepare", "x": 400, "y": 60,
                 "premise": "整理用户要求，推导需要创建的人物名称、所属势力、性格特征。",
@@ -309,6 +325,9 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         # 6行×4列：行距500px(卡片~300px高)，列距420px(卡片320px宽)
         col_x = [30, 450, 870, 1290]
         nodes: list[dict] = []
+        # 📋 初始化任务清单
+        nodes.append({"id":"o_init_plan","x":col_x[0],"y":-500,"premise":"分析用户输入，列出本次世界观构建需要完成的所有模块任务清单。","prompt":"【大纲任务规划】\n根据用户输入，列出需要创建的六大模块任务：世界观设定、世界势力、地理知识、人物设定、能力体系、剧情大纲。每项一行，格式：- [ ] 模块名：任务描述。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"o_init_todos","output":""})
+        nodes.append({"id":"o_init_todos","type":"write","x":col_x[2],"y":-500,"premise":"将模块任务清单写入推理链 Todo 列表。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_check","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (m_id, m_name, cat) in enumerate(modules):
             base_y = 60 + i * 500
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
