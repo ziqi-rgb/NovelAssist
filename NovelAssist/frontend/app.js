@@ -49,7 +49,7 @@ function formatGenesisResumeInfo(state) {
         });
         return "并行模式 · " + completedCount + "/3 链完成 · 共 " + totalNodes + " 节点 · " + statuses.join(" ");
     }
-    var phaseNames = ["", "🗺️ 地理蓝图", "📖 世界观与大纲", "👤 群像人设"];
+    var phaseNames = ["", "👤 群像人设", "🗺️ 地理蓝图", "📖 世界观与大纲"];
     var phaseLabel = phaseNames[state.phase] || "未知阶段";
     var nodeCount = state.executedNodeCount || 0;
     var nodeInfo = state.currentNodeId ? " · 节点 " + state.currentNodeId : "";
@@ -1641,7 +1641,7 @@ document.getElementById("genesis-discard-btn")?.addEventListener("click", functi
 });
 
 function restoreProgressFromState(state) {
-    var stepIds = ["step-map", "step-outline", "step-char"];
+    var stepIds = ["step-char", "step-map", "step-outline"];
     if (state.parallel && state.chainStates) {
         var keys = ["outline", "map", "character"];
         keys.forEach(function(key, idx) {
@@ -2070,7 +2070,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         window.__genStopFlusher = null;
         window.__genFlushLog = null;
         clearGenesisState();
-        logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 世界大纲推演、地理蓝图落地、群像角色繁衍全部圆满成功！\n", "tool");
+        logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 群像角色繁衍、地理蓝图落地、世界大纲推演全部圆满成功！\n", "tool");
         statusBadge.textContent = "创世圆满成功";
         statusBadge.style.color = "#22c55e";
         showToast("🌌 智能创世三链大重构圆满成功！");
@@ -2104,9 +2104,9 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     var chains = await chainsRes.json();
 
     var chainDefs = [
-        { key: "outline", title: "📖 全维世界观与大纲流水线", stepId: "step-outline", label: "📖 大纲" },
-        { key: "map", title: "🗺️ 蓝图规划与逐层搭建流", stepId: "step-map", label: "🗺️ 地图" },
         { key: "character", title: "👤 严谨人设与模板质检流", stepId: "step-char", label: "👤 人设" },
+        { key: "map", title: "🗺️ 蓝图规划与逐层搭建流", stepId: "step-map", label: "🗺️ 地图" },
+        { key: "outline", title: "📖 全维世界观与大纲流水线", stepId: "step-outline", label: "📖 大纲" },
     ];
 
     // 解析链 ID
@@ -2292,7 +2292,7 @@ function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, 
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
     // 标记当前阶段为 interrupted
-    var stepIds = ["step-map", "step-outline", "step-char"];
+    var stepIds = ["step-char", "step-map", "step-outline"];
     if (state.parallel && state.chainStates) {
         // 并行模式：标记所有未完成的链为 interrupted
         var keys = ["outline", "map", "character"];
@@ -2323,7 +2323,7 @@ function handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortB
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
     // 所有步骤标为 interrupted
-    var stepIds = ["step-map", "step-outline", "step-char"];
+    var stepIds = ["step-char", "step-map", "step-outline"];
     stepIds.forEach(function(id) {
         var el = document.getElementById(id);
         if (el && el.className === "step-active") el.className = "step-interrupted";
