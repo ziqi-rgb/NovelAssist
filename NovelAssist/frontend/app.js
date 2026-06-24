@@ -2489,6 +2489,18 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                 fullChainContext = "【初始指令】: " + userInput + "\n";
             }
 
+            // 🔥 预热：首个 LLM 调用前发一个极轻请求，避免 DeepSeek 冷启动空回
+            if (!resumeState && s && s.apiKey) {
+                try {
+                    var warmRes = await fetch("/api/reasoning/execute", {
+                        method: "POST", headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ novel_id: currentNovelId, premise: "", prompt: "1", target: "", previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: {}, no_tools: true }),
+                        signal: AbortSignal.timeout(8000)
+                    });
+                    if (warmRes.ok) { var wg = parseSSEStream(warmRes); while (true) { var wc = await wg.next(); if (wc.done) break; } }
+                } catch(e) { /* 预热失败不阻塞 */ }
+            }
+
             while (currentNodeId) {
                 loopCount++;
                 if (loopCount > 200) {
