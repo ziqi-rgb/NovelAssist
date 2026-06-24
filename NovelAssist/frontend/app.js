@@ -1661,7 +1661,18 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             var wArgs = {};
                             if (wt.entity === "chain_todos") {
                                 wToolName = "manage_chain_todos";
-                                wArgs = { action: "add", content: lastReasoning };
+                                if (wt.action === "update" && wt.field === "status") {
+                                    var todos = (currentChain && currentChain.todos) ? currentChain.todos : [];
+                                    var pending = null;
+                                    for (var ti = 0; ti < todos.length; ti++) {
+                                        if (todos[ti].status === "pending" || todos[ti].status === "in_progress") {
+                                            pending = todos[ti]; break;
+                                        }
+                                    }
+                                    wArgs = { action: "update_status", todo_id: pending ? pending.id : "none", status: "done" };
+                                } else {
+                                    wArgs = { action: "add", content: lastReasoning };
+                                }
                             } else {
                                 wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
                                 if (wt.field === "attributes" && wt.sub_field) {
@@ -2855,9 +2866,25 @@ async function runNode(card, node) {
             var dataObj = {};
             var toolName = "manage_world_element";
             if (wt.entity === "chain_todos") {
-                // 📋 任务清单写入
                 toolName = "manage_chain_todos";
-                toolArgs = { action: "add", content: content };
+                if (wt.action === "update" && wt.field === "status") {
+                    // 📋 标记待办为完成：找第一个 pending 项
+                    var todos = (currentChain && currentChain.todos) ? currentChain.todos : [];
+                    var pending = null;
+                    for (var i = 0; i < todos.length; i++) {
+                        if (todos[i].status === "pending" || todos[i].status === "in_progress") {
+                            pending = todos[i]; break;
+                        }
+                    }
+                    if (pending) {
+                        toolArgs = { action: "update_status", todo_id: pending.id, status: "done" };
+                    } else {
+                        toolArgs = { action: "update_status", todo_id: "none", status: "done" };
+                    }
+                } else {
+                    // 新增待办项
+                    toolArgs = { action: "add", content: content };
+                }
             } else if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline") {
                 var item = (parsedItems && parsedItems.length > 0) ? parsedItems[0] : null;
                 if (item && upstreamFormat === "location") {

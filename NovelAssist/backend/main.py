@@ -201,109 +201,72 @@ SYSTEM_CHAIN_NAMES = [
 def _get_system_chain_nodes(title: str) -> list[dict]:
     if title == "🗺️ 蓝图规划与逐层搭建流":
         stages = [
-            ("world", "大千世界与宇宙", "大千世界→宇宙", "大千世界", "宇宙"),
-            ("planet", "星球与大陆", "星球→大陆", "星球", "大陆"),
+            ("world", "大千世界", "大千世界", "大千世界→宇宙", "宇宙"),
+            ("planet", "星球", "星球→大陆", "星球", "大陆"),
             ("nation", "国家", "国家", "国家", "国家"),
-            ("city", "城池与街区", "城池→街区", "城池", "街区"),
+            ("city", "城池", "城池→街区", "城池", "街区"),
         ]
-        col_x = [30, 450, 870, 1290]
+        col_x = [30, 450, 870, 1290, 1710]
         nodes: list[dict] = []
-        # 📋 初始化任务清单
-        nodes.append({"id":"m_init_plan","x":col_x[0],"y":-500,"premise":"分析用户输入的世界设定，列出本次地图搭建需要完成的所有层级任务清单。","prompt":"【创世任务规划】\n请根据用户输入和已有设定，列出本次地图搭建的完整任务清单。按层级分组：大千世界→宇宙→星球→大陆→国家→城池→街区。每项一行，格式：- [ ] 任务描述。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"m_init_todos","output":""})
-        nodes.append({"id":"m_init_todos","type":"write","x":col_x[2],"y":-500,"premise":"将任务清单写入推理链 Todo 列表。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_check","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
-        for i, (s_id, s_name, s_scales, s_top, s_bottom) in enumerate(stages):
-            base_y = 60 + i * 600
+        # 📋 步骤1-2：全局规划 + 写入待办
+        nodes.append({"id":"m_plan","x":col_x[0],"y":-400,"premise":"明确需要建立的所有地点（含所有层级），结构化输出地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，规划所有需要创建的地点。覆盖四个层级：大千世界→星球→大陆→国家→城池→街区。\n注意：可以有下级没有上级，但不能有上级没有下级！每个地点必须指明 parent_name 和 scale_level。\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。","format":"location","target":[],"branches":[],"next_node_id":"m_todos","output":""})
+        nodes.append({"id":"m_todos","type":"write","x":col_x[2],"y":-400,"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
+        for i, (s_id, s_label, s_scales, s_top, s_bottom) in enumerate(stages):
+            base_y = i * 500
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
-            next_check = f"m_{next_s_id}_check" if next_s_id != "end" else ""
-            nodes.append({"id":f"m_{s_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建【{s_name}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{s_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
-            nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
-            nodes.append({"id":f"m_{s_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的【{s_name}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
-            nodes.append({"id":f"m_{s_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验：【{s_name}】层级的所有地点是否全部创建成功？","prompt":f"【地点创建校验】\n数据库中当前所有地点：{{locations_full_detail}}\n\n请判断属于【{s_name}】层级（scale_level 为 {s_scales} 中任一值）的所有计划地点是否已全部创建？\n- 还有未创建的 → <ROUTE>CONTINUE</ROUTE>\n- 全部创建完毕 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+            next_router = f"m_{next_s_id}_router" if next_s_id != "end" else ""
+            nodes.append({"id":f"m_{s_id}_create","x":col_x[0],"y":base_y,"premise":f"从待办清单中找出【{s_label}】层级第一个未完成的地点，生成完整属性。","prompt":f"【{s_label} 地点创建】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n推理链待办: {{chain_todos}}\n已有地点: {{locations_full_detail}}\n\n请从待办中找出【{s_label}】层级第一个未完成的地点，为其生成完整的属性字典（name、scale_level、parent_name、grid_x/grid_y、description）。如果待办中没有该层级的未完成项，输出 <ROUTE>ALL_DONE</ROUTE> 而不是创建。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_write","output":""})
+            nodes.append({"id":f"m_{s_id}_write","type":"write","x":col_x[1],"y":base_y,"premise":f"将生成的【{s_label}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_todos","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
+            nodes.append({"id":f"m_{s_id}_todos","type":"write","x":col_x[2],"y":base_y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
+            nodes.append({"id":f"m_{s_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验：【{s_label}】层级是否全部完成？","prompt":f"【{s_label} 层级校验】\n推理链待办: {{chain_todos}}\n已有地点: {{locations_full_detail}}\n\n请检查【{s_label}】层级（scale_level 为 {s_scales} 中任一值）的待办项是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_create"},{"condition":"DONE","next_node_id":next_router if next_router else ""}],"next_node_id":"","output":""})
+            if next_router:
+                nodes.append({"id":next_router,"type":"router","x":col_x[4],"y":base_y,"premise":f"判定：待办中是否还有【{stages[i+1][1]}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{next_s_id}_create"},{"condition":"NO","next_node_id":""}],"next_node_id":"","output":""})
         return nodes
     if title == "👤 严谨人设与模板质检流":
         return [
             {
-                "id": "c_nm1_ask_template", "type": "ask", "x": 400, "y": -1000,
-                "premise": "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段。",
-                "prompt": "【模板校准提问】\n当前小说的人物属性模板为：\n{character_template}\n\n请生成一个问题，询问用户：\n1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？\n2. 是否有现有分组需要增加或删减字段？\n3. 是否需要调整分组的顺序或命名？\n\n用户回复后，将这些修改说明作为后续创建人物时的额外指引（在模板基础上追加用户要求的新分组和字段）。",
-                "target": [], "branches": [], "next_node_id": "c_n0_init_plan", "output": ""
+                "id": "c_plan", "x": 400, "y": 60,
+                "premise": "确认需要创建哪些角色，列出完整名单。",
+                "prompt": "【角色名单确认】\n根据用户输入，列出需要创建的所有角色姓名。每个角色注明所属势力（无则写'散修'）。格式：\n- [ ] 角色名 (所属势力)\n末尾输出 <ROUTE>DONE</ROUTE>。",
+                "target": [], "branches": [], "next_node_id": "c_todos", "output": ""
             },
             {
-                "id": "c_n0_init_plan", "x": 400, "y": -500,
-                "premise": "分析用户输入，列出本次需要创建和质检的所有人物任务清单。",
-                "prompt": "【人设任务规划】\n根据用户输入和模板（如有用户追加的分组/字段要求也一并纳入），列出需要创建的所有人物及其所属势力。格式：- [ ] 角色名 (所属势力)。末尾输出 <ROUTE>DONE</ROUTE>。",
-                "target": [], "branches": [], "next_node_id": "c_n0_init_todos", "output": ""
-            },
-            {
-                "id": "c_n0_init_todos", "type": "write", "x": 750, "y": -500,
-                "premise": "将人物任务清单写入推理链 Todo 列表。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n1_prepare", "output": "",
+                "id": "c_todos", "type": "write", "x": 850, "y": 60,
+                "premise": "将角色名单写入推理链待办清单。",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_ask_template", "output": "",
                 "write_to": {"entity": "chain_todos", "field": "content", "action": "create"}
             },
             {
-                "id": "c_n1_prepare", "x": 400, "y": 60,
-                "premise": "整理用户要求，推导需要创建的人物名称、所属势力、性格特征。",
-                "prompt": "【初步整理】\n整理用户要求，推导出需要创建的人物名称、所属势力、性格特征。建立初步人设文本。在末尾输出 <ROUTE>DONE</ROUTE>。",
-                "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
+                "id": "c_ask_template", "type": "ask", "x": 400, "y": 400,
+                "premise": "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段（一次性，不循环）。",
+                "prompt": "【模板校准提问】\n当前小说的人物属性模板为：\n{character_template}\n\n请生成一个问题，询问用户：\n1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？\n2. 是否有现有分组需要增加或删减字段？\n\n用户回复后，将这些修改要求作为后续创建角色时的额外指引。",
+                "target": [], "branches": [], "next_node_id": "c_create", "output": ""
             },
             {
-                "id": "c_n2_check_faction", "type": "router", "x": 400, "y": 550,
-                "premise": "判定：初步人设中涉及的势力是否已存在？不存在则需要新建。",
-                "prompt": "", "target": [],
-                "branches": [
-                    {"condition": "YES", "next_node_id": "c_n3_build_faction"},
-                    {"condition": "NO", "next_node_id": "c_n4_number"}
-                ],
-                "next_node_id": "", "output": ""
+                "id": "c_create", "x": 400, "y": 800,
+                "premise": "从待办清单中找出第一个未完成的角色，按模板生成完整属性。",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n推理链待办：{chain_todos}\n\n请从待办中找出第一个未完成的角色，为其生成完整饱满的属性字典，严格对齐模板的每个分组和每个字段。势力不存在时自动创建（写入 faction_name）。",
+                "format": "character", "target": [], "branches": [], "next_node_id": "c_write", "output": ""
             },
             {
-                "id": "c_n3_build_faction", "type": "write", "x": 900, "y": 550,
-                "premise": "将上游确定的势力信息写入数据库。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": "",
-                "write_to": {"entity": "faction", "field": "description", "action": "create"}
-            },
-            {
-                "id": "c_n4_number", "x": 400, "y": 1040,
-                "premise": "判定需要创建的人物总数，生成编号清单。",
-                "prompt": "【数量判定】\n判断需要创建的人物数量（1-N个），生成名字编号清单。\n明确输出：\n【创世计划人设总名单】：[列出所有角色姓名]\n在末尾输出 <ROUTE>DONE</ROUTE>。",
-                "target": [], "branches": [], "next_node_id": "c_n5a_gen_char", "output": ""
-            },
-            {
-                "id": "c_n5a_gen_char", "x": 400, "y": 1530,
-                "premise": "从计划名单中选出下一个待创建的角色，生成完整的 attributes 属性字典。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n【执行契约】：\n1. 继承前文的【创世计划人设总名单】\n2. 比对已有角色，找出第一个尚未创建的角色\n3. 为该角色生成完整饱满的属性字典，严格对齐模板的每个分组和字段",
-                "format": "character", "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
-            },
-            {
-                "id": "c_n5_build_char", "type": "write", "x": 400, "y": 2020,
-                "premise": "将上游生成的完整角色属性写入数据库。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": "",
+                "id": "c_write", "type": "write", "x": 850, "y": 800,
+                "premise": "将生成的完整角色属性写入数据库（势力自动关联）。",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_todos_update", "output": "",
                 "write_to": {"entity": "character", "field": "attributes", "action": "create"}
             },
             {
-                "id": "c_n6_verify_template", "x": 400, "y": 2510,
-                "premise": "第一漏斗：质检刚创建的角色属性是否完整对齐模板。",
-                "prompt": "【属性模板质检】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请找出在 c_n5_build_char 中刚刚被创建/修改的那个特定角色的 attributes 字典。\n1. 核对其 attributes 是否包含模板中的所有分组和所有字段\n2. 输出审查结果：\n   【当前审查角色】：[角色姓名]\n   【审查结果】：通过 / 未通过(列出缺失字段)\n3. 末尾输出路由：\n   - 所有字段齐全 → <ROUTE>PERFECT</ROUTE>\n   - 有缺失字段 → <ROUTE>NEEDS_FIX</ROUTE>",
-                "format": "", "target": [],
-                "branches": [
-                    {"condition": "PERFECT", "next_node_id": "c_n8_verify_quantity"},
-                    {"condition": "NEEDS_FIX", "next_node_id": "c_n7_fix"}
-                ],
-                "next_node_id": "", "output": ""
+                "id": "c_todos_update", "type": "write", "x": 400, "y": 1200,
+                "premise": "将待办中对应角色标记为已完成。",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_verify", "output": "",
+                "write_to": {"entity": "chain_todos", "field": "status", "action": "update"}
             },
             {
-                "id": "c_n7_fix", "type": "write", "x": 900, "y": 2510,
-                "premise": "将上游质检指出的缺失字段补齐写入数据库。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": "",
-                "write_to": {"entity": "character", "field": "attributes", "action": "update"}
-            },
-            {
-                "id": "c_n8_verify_quantity", "x": 400, "y": 3000,
-                "premise": "第二漏斗：核对已创建角色数量是否达标。",
-                "prompt": "【数量大盘点】\n已有角色：{characters_full_detail}\n\n1. 汇总创世进度\n2. 比对上文【创世计划人设总名单】与已创建角色\n3. 末尾输出路由：\n   - 全部角色已创建完毕 → <ROUTE>DONE</ROUTE>\n   - 还有角色未创建 → <ROUTE>NEEDS_MORE</ROUTE>",
+                "id": "c_verify", "x": 400, "y": 1600,
+                "premise": "校验：所有角色是否已全部创建完成？",
+                "prompt": "【角色创建校验】\n推理链待办：{chain_todos}\n已有角色：{characters_full_detail}\n\n请检查待办中的所有角色是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>",
                 "format": "", "target": [],
                 "branches": [
-                    {"condition": "NEEDS_MORE", "next_node_id": "c_n5a_gen_char"},
+                    {"condition": "CONTINUE", "next_node_id": "c_create"},
                     {"condition": "DONE", "next_node_id": ""}
                 ],
                 "next_node_id": "", "output": ""
@@ -311,42 +274,37 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         ]
     if title == "📖 全维世界观与大纲流水线":
         modules = [
-            ("world", "世界观设定", "世界观"),
-            ("faction", "世界势力设定", "世界势力"),
-            ("geo", "地理知识设定", "地理"),
-            ("char", "人物粗略设定", "人物设定"),
-            ("power", "能力体系设定", "能力体系设定"),
-            ("story", "剧情大纲推演", "剧情大纲"),
+            ("world", "世界观设定", "世界观", True),
+            ("faction", "世界势力设定", "世界势力", True),
+            ("geo", "地理知识设定", "地理", True),
+            ("char", "人物设定（简略）", "人物设定", False),  # 简略：不强制结构化
+            ("power", "能力体系设定", "能力体系设定", True),
+            # 剧情大纲：跳过
         ]
         contracts = {
-            "世界观": "阐述世界的底层物理定律、超凡法则、文明起源、历史纪元等最宏观、最基础的世界框架设定。",
-            "世界势力": "定义世界中割据或隐藏的门派、宗族、联邦、商会、地下结社等社会组织。",
-            "地理": "描绘大陆、国度、险恶禁地、奇特天险、城池等地理实体的分布。",
-            "人物设定": "列出非剧情主线的核心人物人设简述。",
-            "能力体系设定": "系统化拆解该世界的修行体系、超凡境界划分、等级晋升要求。",
-            "剧情大纲": "推演小说的核心主线脉络，严格按照 [卷]->[章]->[幕] 递归向下细化。",
+            "世界观": "阐述世界的底层物理定律、超凡法则、文明起源、历史纪元。",
+            "世界势力": "定义世界中割据或隐藏的门派、宗族、联邦、商会等社会组织。",
+            "地理": "描绘大陆、国度、禁地、城池等地理实体的分布。",
+            "人物设定": "列出非核心主角的简略人设概述，不展开详细属性。",
+            "能力体系设定": "系统化拆解修行体系、超凡境界、等级晋升要求。",
         }
-        # 6行×4列：行距500px(卡片~300px高)，列距420px(卡片320px宽)
-        col_x = [30, 450, 870, 1290]
+        col_x = [30, 450, 870, 1290, 1710]
         nodes: list[dict] = []
-        # 📋 初始化任务清单
-        nodes.append({"id":"o_init_plan","x":col_x[0],"y":-500,"premise":"分析用户输入，列出本次世界观构建需要完成的所有模块任务清单。","prompt":"【大纲任务规划】\n根据用户输入，列出需要创建的六大模块任务：世界观设定、世界势力、地理知识、人物设定、能力体系、剧情大纲。每项一行，格式：- [ ] 模块名：任务描述。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"o_init_todos","output":""})
-        nodes.append({"id":"o_init_todos","type":"write","x":col_x[2],"y":-500,"premise":"将模块任务清单写入推理链 Todo 列表。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_check","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
-        for i, (m_id, m_name, cat) in enumerate(modules):
-            base_y = 60 + i * 500
+        # 📋 步骤1-2：全局规划 + 写入待办
+        nodes.append({"id":"o_plan","x":col_x[0],"y":-400,"premise":"规划所有模块的大纲条目，结构化输出。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，对所有模块进行大纲条目规划。模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：必须 100% 参照已有地理和角色数据：{locations_full_detail} {characters_list}。","format":"outline","target":[],"branches":[],"next_node_id":"o_todos","output":""})
+        nodes.append({"id":"o_todos","type":"write","x":col_x[2],"y":-400,"premise":"将所有大纲条目写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
+        for i, (m_id, m_name, cat, use_format) in enumerate(modules):
+            base_y = i * 500
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
-            next_check = f"o_{next_m_id}_check" if next_m_id != "end" else ""
+            next_router = f"o_{next_m_id}_router" if next_m_id != "end" else ""
+            fmt = "outline" if use_format else ""
             contract = contracts.get(cat, "")
-            nodes.append({"id":f"o_{m_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建或扩充【{m_name}】？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
-            plan = f"【分条规划】\n【{cat} 硬性契约】：{contract}\n请对【{m_name}】进行详细规划，拆分为多个条目。\n"
-            if m_id != "char":
-                plan += "【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{locations_full_detail}。严禁生造冲突内容！\n"
-            if m_id == "story":
-                plan += "必须遵循【卷→章→幕】三级嵌套，指明 parent_name。\n"
-            plan += "纯文本输出清单！末尾输出 <ROUTE>DONE</ROUTE>。"
-            nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name} 的具体条目。","prompt":plan,"format":"outline","target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
-            nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的 {m_name} 条目写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"outline","field":"description","action":"create"}})
-            nodes.append({"id":f"o_{m_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验：{m_name} 是否全部创建完毕？","prompt":f"【大纲创建校验】\n数据库中当前所有大纲：{{outlines_full_detail}}\n\n请判断分类为 [{cat}] 的所有计划大纲条目是否已全部创建？\n- 还有未创建的 → <ROUTE>CONTINUE</ROUTE>\n- 全部创建完毕 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"o_{m_id}_create","x":col_x[0],"y":base_y,"premise":f"从待办中找出【{m_name}】分类第一条未完成条目，生成完整内容。","prompt":f"【{m_name} 条目创建】\n硬性契约：{contract}\n推理链待办：{{chain_todos}}\n已有大纲：{{outlines_full_detail}}\n已有地理：{{locations_full_detail}}\n\n请从待办中找出分类为 [{cat}] 的第一个未完成条目，为其生成完整的 title、category、description（Markdown 格式）。","format":fmt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_write","output":""})
+            nodes.append({"id":f"o_{m_id}_write","type":"write","x":col_x[1],"y":base_y,"premise":f"将生成的【{m_name}】条目写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_todos","output":"","write_to":{"entity":"outline","field":"description","action":"create"}})
+            nodes.append({"id":f"o_{m_id}_todos","type":"write","x":col_x[2],"y":base_y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
+            nodes.append({"id":f"o_{m_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验：【{m_name}】是否全部完成？","prompt":f"【{m_name} 校验】\n推理链待办：{{chain_todos}}\n已有大纲：{{outlines_full_detail}}\n\n请检查分类为 [{cat}] 的待办项是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_create"},{"condition":"DONE","next_node_id":next_router if next_router else ""}],"next_node_id":"","output":""})
+            if next_router:
+                nodes.append({"id":next_router,"type":"router","x":col_x[4],"y":base_y,"premise":f"判定：待办中是否还有【{modules[i+1][1]}】的大纲条目？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{next_m_id}_create"},{"condition":"NO","next_node_id":""}],"next_node_id":"","output":""})
         return nodes
     return []
 
@@ -397,7 +355,7 @@ async def lifespan(app: FastAPI):
                 ReasoningChain.title == "👤 严谨人设与模板质检流"
             ).first()
             if target_chain and isinstance(target_chain.nodes, list):
-                has_old_node = any(n.get("id") == "c_n6_verify" for n in target_chain.nodes if isinstance(n, dict))
+                has_old_node = any(n.get("id") in ("c_n6_verify", "c_nm1_ask_template", "c_n0_init_plan") for n in target_chain.nodes if isinstance(n, dict))
                 if has_old_node:
                     # 仅当检测到旧版节点 ID 时才执行一次性迁移
                     print("[Hotfix Migration] 检测到旧版人设链节点，执行一次性结构迁移...")
@@ -3029,13 +2987,18 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     action = "update"
                     eid = existing.id
 
-            # faction_name → faction_id lookup
+            # faction_name → faction_id lookup + auto-create
             faction_id = data.get("faction_id")
-            if not faction_id and data.get("faction_name"):
+            if not faction_id and data.get("faction_name") and str(data["faction_name"]).strip() not in ("", "散修", "无", "未知"):
                 fac = db.query(Faction).filter(
                     Faction.novel_id == novel_id, Faction.name == data["faction_name"]
                 ).first()
                 if fac:
+                    faction_id = fac.id
+                else:
+                    fac = Faction(novel_id=novel_id, name=str(data["faction_name"]).strip(), description="")
+                    db.add(fac)
+                    db.flush()
                     faction_id = fac.id
 
             if action == "add":
