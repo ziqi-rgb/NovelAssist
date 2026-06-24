@@ -200,14 +200,23 @@ SYSTEM_CHAIN_NAMES = [
 
 def _get_system_chain_nodes(title: str) -> list[dict]:
     if title == "🗺️ 蓝图规划与逐层搭建流":
-        return [
-            {"id":"node_eval","type":"router","x":400,"y":60,"premise":"探明：目标地点的上级地图是否已存在于数据库？","prompt":"","target":[],"branches":[{"condition":"TRUE","next_node_id":"node_true_plan"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
-            {"id":"node_true_plan","x":900,"y":60,"premise":"上级已存在。以该上级为锚点，规划前往目标地点的完整子层级嵌套清单。","prompt":"【局部路径规划】\n探测到目标地点的上级地图已存在。请自顶向下规划完整子层级嵌套清单，确定每一个子地点的 scale（大千世界/宇宙/星球/大陆/国家/城池/街区）与具体 grid_x/grid_y 坐标（0-24 之间）。\n【全景对齐天条】：必须 100% 参照以下设定使地点描述与空间结构完全对齐：\n【世界观大纲】：\n{outline_cat_world}\n【世界势力大纲】：\n{outline_cat_faction}\n【地理大纲】：\n{outline_cat_geo}\n【能力体系大纲】：\n{outline_cat_power}\n\n纯文本输出规划清单，明确标出每项的 parent_name。仅在末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"node_desc","output":""},
-            {"id":"node_plan","x":30,"y":650,"premise":"上级缺失。从零规划完整嵌套链（大千世界→宇宙→星球→大陆→国家→城池→街区）。","prompt":"【蓝图规划】\n上级地图缺失，需从零搭建完整地点嵌套清单。\n【全景对齐天条】：必须 100% 参照以下高密度背景设定：\n【世界观设定】：\n{outline_cat_world}\n【世界势力设定】：\n{outline_cat_faction}\n【地理知识设定】：\n{outline_cat_geo}\n【能力体系设定】：\n{outline_cat_power}\n\n【空间标尺】：大千世界→宇宙→星球→大陆→国家→城池→街区\n纯文本罗列清单，明确标出每层 scale 与 parent_name。仅在末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"node_desc","output":""},
-            {"id":"node_desc","x":450,"y":700,"premise":"为规划清单中的各层级撰写详细的生态、势力与背景设定描述。","prompt":"【设定填充】\n基于上文的地点嵌套清单，为每个层级撰写精美的生态、势力与背景设定。用生动的描述性语言。\n纯文本输出，不调用任何工具。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
-            {"id":"node_build_top","type":"write","x":450,"y":1300,"premise":"从清单中找出当前最高级且尚未创建的地点，写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
-            {"id":"node_check_bottom","type":"router","x":450,"y":1900,"premise":"判断：刚刚创建的地点是否已是嵌套链最底层？","prompt":"","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
+        stages = [
+            ("world", "大千世界与宇宙", "大千世界→宇宙", "大千世界", "宇宙"),
+            ("planet", "星球与大陆", "星球→大陆", "星球", "大陆"),
+            ("nation", "国家", "国家", "国家", "国家"),
+            ("city", "城池与街区", "城池→街区", "城池", "街区"),
         ]
+        col_x = [30, 450, 870, 1290]
+        nodes: list[dict] = []
+        for i, (s_id, s_name, s_scales, s_top, s_bottom) in enumerate(stages):
+            base_y = 60 + i * 600
+            next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
+            next_check = f"m_{next_s_id}_check" if next_s_id != "end" else ""
+            nodes.append({"id":f"m_{s_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建【{s_name}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{s_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。\n纯文本输出清单。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
+            nodes.append({"id":f"m_{s_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":"从清单中找出最高级未建地点，写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":""})
+            nodes.append({"id":f"m_{s_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：【{s_name}】层级是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+        return nodes
     if title == "👤 严谨人设与模板质检流":
         return [
             {
