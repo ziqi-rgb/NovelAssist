@@ -2688,9 +2688,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
-                    // ✅ 校验-确认节点：纯程序检查待办清单，不依赖 LLM
+                    // ✅ 校验-确认节点：检查待办状态（chain_todos 已限定只允许 update，不会污染）
                     if (node.type === "verify") {
-                        // 强制刷新 todos
                         try {
                             var freshV = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
                             rc.todos = freshV.todos || [];
@@ -2703,15 +2702,12 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             for (var vti = 0; vti < vTodos.length; vti++) {
                                 if ((vTodos[vti].status === "pending" || vTodos[vti].status === "in_progress") && vTodos[vti].content) {
                                     for (var fi = 0; fi < filters.length; fi++) {
-                                        if (vTodos[vti].content.indexOf(filters[fi]) >= 0) {
-                                            hasPending = true; break;
-                                        }
+                                        if (vTodos[vti].content.indexOf(filters[fi]) >= 0) { hasPending = true; break; }
                                     }
                                     if (hasPending) break;
                                 }
                             }
                         } else {
-                            // 无过滤：检查是否有任何 pending 项
                             for (var vti2 = 0; vti2 < vTodos.length; vti2++) {
                                 if (vTodos[vti2].status === "pending" || vTodos[vti2].status === "in_progress") {
                                     hasPending = true; break;
@@ -2816,7 +2812,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                         }
                                     }
                                     wArgs = { action: "update_status", todo_id: pending ? pending.id : "none", status: "done" };
-                                } else {
+                                } else if (!rc.todos || !rc.todos.length) {
+                                    // 仅首次创建待办，后续只允许 update
                                     // 按行拆分 planning 输出，每条 `- [ ]` 行创建一个独立任务
                                     var rawLines = lastReasoning.split('\n');
                                     var todoLines = [];
