@@ -1705,7 +1705,21 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 }
                             } else {
                                 wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
-                                if (wt.field === "attributes" && wt.sub_field) {
+                                if (wt.field === "category" && wt.sub_field) {
+                                    // 大纲分类由节点配置锁定，解析上游结构化输出取 title/description
+                                    var oFmt = (node.format || "").replace("outline","outline") || "outline";
+                                    var oParser = REASONING_FORMATS["outline"] && REASONING_FORMATS["outline"].parser;
+                                    if (oParser) {
+                                        var oItems = oParser(lastReasoning);
+                                        if (oItems && oItems.length) {
+                                            wArgs.data["title"] = oItems[0].title || "";
+                                            wArgs.data["description"] = oItems[0].description || lastReasoning;
+                                            if (oItems[0].parent_name && oItems[0].parent_name !== "无") wArgs.data["parent_name"] = oItems[0].parent_name;
+                                            if (oItems[0].order_index !== undefined) wArgs.data["order_index"] = oItems[0].order_index;
+                                        }
+                                    }
+                                    wArgs.data["category"] = wt.sub_field;
+                                } else if (wt.field === "attributes" && wt.sub_field) {
                                     wArgs.data["attributes"] = {}; wArgs.data["attributes"][wt.sub_field] = lastReasoning;
                                 } else if (wt.field) {
                                     wArgs.data[wt.field] = lastReasoning;
@@ -3020,6 +3034,10 @@ async function runNode(card, node) {
                     if (item.is_always_context !== undefined) dataObj["is_always_context"] = item.is_always_context;
                     if (item.order_index !== undefined) dataObj["order_index"] = item.order_index;
                     dataObj["description"] = item.description || content;
+                }
+                // 🎯 若 write_to.field===category 且有 sub_field，则锁定分类（覆盖解析值）
+                if (wt.field === "category" && wt.sub_field) {
+                    dataObj["category"] = wt.sub_field;
                 } else if (wt.field === "attributes") {
                     // 尝试解析 content 为 JSON，否则存入嵌套字段
                     dataObj[wt.field] = {};
