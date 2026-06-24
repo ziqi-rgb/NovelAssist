@@ -134,6 +134,9 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .node-type-router{border-color:#8b5cf6;box-shadow:0 2px 8px rgba(139,92,246,.15)}
 .node-type-router .node-hdr{background:#2d1b4e;color:#c4b5fd}
 .node-type-router .node-run-btn{background:linear-gradient(135deg,#7c3aed,#6d28d9);border-color:#8b5cf6;color:#fff}
+.node-type-write{border-color:#10b981;box-shadow:0 2px 8px rgba(16,185,129,.15)}
+.node-type-write .node-hdr{background:#064e3b;color:#6ee7b7}
+.node-type-write .node-run-btn{background:linear-gradient(135deg,#059669,#047857);border-color:#10b981;color:#fff}
 .node-hdr .node-del:hover{color:#f38ba8}
 .node-body{padding:10px 12px}
 .node-section{margin-bottom:8px}

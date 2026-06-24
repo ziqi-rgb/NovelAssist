@@ -1622,7 +1622,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
-                    // 🔀 路由节点：直接提取上游 ROUTE 值做分支判定
+                    // 🔀 路由节点
                     if (node.type === "router") {
                         var rv = "";
                         var rvm = fullChainContext.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
@@ -1640,6 +1640,53 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         fullChainContext += "\n--- 【路由判定】 ---\n" + node.output;
                         if (onLogCallback) onLogCallback("\n🔀 [路由判定] " + (rv || "无路由值") + " → " + (rNextId || "终止") + "\n", "step");
                         currentNodeId = rNextId;
+                        continue;
+                    }
+
+                    // 📝 写入节点：程序直接写入
+                    if (node.type === "write") {
+                        var wContent = fullChainContext.replace(/<\/?ROUTE>/g, "").trim();
+                        // 取最后一段推理输出作为写入内容
+                        var lastReasoning = wContent.split("--- 【节点输出】 ---").pop() || "";
+                        lastReasoning = lastReasoning.replace(/--- 【路由判定】 ---[\s\S]*/, "").trim();
+                        if (!lastReasoning) lastReasoning = (node.premise || "");
+                        var wt = node.write_to || {};
+                        if (wt.entity && lastReasoning) {
+                            var wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
+                            if (wt.field === "attributes" && wt.sub_field) {
+                                wArgs.data["attributes"] = {}; wArgs.data["attributes"][wt.sub_field] = lastReasoning;
+                            } else if (wt.field) {
+                                wArgs.data[wt.field] = lastReasoning;
+                            } else {
+                                wArgs.data["description"] = lastReasoning;
+                            }
+                            try {
+                                var wRes = await fetch("/api/agent/execute/" + currentNovelId, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ tool_name: "manage_world_element", arguments: wArgs, write_to: wt, chain_id: chainId }) });
+                                if (wRes.ok) {
+                                    var wJson = await wRes.json();
+                                    node.output = "✅ 写入成功：" + wJson.msg;
+                                    fullChainContext += "\n--- 【写入结果】 ---\n" + node.output;
+                                    if (onLogCallback) onLogCallback("\n📝 [写入成功] " + wJson.msg + "\n", "tool");
+                                } else {
+                                    var wErr = await wRes.json().catch(function() { return {detail:"未知错误"}; });
+                                    node.output = "⛔ 写入失败：" + (wErr.detail || "");
+                                    fullChainContext += "\n--- 【写入失败】 ---\n" + node.output;
+                                    if (onLogCallback) onLogCallback("\n⛔ [写入失败] " + (wErr.detail || "") + "\n", "error");
+                                }
+                            } catch(we) { node.output = "⛔ 写入异常：" + we.message; }
+                        } else {
+                            node.output = "⛔ 写入跳过：缺少写入目标或上游无内容";
+                        }
+                        var wNextId = node.next_node_id || null;
+                        // 写入失败时尝试匹配分支
+                        if (node.output.indexOf("⛔") >= 0 && node.branches && node.branches.length) {
+                            for (var wbi = 0; wbi < node.branches.length; wbi++) {
+                                if (node.branches[wbi].condition && node.output.includes(node.branches[wbi].condition)) {
+                                    wNextId = node.branches[wbi].next_node_id; break;
+                                }
+                            }
+                        }
+                        currentNodeId = wNextId;
                         continue;
                     }
 
@@ -2054,7 +2101,7 @@ function renderAllNodes() {
         if (!node.id) node.id = "n" + (idx + 1);
         if (!node.branches) node.branches = [];
         var ntype = node.type || "reasoning";
-        var cardCls = "node-card" + (ntype === "router" ? " node-type-router" : "") + (ntype === "ask" ? " node-type-ask" : "");
+        var cardCls = "node-card" + (ntype === "router" ? " node-type-router" : "") + (ntype === "ask" ? " node-type-ask" : "") + (ntype === "write" ? " node-type-write" : "");
         const card = document.createElement("div"); card.className = cardCls; card.dataset.nid = node.id;
         card.style.left = (node.x || 50 + idx * 60) + "px";
         card.style.top = (node.y || 50 + idx * 80) + "px";
@@ -2071,13 +2118,18 @@ function renderAllNodes() {
         var ntype = node.type || "reasoning";
         var isRouter = ntype === "router";
         var isAsk = ntype === "ask";
-        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : "▶ 运行");
-        var promptHTML = isRouter ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>`;
-        var targetHTML = isRouter || isAsk ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
-        var writeHTML = isRouter || isAsk ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
-        var branchHTML = isAsk ? "" : `<div class="node-section"><label>分支路由</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
+        var isWrite = ntype === "write";
+        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : (isWrite ? "📝 写入" : "▶ 运行"));
+        var promptHTML = (isRouter || isWrite) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>`;
+        var targetHTML = (isRouter || isAsk || isWrite) ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
+        var writeHTML = (isRouter || isAsk) ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
+        var branchHTML = isAsk ? "" : `<div class="node-section"><label>分支路由${isWrite ? "（成功→继续 / 失败→重写）" : ""}</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
+        var typeOpts = '<option value="reasoning" ' + (ntype==="reasoning"?"selected":"") + '>🧠 推理</option>'
+            + '<option value="write" ' + (ntype==="write"?"selected":"") + '>📝 写入</option>'
+            + '<option value="router" ' + (ntype==="router"?"selected":"") + '>🔀 路由</option>'
+            + '<option value="ask" ' + (ntype==="ask"?"selected":"") + '>❓ 交互</option>';
 
-        card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);"><option value="reasoning" ${ntype==="reasoning"?"selected":""}>🧠 推理</option><option value="router" ${ntype==="router"?"selected":""}>🔀 路由</option><option value="ask" ${ntype==="ask"?"selected":""}>❓ 交互</option></select><button class="node-del">&#128465;</button></span></div>
+        card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);">${typeOpts}</select><button class="node-del">&#128465;</button></span></div>
             <div class="node-body">
                 <div class="node-section"><label>${isRouter ? "判定依据" : "传入内容"}</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
                 ${promptHTML}
@@ -2103,7 +2155,7 @@ function bindNodeEvents(card, node, idx) {
     hdr.addEventListener("mousedown", e => { if (e.target.closest("button") || e.target.closest("select")) return; startDrag(e, card, node, idx); });
     card.querySelector(".node-del").addEventListener("click", () => { currentChain.nodes.splice(idx, 1); renderAllNodes(); renderLines(); autoSave(); });
     var typeSel = card.querySelector(".node-type-sel");
-    if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value; if (node.type === "reasoning") node.type = "reasoning"; renderAllNodes(); renderLines(); autoSave(); }); }
+    if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value; renderAllNodes(); renderLines(); autoSave(); }); }
     card.querySelector(".premise-ta").addEventListener("input", e => { node.premise = e.target.value; autoSave(); });
     card.querySelector(".prompt-ta").addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
     card.querySelector(".branch-add-btn").addEventListener("click", () => { node.branches.push({ condition: "", next_node_id: "" }); renderBranches(card, node); autoSave(); });
@@ -2589,6 +2641,76 @@ async function runNode(card, node) {
             autoSave();
         } catch(e) { outDiv.textContent += "\n[错误: " + e.message + "]"; }
         finally { btn.disabled = false; btn.textContent = "🔀 判定"; }
+        return;
+    }
+
+    if (node.type === "write") {
+        // 📝 写入节点：纯程序执行，读取上游内容→硬编码写入数据库
+        btn.textContent = "写入中...";
+        try {
+            var content = prevOutput.replace(/<\/?ROUTE>/g, "").trim();
+            if (!content) {
+                node.output = "⛔ 写入失败：上游节点无有效内容";
+                outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 写入失败：上游无内容</span>';
+                autoSave();
+                btn.disabled = false; btn.textContent = "📝 写入";
+                return;
+            }
+            var wt = node.write_to || {};
+            if (!wt.entity) {
+                node.output = "⛔ 写入失败：未配置写入目标";
+                outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 未配置写入目标</span>';
+                autoSave();
+                btn.disabled = false; btn.textContent = "📝 写入";
+                return;
+            }
+            var toolArgs = {
+                element_type: wt.entity,
+                action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"),
+            };
+            // 构建 data 对象
+            var dataObj = {};
+            if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline") {
+                if (wt.field === "attributes") {
+                    // 尝试解析 content 为 JSON，否则存入嵌套字段
+                    dataObj[wt.field] = {};
+                    if (wt.sub_field) {
+                        // 设置嵌套值: data.attributes.sub_field = content
+                        dataObj[wt.field][wt.sub_field] = content;
+                    } else {
+                        dataObj[wt.field] = { "_content": content };
+                    }
+                } else if (wt.field) {
+                    dataObj[wt.field] = content;
+                } else {
+                    dataObj["description"] = content;
+                }
+            }
+            toolArgs.data = dataObj;
+            // 如果是更新且知道 entity name，尝试通过 name 查找
+            if (toolArgs.action === "update" && wt.entity) {
+                // 尝试从上游内容提取名称
+                var nameMatch = content.match(/【(.+?)】|^(.+?)[\n：:]|名称[:：]\s*(.+)/);
+                if (nameMatch) {
+                    dataObj["name"] = (nameMatch[1] || nameMatch[2] || nameMatch[3] || "").trim();
+                }
+            }
+            var execRes = await fetch("/api/agent/execute/" + currentNovelId, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tool_name: "manage_world_element", arguments: toolArgs, write_to: wt || null, chain_id: currentChainId || null }),
+            });
+            if (execRes.ok) {
+                var result = await execRes.json();
+                node.output = "✅ 写入成功：" + result.msg;
+                outDiv.innerHTML = '<span style="color:#22c55e;">✅ 写入成功</span><br><span style="font-size:.7rem;">' + e(result.msg || "") + '</span>';
+            } else {
+                var errBody = await execRes.json().catch(function() { return {detail: "未知错误"}; });
+                node.output = "⛔ 写入失败：" + (errBody.detail || "");
+                outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 写入失败</span><br><span style="font-size:.7rem;">' + e(errBody.detail || "") + '</span>';
+            }
+            autoSave();
+        } catch(e) { outDiv.textContent += "\n[错误: " + e.message + "]"; }
+        finally { btn.disabled = false; btn.textContent = "📝 写入"; }
         return;
     }
 

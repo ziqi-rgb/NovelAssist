@@ -205,7 +205,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {"id":"node_true_plan","x":900,"y":60,"premise":"上级已存在，以该上级为锚点规划子层级清单。","prompt":"【局部路径规划】（⚠️绝对禁止调用工具！）\n探测到目标地点的上级地图已存在于数据库中（详见上文环境）。\n请以该已有的上级节点为锚点，自顶向下规划前往目标地点所需的完整子层级嵌套清单，确定每一个子地点的 scale（只能是大陆/国家/城池/街区之一）与具体 grid_x/grid_y 坐标（0-24 之间），并仅以纯文本输出清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度设定，使生成的地点描述与空间结构与之完全对齐：\n【世界观大纲】：\n{outline_cat_world}\n【世界势力大纲】：\n{outline_cat_faction}\n【地理大纲】：\n{outline_cat_geo}\n【能力体系大纲】：\n{outline_cat_power}\n\n请仅输出纯文本规划清单。明确标出谁是谁的 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
             {"id":"node_plan","x":30,"y":650,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度背景设定，使生成的地点名、描述、空间结构与其完美对齐，互为表里：\n【世界观设定】：\n{outline_cat_world}\n【世界势力设定】：\n{outline_cat_faction}\n【地理知识设定】：\n{outline_cat_geo}\n【能力体系设定】：\n{outline_cat_power}\n\n【空间标尺法则】：[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
             {"id":"node_desc","x":450,"y":700,"premise":"填充各层级的详细设定描述。","prompt":"【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
-            {"id":"node_build_top","x":450,"y":1300,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数）。\n4. 【强制】scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
+            {"id":"node_build_top","type":"write","x":450,"y":1300,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数）。\n4. 【强制】scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
             {"id":"node_check_bottom","type":"router","x":450,"y":1900,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 已经是目标地点了，输出 <ROUTE>DONE</ROUTE>\n- 还没到底，输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
         ]
     if title == "👤 严谨人设与模板质检流":
@@ -228,7 +228,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_n3_build_faction", "x": 900, "y": 600,
+                "id": "c_n3_build_faction", "type": "write", "x": 900, "y": 600,
                 "premise": "建立新势力。",
                 "prompt": "【建立势力】（✅允许调用工具）\n调用 manage_world_element (etype: faction) 建立势力。提供 base_location_name 关联驻地。建完即止！",
                 "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
@@ -240,7 +240,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
             },
             {
-                "id": "c_n5_build_char", "x": 400, "y": 1680,
+                "id": "c_n5_build_char", "type": "write", "x": 400, "y": 1680,
                 "premise": "调用工具创建人设。",
                 "prompt": (
                     "【人物落子】（✅允许调用工具）\n"
@@ -285,7 +285,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_n7_fix", "x": 900, "y": 2220,
+                "id": "c_n7_fix", "type": "write", "x": 900, "y": 2220,
                 "premise": "补齐残缺属性。",
                 "prompt": (
                     "【补齐修复】（✅允许调用工具）\n"
@@ -358,7 +358,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 plan += "必须遵循【卷->章->幕】三级嵌套，指明 parent_name。\n"
             plan += "纯文本输出清单！"
             nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name}。","prompt":plan,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
-            nodes.append({"id":f"o_{m_id}_build","x":col_x[2],"y":base_y,"premise":f"创建 {m_name}。","prompt":build,"target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
+            nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"创建 {m_name}。","prompt":build,"target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
             nodes.append({"id":f"o_{m_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验 {m_name}。","prompt":f"【进度判定】（⚠️绝对禁止调用工具！）\n比对规划清单，【{m_name}】是否全部创建完毕？\n- 未完工，输出 <ROUTE>CONTINUE</ROUTE>\n- 全部完工，输出 <ROUTE>DONE</ROUTE>\n仅输出标签！","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
     return []
