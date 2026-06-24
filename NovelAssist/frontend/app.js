@@ -60,10 +60,17 @@ function formatTickToLoreTime(tick, cfg) {
 /* ═══════════ Novel ═══════════ */
 async function loadNovels() {
     const sel = document.getElementById("novel-select"); sel.innerHTML = "";
+    var found = false;
     (await (await fetch("/api/novels")).json()).forEach(n => {
         const o = document.createElement("option"); o.value = n.id; o.textContent = n.title;
-        if (n.id === currentNovelId) o.selected = true; sel.appendChild(o);
+        if (n.id === currentNovelId) { o.selected = true; found = true; }
+        sel.appendChild(o);
     });
+    // 如果当前指向的小说已被删除，自动切到第一本
+    if (!found && sel.options.length > 0) {
+        sel.options[0].selected = true;
+        currentNovelId = Number(sel.options[0].value);
+    }
 }
 async function switchNovel(nid) { currentNovelId = nid; await refreshAll(); }
 document.getElementById("novel-select").addEventListener("change", e => switchNovel(Number(e.target.value)));

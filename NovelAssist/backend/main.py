@@ -347,11 +347,19 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     run_migration()
-    # Data healing: normalize timeline_events event_type to uppercase
+    # Seed default novel — ensure at least one novel always exists
     try:
         from .database import SessionLocal
     except ImportError:
         from database import SessionLocal
+    with SessionLocal() as db0:
+        existing = db0.scalars(select(Novel).limit(1)).first()
+        if not existing:
+            default_novel = Novel(title="默认小说")
+            db0.add(default_novel)
+            db0.commit()
+            print("[Seed] 已创建默认小说项目")
+    # Data healing: normalize timeline_events event_type to uppercase
     with SessionLocal() as db:
         db.execute(text("UPDATE timeline_events SET event_type = 'MAIN_STORY' WHERE event_type = 'main_story'"))
         db.execute(text("UPDATE timeline_events SET event_type = 'HISTORY' WHERE event_type = 'history'"))
