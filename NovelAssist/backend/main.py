@@ -2123,7 +2123,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return f"当前世界时间：{lore_time}"
 
         if ph == "novel_name":
-            return novel.name if novel else "(无小说名)"
+            return novel.title if novel else "(无小说名)"
 
         if ph == "chapter_title":
             chapter = db.scalars(select(Chapter).where(
@@ -2854,12 +2854,13 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             elif action == "update" and eid:
                 char = db.get(Character, eid)
                 if char:
+                    attrs_copy = copy.deepcopy(char.attributes)
+                    attrs_copy["_status"] = char.status or ""
+                    attrs_copy["_is_active"] = char.is_active
                     snap = CharacterSnapshot(
                         character_id=char.id,
-                        attributes=copy.deepcopy(char.attributes),
-                        status=char.status or "",
-                        is_active=char.is_active,
-                        timestamp=datetime.utcnow(),
+                        version_name=datetime.utcnow().strftime("%Y%m%d_%H%M%S"),
+                        attributes=attrs_copy,
                     )
                     db.add(snap)
 
