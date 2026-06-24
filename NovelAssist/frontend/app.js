@@ -1724,6 +1724,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                 }
             }
             if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n\n✅ 推理链执行完毕。"));
+            // 执行完毕自动清空任务清单
+            try { await fetch("/api/reasoning_chains/" + chainId + "/todos/clear", { method: "POST" }); } catch(e) {}
             resolve({ success: true });
         } catch (e) {
             if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n[链加载失败: " + e.message + "]"));
@@ -1906,6 +1908,8 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
     await fetch("/api/reasoning_chains/" + currentChainRunId, { method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ title: rc.title, nodes: nodes, context_settings: rc.context_settings || {} }) });
     var latest = await (await fetch("/api/reasoning_chains/" + currentChainRunId + "?novel_id=" + currentNovelId)).json();
     renderChainBubbles(latest.nodes || []);
+    // 执行完毕自动清空任务清单
+    try { await fetch("/api/reasoning_chains/" + currentChainRunId + "/todos/clear", { method: "POST" }); } catch(e) {}
     btn.disabled = false;
     btn.textContent = "\u25B6 运行推演链";
 });

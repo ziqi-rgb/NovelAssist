@@ -1637,6 +1637,18 @@ def restore_system_chain(chain_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": f"方案 '{chain.title}' 已恢复至系统初始状态！"}
 
 
+@app.post("/api/reasoning_chains/{chain_id}/todos/clear")
+def clear_chain_todos(chain_id: int, db: Session = Depends(get_db)):
+    """清空推理链任务清单（链执行完成后调用）"""
+    chain = db.get(ReasoningChain, chain_id)
+    if chain is None:
+        raise HTTPException(404, "推演方案不存在")
+    chain.todos = []
+    flag_modified(chain, "todos")
+    db.commit()
+    return {"status": "success", "msg": "任务清单已清空"}
+
+
 # ═══════════ Delete endpoints ═══════════
 
 @app.delete("/api/chapters/{chapter_id}")
