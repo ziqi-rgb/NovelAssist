@@ -2551,12 +2551,12 @@ function removeTargetBlock(nodeId, index) {
 
 /* ═══════════ 写入目标 (Write Target) ═══════════ */
 const WRITE_FIELDS = {
-    character: ["name","description","status","is_active","faction_role","attributes"],
-    location: ["name","description","scale_level","attributes"],
-    outline: ["title","description","category"],
-    faction: ["name","description"],
-    timeline: ["time_label","content"],
-    chain_todos: ["content"],
+    character: ["name","aliases","description","status","is_active","faction_name","faction_role","is_always_context","attributes"],
+    location: ["name","description","scale_level","parent_name","grid_x","grid_y","attributes"],
+    outline: ["title","description","category","parent_name","is_always_context","order_index"],
+    faction: ["name","description","base_location_name"],
+    timeline: ["time_label","content","event_type"],
+    chain_todos: ["content","status"],
 };
 
 function buildWriteToHTML(node) {
@@ -2577,8 +2577,17 @@ function buildWriteToHTML(node) {
     fieldsList.forEach(function(f) {
         fieldOpts += '<option value="' + f + '"' + (field===f?" selected":"") + '>' + f + '</option>';
     });
-    var subInput = entity === "character" && field === "attributes" ?
-        '<input class="write-sub" value="' + e(sub) + '" placeholder="如: 能力数据.当前境界" style="width:100px;">' : '';
+    var subInput = "";
+    if (entity === "character" && field === "attributes") {
+        subInput = '<input class="write-sub" value="' + e(sub) + '" placeholder="如: 能力数据.当前境界" style="width:100px;">';
+    } else if (entity === "outline" && field === "category") {
+        var cats = ["世界观","世界势力","地理","人物设定","能力体系设定","剧情大纲"];
+        subInput = '<select class="write-sub">';
+        cats.forEach(function(c) { subInput += '<option value="' + c + '"' + (sub===c?" selected":"") + '>' + c + '</option>'; });
+        subInput += '</select>';
+    } else {
+        subInput = '<input class="write-sub" placeholder="子字段(可选)" value="' + e(sub) + '" style="width:70px;">';
+    }
     var actOpts = '<option value="auto"' + (action==="auto"?" selected":"") + '>自动</option>'
         + '<option value="create"' + (action==="create"?" selected":"") + '>新建</option>'
         + '<option value="update"' + (action==="update"?" selected":"") + '>更新</option>';
