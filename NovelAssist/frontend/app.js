@@ -128,6 +128,7 @@ document.querySelectorAll("#outline-category-nav li").forEach(li => {
         li.classList.add("active"); currentOutlineCat = li.dataset.cat;
         currentNoteId = null; outlineTitle.value = ""; outlineContent.value = ""; outlineCtxToggle.checked = false;
         document.getElementById("outline-pane-title").textContent = currentOutlineCat;
+        document.getElementById("new-outline-child-btn").classList.remove("hidden");
         loadOutlineNotes();
     });
 });
