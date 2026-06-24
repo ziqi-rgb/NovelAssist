@@ -2210,7 +2210,7 @@ function renderAllNodes() {
 
         card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);">${typeOpts}</select><button class="node-del">&#128465;</button></span></div>
             <div class="node-body">
-                <div class="node-section"><label>${isRouter ? "判定依据" : "传入内容"}</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
+                <div class="node-section"><label>${isRouter ? "判定依据" : (isWrite || isValidate ? "注释" : "传入内容")}</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
                 ${promptHTML}
                 ${targetHTML}
                 ${writeHTML}
