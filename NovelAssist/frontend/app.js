@@ -2413,6 +2413,28 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                         if (m2) try { tmplData = JSON.parse(m2[0]); } catch(e2) {}
                                     }
                                     wArgs.data["attributes"] = tmplData || lastReasoning;
+                                } else if (wt.entity === "location" && wt.field === "description") {
+                                    var lParser = REASONING_FORMATS["location"] && REASONING_FORMATS["location"].parser;
+                                    if (lParser) {
+                                        var lItems = lParser(lastReasoning);
+                                        if (lItems && lItems.length) {
+                                            var loc = lItems[0];
+                                            wArgs.data["name"] = loc.name || "";
+                                            wArgs.data["scale_level"] = loc.scale_level || "";
+                                            wArgs.data["parent_name"] = loc.parent_name || "";
+                                            wArgs.data["scale_enum"] = loc.scale_enum || "REGION";
+                                            if (loc.grid_x !== undefined) wArgs.data["grid_x"] = loc.grid_x;
+                                            if (loc.grid_y !== undefined) wArgs.data["grid_y"] = loc.grid_y;
+                                            if (loc.map_x !== undefined) wArgs.data["map_x"] = loc.map_x;
+                                            if (loc.map_y !== undefined) wArgs.data["map_y"] = loc.map_y;
+                                            wArgs.data["description"] = loc.description || "";
+                                            wArgs.data["attributes"] = loc.attributes || {};
+                                        } else {
+                                            wArgs.data["description"] = lastReasoning;
+                                        }
+                                    } else {
+                                        wArgs.data["description"] = lastReasoning;
+                                    }
                                 } else if (wt.field === "category" && wt.sub_field) {
                                     // 大纲分类由节点配置锁定，解析上游结构化输出取 title/description
                                     var oFmt = (node.format || "").replace("outline","outline") || "outline";

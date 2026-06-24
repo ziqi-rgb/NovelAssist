@@ -210,7 +210,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         RY = [-450] + [i * 500 for i in range(4)]  # y: -450, 0, 500, 1000, 1500
         nodes: list[dict] = []
         # Row -450: init
-        nodes.append({"id":"m_plan","x":CX[0],"y":RY[0],"premise":"明确需要建立的所有地点（含所有层级），结构化输出地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，规划所有需要创建的地点。覆盖四个层级：大千世界→星球→大陆→国家→城池→街区。\n注意：可以有下级没有上级，但不能有上级没有下级！每个地点必须指明 parent_name 和 scale_level。\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。","format":"location","target":[],"branches":[],"next_node_id":"m_todos","output":""})
+        nodes.append({"id":"m_plan","x":CX[0],"y":RY[0],"premise":"明确需要建立的所有地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出所有需要创建的地点名称清单。\n\n仅输出地点清单，每行一个，标明层级和父级。格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n注意：可以有下级没有上级，但不能有上级没有下级！\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
         nodes.append({"id":"m_todos","type":"write","x":CX[2],"y":RY[0],"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (s_id, s_label, s_scales, s_top, s_bottom) in enumerate(stages):
             y = RY[i+1]
@@ -320,7 +320,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         RY = [-450] + [i * 500 for i in range(5)]  # y: -450, 0, 500, 1000, 1500, 2000
         nodes: list[dict] = []
         # Row -450: init
-        nodes.append({"id":"o_plan","x":CX[0],"y":RY[0],"premise":"规划所有模块的大纲条目，结构化输出。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，对所有模块进行大纲条目规划。模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：必须 100% 参照已有地理和角色数据：{locations_full_detail} {characters_list}。","format":"outline","target":[],"branches":[],"next_node_id":"o_todos","output":""})
+        nodes.append({"id":"o_plan","x":CX[0],"y":RY[0],"premise":"规划所有模块的大纲条目清单。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，列出所有需要创建的大纲条目名称清单。\n\n仅输出条目清单，每行一个条目名，标明所属分类。格式：\n- [ ] 条目名 (分类: 世界观设定/世界势力/地理知识/人物设定/能力体系设定)\n不要输出详细描述——详细内容将由后续节点逐个生成。\n\n模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：100% 参照已有数据：{locations_full_detail} {characters_list}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"o_todos","output":""})
         nodes.append({"id":"o_todos","type":"write","x":CX[2],"y":RY[0],"premise":"将所有大纲条目写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (m_id, m_name, cat, use_format) in enumerate(modules):
             y = RY[i+1]
@@ -391,11 +391,11 @@ async def lifespan(app: FastAPI):
                 if t_chain and isinstance(t_chain.nodes, list):
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 11:
+                    if ver is None or ver < 12:
                         print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→7，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 11
+                        cs["_version"] = 12
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "context_settings")
@@ -427,7 +427,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 11},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 12},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1565,13 +1565,13 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 11:
+            if ver < 12:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→7")
                 chain.nodes = _get_system_chain_nodes(name)
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 11
+                    chain.context_settings["_version"] = 12
                 else:
-                    chain.context_settings = {"_version": 11}
+                    chain.context_settings = {"_version": 12}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "context_settings")
                 db.commit()
@@ -1588,7 +1588,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 11},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 12},
                 nodes=nodes,
             ))
     db.commit()
