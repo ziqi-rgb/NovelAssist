@@ -221,9 +221,14 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             nodes.append({"id":f"m_{s_id}_validate","type":"validate","x":CX[1],"y":y,"premise":f"校验【{s_label}】生成的地点数据是否合法。","prompt":"","format":"location","target":[],"branches":[{"condition":"VALID","next_node_id":f"m_{s_id}_write"},{"condition":"INVALID","next_node_id":f"m_{s_id}_create"}],"next_node_id":"","output":""})
             nodes.append({"id":f"m_{s_id}_write","type":"write","x":CX[2],"y":y,"premise":f"将生成的【{s_label}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_todos","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
             nodes.append({"id":f"m_{s_id}_todos","type":"write","x":CX[3],"y":y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
-            nodes.append({"id":f"m_{s_id}_verify","x":CX[4],"y":y,"premise":f"校验：【{s_label}】层级是否全部完成？","prompt":f"【{s_label} 层级校验】\n推理链待办: {{chain_todos}}\n已有地点: {{locations_full_detail}}\n\n请检查【{s_label}】层级的待办项是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_create"},{"condition":"DONE","next_node_id":next_router if next_router else ""}],"next_node_id":"","output":""})
+            # verify prompt: 当有下一层级时，DONE 后额外输出 YES/NO 给 router
             if next_router:
-                nodes.append({"id":next_router,"x":RX,"y":y,"premise":f"判定：待办中是否还有【{stages[i+1][1]}】层级的地点？","prompt":f"【层级判定】\n推理链待办: {{chain_todos}}\n\n上一个层级【{stages[i][1]}】已全部完成。请判断：待办中是否还有【{stages[i+1][1]}】层级的地点待创建？\n- 有待办项 → <ROUTE>YES</ROUTE>\n- 无待办项 → <ROUTE>NO</ROUTE>","format":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{next_s_id}_create"},{"condition":"NO","next_node_id":""}],"next_node_id":"","output":""})
+                v_done = f"全部完成 → 输出 <ROUTE>DONE</ROUTE>，然后紧接着输出下一层级的判定：待办中是否还有【{stages[i+1][1]}】层级的条目？有→<ROUTE>YES</ROUTE> 无→<ROUTE>NO</ROUTE>"
+            else:
+                v_done = "全部完成 → 输出 <ROUTE>DONE</ROUTE>"
+            nodes.append({"id":f"m_{s_id}_verify","x":CX[4],"y":y,"premise":f"校验：【{s_label}】层级是否全部完成？","prompt":f"【{s_label} 层级校验】\n推理链待办: {{chain_todos}}\n已有地点: {{locations_full_detail}}\n\n请检查【{s_label}】层级的待办项是否已全部标记为完成？\n- 还有未完成的 → 只输出 <ROUTE>CONTINUE</ROUTE>\n- {v_done}","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_create"},{"condition":"DONE","next_node_id":next_router if next_router else ""}],"next_node_id":"","output":""})
+            if next_router:
+                nodes.append({"id":next_router,"type":"router","x":RX,"y":y,"premise":f"判定：待办中是否还有【{stages[i+1][1]}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{next_s_id}_create"},{"condition":"NO","next_node_id":""}],"next_node_id":"","output":""})
         return nodes
     if title == "👤 严谨人设与模板质检流":
         X1, X2 = 400, 890  # 两列布局
@@ -330,9 +335,14 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             nodes.append({"id":f"o_{m_id}_validate","type":"validate","x":CX[1],"y":y,"premise":f"校验【{m_name}】生成的大纲数据是否合法。","prompt":"","format":fmt,"target":[],"branches":[{"condition":"VALID","next_node_id":f"o_{m_id}_write"},{"condition":"INVALID","next_node_id":f"o_{m_id}_create"}],"next_node_id":"","output":""})
             nodes.append({"id":f"o_{m_id}_write","type":"write","x":CX[2],"y":y,"premise":f"将生成的【{m_name}】条目写入 {cat} 分类。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_todos","output":"","write_to":{"entity":"outline","field":"category","sub_field":cat,"action":"create"}})
             nodes.append({"id":f"o_{m_id}_todos","type":"write","x":CX[3],"y":y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
-            nodes.append({"id":f"o_{m_id}_verify","x":CX[4],"y":y,"premise":f"校验：【{m_name}】是否全部完成？","prompt":f"【{m_name} 校验】\n推理链待办：{{chain_todos}}\n已有大纲：{{outlines_full_detail}}\n\n请检查分类为 [{cat}] 的待办项是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_create"},{"condition":"DONE","next_node_id":next_router if next_router else ""}],"next_node_id":"","output":""})
+            # verify prompt: 当有下一模块时，DONE 后额外输出 YES/NO 给 router
             if next_router:
-                nodes.append({"id":next_router,"x":RX,"y":y,"premise":f"判定：待办中是否还有【{modules[i+1][1]}】的大纲条目？","prompt":f"【模块判定】\n推理链待办：{{chain_todos}}\n\n上一个模块【{modules[i][1]}】已全部完成。请判断：待办中是否还有【{modules[i+1][1]}】分类的未完成条目？\n- 有待办项 → <ROUTE>YES</ROUTE>\n- 无待办项 → <ROUTE>NO</ROUTE>","format":"","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{next_m_id}_create"},{"condition":"NO","next_node_id":""}],"next_node_id":"","output":""})
+                o_done = f"全部完成 → 输出 <ROUTE>DONE</ROUTE>，然后紧接着输出下一模块的判定：待办中是否还有【{modules[i+1][1]}】分类的条目？有→<ROUTE>YES</ROUTE> 无→<ROUTE>NO</ROUTE>"
+            else:
+                o_done = "全部完成 → 输出 <ROUTE>DONE</ROUTE>"
+            nodes.append({"id":f"o_{m_id}_verify","x":CX[4],"y":y,"premise":f"校验：【{m_name}】是否全部完成？","prompt":f"【{m_name} 校验】\n推理链待办：{{chain_todos}}\n已有大纲：{{outlines_full_detail}}\n\n请检查分类为 [{cat}] 的待办项是否已全部标记为完成？\n- 还有未完成的 → 只输出 <ROUTE>CONTINUE</ROUTE>\n- {o_done}","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_create"},{"condition":"DONE","next_node_id":next_router if next_router else ""}],"next_node_id":"","output":""})
+            if next_router:
+                nodes.append({"id":next_router,"type":"router","x":RX,"y":y,"premise":f"判定：待办中是否还有【{modules[i+1][1]}】的大纲条目？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{next_m_id}_create"},{"condition":"NO","next_node_id":""}],"next_node_id":"","output":""})
         return nodes
     return []
 
@@ -385,11 +395,11 @@ async def lifespan(app: FastAPI):
                 if t_chain and isinstance(t_chain.nodes, list):
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 8:
+                    if ver is None or ver < 9:
                         print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→7，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 8
+                        cs["_version"] = 9
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "context_settings")
@@ -421,7 +431,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 8},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 9},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1559,13 +1569,13 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 8:
+            if ver < 9:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→7")
                 chain.nodes = _get_system_chain_nodes(name)
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 8
+                    chain.context_settings["_version"] = 9
                 else:
-                    chain.context_settings = {"_version": 8}
+                    chain.context_settings = {"_version": 9}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "context_settings")
                 db.commit()
@@ -1582,7 +1592,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 8},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 9},
                 nodes=nodes,
             ))
     db.commit()
