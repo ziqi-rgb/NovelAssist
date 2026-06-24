@@ -2771,7 +2771,6 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 map_x_val = data.get("map_x") if data.get("map_x") is not None else final_x
                 map_y_val = data.get("map_y") if data.get("map_y") is not None else final_y
                 db.add(Location(
-                db.add(Location(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
