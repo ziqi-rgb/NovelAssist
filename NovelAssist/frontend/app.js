@@ -1708,7 +1708,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         body: JSON.stringify({
                             novel_id: currentNovelId,
                             premise: node.premise || "",
-                            prompt: node.prompt || "",
+                            prompt: (node.prompt || "") + getFormatPrompt(node),
                             target: targetT,
                             previous_output: fullChainContext,
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
@@ -2132,7 +2132,7 @@ function renderAllNodes() {
         var isAsk = ntype === "ask";
         var isWrite = ntype === "write";
         var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : (isWrite ? "📝 写入" : "▶ 运行"));
-        var promptHTML = (isRouter || isWrite) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>`;
+        var promptHTML = (isRouter || isWrite) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea>${buildFormatSelector(node)}</div>`;
         var targetHTML = (isRouter || isAsk || isWrite) ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
         var writeHTML = (isRouter || isAsk) ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
         var branchHTML = isAsk ? "" : `<div class="node-section"><label>分支路由${isWrite ? "（成功→继续 / 失败→重写）" : ""}</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
@@ -2173,6 +2173,8 @@ function bindNodeEvents(card, node, idx) {
     if (promptTa) promptTa.addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
     var branchAddBtn = card.querySelector(".branch-add-btn");
     if (branchAddBtn) branchAddBtn.addEventListener("click", () => { node.branches.push({ condition: "", next_node_id: "" }); renderBranches(card, node); autoSave(); });
+    var formatSel = card.querySelector(".format-sel");
+    if (formatSel) { formatSel.addEventListener("change", function() { node.format = formatSel.value || ""; autoSave(); }); }
     card.querySelector(".node-run-btn").addEventListener("click", () => runNode(card, node));
     // sequential route
     const nextSel = card.querySelector(".next-node-sel");
@@ -2568,6 +2570,100 @@ function bindWriteToEvents(card, node) {
     if (subInput) { subInput.addEventListener("input", function() { node.write_to.sub_field = subInput.value; autoSave(); }); }
 }
 
+/* ═══════════ 推理节点结构化输出格式 ═══════════ */
+const REASONING_FORMATS = {
+    "": { label: "通用", desc: "" },
+    "location": {
+        label: "🗺️ 地点",
+        template: "\n\n【结构化输出格式 — 必须严格遵循】\n请用以下格式输出地点数据（每条地点一个完整块）：\n" +
+            "【名称】地点名\n【scale】大千世界/宇宙/星球/大陆/国家/城池/街区\n【parent】父地点名（无则写'顶级'）\n【grid_x】0-24\n【grid_y】0-24\n【描述】详细描述...\n<ROUTE>DONE</ROUTE>",
+        parser: function(text) {
+            var locs = []; var blocks = text.split(/【名称】/g).slice(1);
+            blocks.forEach(function(b) {
+                var m = {}; m.name = (b.match(/^(.+)/) || ["",""])[0].trim();
+                var s = b.match(/【scale】(.+)/); if (s) m.scale = s[1].trim();
+                var p = b.match(/【parent】(.+)/); if (p) m.parent = p[1].trim();
+                var gx = b.match(/【grid_x】(.+)/); if (gx) m.grid_x = parseInt(gx[1]) || 0;
+                var gy = b.match(/【grid_y】(.+)/); if (gy) m.grid_y = parseInt(gy[1]) || 0;
+                var d = b.match(/【描述】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                locs.push(m);
+            });
+            return locs;
+        }
+    },
+    "character": {
+        label: "👤 人设",
+        template: "\n\n【结构化输出格式 — 必须严格遵循】\n请用以下格式输出角色数据（每个角色一个完整块）：\n" +
+            "【姓名】角色名\n【status】存活/阵亡/飞升/失踪\n【faction】势力名（无则写'散修'）\n【faction_role】职位\n【属性】\n分组名: key1: value1, key2: value2\n分组名2: key1: value1\n【描述】详细描述...\n<ROUTE>DONE</ROUTE>",
+        parser: function(text) {
+            var chars = []; var blocks = text.split(/【姓名】/g).slice(1);
+            blocks.forEach(function(b) {
+                var m = {}; m.name = (b.match(/^(.+)/) || ["",""])[0].trim();
+                var s = b.match(/【status】(.+)/); if (s) m.status = s[1].trim();
+                var f = b.match(/【faction】(.+)/); if (f) m.faction = f[1].trim();
+                var fr = b.match(/【faction_role】(.+)/); if (fr) m.faction_role = fr[1].trim();
+                var attrs = {}; var attrSec = b.match(/【属性】([\s\S]+?)(?=【描述】|<ROUTE>|$)/);
+                if (attrSec) {
+                    var lines = attrSec[1].trim().split('\n');
+                    var curGroup = "";
+                    lines.forEach(function(l) {
+                        var gMatch = l.match(/^(.+?):\s*(.+)/);
+                        if (gMatch && !l.includes(": ") && l.indexOf(":") === l.lastIndexOf(":")) {
+                            // single colon = group name
+                            curGroup = gMatch[1].trim();
+                            attrs[curGroup] = {};
+                        } else if (curGroup) {
+                            var pairs = l.split(/,\s*/);
+                            pairs.forEach(function(p) {
+                                var kv = p.split(":");
+                                if (kv.length >= 2) {
+                                    if (!attrs[curGroup]) attrs[curGroup] = {};
+                                    attrs[curGroup][kv[0].trim()] = kv.slice(1).join(":").trim();
+                                }
+                            });
+                        }
+                    });
+                }
+                m.attributes = attrs;
+                var d = b.match(/【描述】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                chars.push(m);
+            });
+            return chars;
+        }
+    },
+    "outline": {
+        label: "📖 大纲",
+        template: "\n\n【结构化输出格式 — 必须严格遵循】\n请用以下格式输出大纲数据（每条大纲一个完整块）：\n" +
+            "【标题】条目标题\n【分类】世界观/世界势力/地理/人物设定/能力体系设定/剧情大纲\n【父节点】父大纲标题（顶级则写'无'）\n【描述】详细 Markdown 描述...\n<ROUTE>DONE</ROUTE>",
+        parser: function(text) {
+            var outlines = []; var blocks = text.split(/【标题】/g).slice(1);
+            blocks.forEach(function(b) {
+                var m = {}; m.title = (b.match(/^(.+)/) || ["",""])[0].trim();
+                var c = b.match(/【分类】(.+)/); if (c) m.category = c[1].trim();
+                var p = b.match(/【父节点】(.+)/); if (p) m.parent = p[1].trim();
+                var d = b.match(/【描述】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                outlines.push(m);
+            });
+            return outlines;
+        }
+    }
+};
+
+function buildFormatSelector(node) {
+    var fmt = node.format || "";
+    var opts = '<option value="">🔵 通用输出</option>';
+    Object.keys(REASONING_FORMATS).forEach(function(k) {
+        if (!k) return;
+        opts += '<option value="' + k + '" ' + (fmt === k ? "selected" : "") + '>' + REASONING_FORMATS[k].label + '</option>';
+    });
+    return '<div style="margin-top:4px;font-size:.68rem;"><span style="color:var(--text-muted);">输出格式：</span><select class="format-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);">' + opts + '</select></div>';
+}
+
+function getFormatPrompt(node) {
+    var fmt = REASONING_FORMATS[node.format || ""];
+    return fmt ? fmt.template : "";
+}
+
 function compileTarget(target) {
     if (typeof target === "string") return target;
     if (!Array.isArray(target) || !target.length) return "";
@@ -2754,7 +2850,7 @@ async function runNode(card, node) {
         const chapterContent = contentInput.value || "";
         const sel = contentInput.value.substring(contentInput.selectionStart, contentInput.selectionEnd);
         const premise = rawPremise.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
-        const prompt = node.prompt || "";
+        const prompt = (node.prompt || "") + getFormatPrompt(node);
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },

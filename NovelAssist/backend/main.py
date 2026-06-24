@@ -216,7 +216,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
             next_check = f"m_{next_s_id}_check" if next_s_id != "end" else ""
             nodes.append({"id":f"m_{s_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建【{s_name}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{s_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
-            nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。\n纯文本输出清单。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
+            nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
             nodes.append({"id":f"m_{s_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":"从清单中找出最高级未建地点，写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":""})
             nodes.append({"id":f"m_{s_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：【{s_name}】层级是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
@@ -267,7 +267,8 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n5a_gen_char", "x": 400, "y": 1530,
                 "premise": "从计划名单中选出下一个待创建的角色，生成完整的 attributes 属性字典。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n【执行契约】：\n1. 继承前文的【创世计划人设总名单】\n2. 比对已有角色，找出第一个尚未创建的角色\n3. 输出：\n   【当前创建计划名单】：[完整名单]\n   【当前落子步骤】：第 X 个角色：[姓名]\n4. 为该角色生成完整饱满的 attributes 字典，严格对齐模板的每个分组和字段\n5. 在末尾输出 <ROUTE>DONE</ROUTE>",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n【执行契约】：\n1. 继承前文的【创世计划人设总名单】\n2. 比对已有角色，找出第一个尚未创建的角色\n3. 为该角色生成完整饱满的属性字典，严格对齐模板的每个分组和字段",
+                "format": "character",
                 "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
             },
             {
@@ -340,7 +341,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             if m_id == "story":
                 plan += "必须遵循【卷→章→幕】三级嵌套，指明 parent_name。\n"
             plan += "纯文本输出清单！末尾输出 <ROUTE>DONE</ROUTE>。"
-            nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name} 的具体条目。","prompt":plan,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
+            nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name} 的具体条目。","prompt":plan,"format":"outline","target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
             nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的 {m_name} 条目写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
             nodes.append({"id":f"o_{m_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：{m_name} 是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
