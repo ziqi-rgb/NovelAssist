@@ -87,7 +87,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "⚠️【强制格式】：必须是标准的嵌套 JSON 对象(Object)，绝对不能是转义的字符串！新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。",
+                        "description": "⚠️【强制格式】：必须是标准的嵌套 JSON 对象(Object)，绝对不能是转义的字符串！新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区,建筑中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。",
                         "additionalProperties": True,
                     },
                 },
@@ -206,13 +206,14 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             ("nation", "国家", "国家", "国家", "国家"),
             ("city", "城池", "城池", "城池", "城池"),
             ("district", "街区", "街区", "街区", "街区"),
+            ("building", "建筑", "具体地点", "建筑", "具体地点"),
         ]
-        CX = [30, 460, 890, 1320, 1750]  # 5列: create/validate/write/todos/verify
-        RY = [-450] + [i * 500 for i in range(5)]  # y: -450, 0, 500, 1000, 1500, 2000
+        CX = [30, 460, 890, 1320, 1750]
+        RY = [-450] + [i * 500 for i in range(6)]  # y: -450, 0, 500, 1000, 1500, 2000, 2500
         nodes: list[dict] = []
         # Row -450: init
-        nodes.append({"id":"m_plan","x":CX[0],"y":RY[0],"premise":"明确需要建立的核心地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出需要创建的核心地点名称清单。不要无节制地列出一百个地点——只列与用户故事直接相关的关键地点，控制在 20 个以内。\n\n格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n⚠️ 层级必须严格从高到低，父级只能比自身高一个层级：\n  大千世界→宇宙→星球→大陆→国家→城池→街区\n  例：国家只能以大陆为父级，大陆只能以星球为父级，不能跨级或逆级\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
-        nodes.append({"id":"m_todos","type":"write","x":CX[2],"y":RY[0],"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
+        nodes.append({"id":"m_plan","x":CX[0],"y":RY[0],"premise":"明确需要建立的核心地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出需要创建的核心地点名称清单。不要无节制地列出一百个地点——只列与用户故事直接相关的关键地点，控制在 20 个以内。\n\n格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区/建筑, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n⚠️ 层级必须严格从高到低，父级只能比自身高一个层级：\n  大千世界→宇宙→星球→大陆→国家→城池→街区→建筑\n  例：国家只能以大陆为父级，大陆只能以星球为父级，不能跨级或逆级\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
+        nodes.append({"id":"m_todos","type":"write","x":CX[2],"y":RY[0],"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_pick","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (s_id, s_label, s_scales, s_top, s_bottom) in enumerate(stages):
             y = RY[i+1]
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
@@ -279,7 +280,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_create", "x": X1, "y": 1400,
                 "premise": "为选取的待办项生成完整角色属性。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】所属势力\n- 【faction_role】职位\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】必须填写所属势力全名！参考已有角色和世界观中的势力名称。无势力归属的散人填「散修」，不要填「无」或留空\n- 【faction_role】在势力中的职位/身份\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
                 "format": "character", "target": [], "branches": [], "next_node_id": "c_write", "output": ""
             },
             {
@@ -409,12 +410,12 @@ async def lifespan(app: FastAPI):
                         continue
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 22:
+                    if ver is None or ver < 23:
                         print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→19，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         t_chain.todos = []  # 清空旧待办，防止残留 pending 干扰 verify
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 22
+                        cs["_version"] = 23
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "todos")
@@ -447,7 +448,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 22},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 23},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1612,14 +1613,14 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 22:
+            if ver < 23:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→19")
                 chain.nodes = _get_system_chain_nodes(name)
                 chain.todos = []
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 22
+                    chain.context_settings["_version"] = 23
                 else:
-                    chain.context_settings = {"_version": 22}
+                    chain.context_settings = {"_version": 23}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "todos")
                 flag_modified(chain, "context_settings")
@@ -1637,7 +1638,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 22},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 23},
                 nodes=nodes,
             ))
     db.commit()
@@ -2836,7 +2837,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         elif etype == "location":
             # Scale validation and downgrade
-            valid_scales = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区"]
+            valid_scales = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"]
             input_scale = data.get("scale", "街区")
             if input_scale not in valid_scales:
                 s_lower = str(input_scale).lower()

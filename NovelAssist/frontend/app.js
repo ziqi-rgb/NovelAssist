@@ -49,10 +49,11 @@ function formatGenesisResumeInfo(state) {
         });
         return "并行模式 · " + completedCount + "/3 链完成 · 共 " + totalNodes + " 节点 · " + statuses.join(" ");
     }
-    var phaseNames = ["", "📖 世界观与大纲", "🗺️ 地理蓝图落子", "👤 群像人设质检"];
+    var phaseNames = ["", "🗺️ 地理蓝图", "📖 世界观与大纲", "👤 群像人设"];
     var phaseLabel = phaseNames[state.phase] || "未知阶段";
     var nodeCount = state.executedNodeCount || 0;
-    return "阶段 " + state.phase + "/3 · " + phaseLabel + " · 已执行 " + nodeCount + " 个节点";
+    var nodeInfo = state.currentNodeId ? " · 节点 " + state.currentNodeId : "";
+    return "阶段 " + state.phase + "/3 · " + phaseLabel + " · 已执行 " + nodeCount + " 步" + nodeInfo;
 }
 
 /* ═══════════ Clock Engine ═══════════ */
@@ -738,7 +739,7 @@ document.getElementById("restore-snapshot-btn").addEventListener("click", async 
     loadCharactersModule();
 });
 /* ═══════════ Map — Grid 25x25 ═══════════ */
-const SCALE_LEVELS = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区"];
+const SCALE_LEVELS = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"];
 let mapMode = "list";
 let mapParentId = null;
 let mapScaleIndex = 0;
@@ -2140,7 +2141,7 @@ function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, 
     if (consoleEl) {
         var span = document.createElement("span");
         span.style.color = "#f59e0b";
-        span.textContent = "\n⏸ [已暂停] 进度已保存，下次打开智能建纲时可继续执行。\n";
+        span.textContent = "\n⏸ [已暂停] 节点 " + (state.currentNodeId || "?") + " · 进度已保存，下次打开智能建纲时可继续执行。\n";
         consoleEl.appendChild(span);
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
@@ -3631,7 +3632,7 @@ const REASONING_FORMATS = {
         template: "\n\n【结构化输出格式 — 必须严格遵循，字段名必须与下方完全一致】\n" +
             "每条地点一个完整块，格式如下：\n\n" +
             "【name】地点名（必填）\n" +
-            "【scale_level】大千世界/宇宙/星球/大陆/国家/城池/街区\n" +
+            "【scale_level】大千世界/宇宙/星球/大陆/国家/城池/街区/建筑\n" +
             "【parent_name】父地点全名（如'东大陆/青云国'，无父级则写'顶级'）\n" +
             "【scale】REGION 或 GRID_25\n" +
             "【grid_x】0-24 整数\n" +
@@ -3779,7 +3780,7 @@ function validateStructuredOutput(format, items, chainNodes) {
 
     if (format === "location") {
         if (!item.name || item.name.trim() === "" || item.name === "未知") errors.push("name 为空或无效");
-        var validScales = ["大千世界","宇宙","星球","大陆","国家","城池","街区"];
+        var validScales = ["大千世界","宇宙","星球","大陆","国家","城池","街区","建筑"];
         if (item.scale_level && validScales.indexOf(item.scale_level) === -1) errors.push("scale_level 不在有效值中: " + item.scale_level);
         if (item.grid_x !== undefined && (item.grid_x < 0 || item.grid_x > 24)) errors.push("grid_x 超出 0-24");
         if (item.grid_y !== undefined && (item.grid_y < 0 || item.grid_y > 24)) errors.push("grid_y 超出 0-24");
