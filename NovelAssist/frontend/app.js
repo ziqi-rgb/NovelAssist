@@ -1776,7 +1776,6 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         }
 
         logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
-        }
         var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
         var chains = await chainsRes.json();
 
