@@ -2608,6 +2608,15 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         var vResult = { valid: true };
                         var vItems = [];
                         if (vFmt) {
+                            // 断点恢复时快照可能丢失，回退到默认模板
+                            if (!rc._template_snapshot || !rc._template_snapshot.length) {
+                                rc._template_snapshot = [
+                                    {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
+                                    {"group":"外貌特征","fields":["身高","发色","瞳色"]},
+                                    {"group":"背景故事","fields":["出身","经历"]},
+                                    {"group":"人物关系","fields":[]}
+                                ];
+                            }
                             // 直接解析 LLM 原始输出，不经过 parser
                             var vCleaned = (txt || "").replace(/<ROUTE>[\s\S]*?<\/ROUTE>/g, "").trim();
                             try {
@@ -2640,6 +2649,10 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             fullChainContext += "\n\n--- 【校验失败 (#" + rc._validate_retries + ")】 ---\n" + errMsg;
                             node.output = "⛔ 校验失败: " + errMsg;
                             if (onLogCallback) onLogCallback("\n🔍 [校验失败 #" + rc._validate_retries + "] " + errMsg + "\n", "warning");
+                            // 空输出且非首次：直接熔断，避免无意义循环
+                            if (rc._validate_retries >= 2 && (!txt || !txt.trim())) {
+                                rc._validate_retries = 3;
+                            }
                             var retryTarget = (node.branches || []).find(function(b) { return b.condition === "INVALID"; });
                             // 熔断：超过 3 次强制放行
                             if (rc._validate_retries >= 3) {
