@@ -758,6 +758,13 @@ class ReasoningChainOut(BaseModel):
 def list_novels(db: Session = Depends(get_db)):
     return db.scalars(select(Novel).order_by(Novel.id)).all()
 
+@app.get("/api/novels/{novel_id}", response_model=NovelOut)
+def get_novel(novel_id: int, db: Session = Depends(get_db)):
+    n = db.get(Novel, novel_id)
+    if n is None:
+        raise HTTPException(404, "小说不存在")
+    return n
+
 @app.post("/api/novels", response_model=NovelOut)
 def create_novel(body: NovelCreate, db: Session = Depends(get_db)):
     n = Novel(title=body.title)
