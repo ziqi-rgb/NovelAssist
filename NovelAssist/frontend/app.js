@@ -2562,18 +2562,19 @@ function buildWriteToHTML(node) {
     var entity = wt.entity || "";
     var field = wt.field || "";
     var sub = wt.sub_field || "";
-    var action = wt.action || "auto";
+    var action = wt.action || "create";
     var entityOpts = '<option value="">-- 不写入 --</option>'
-        + '<option value="character"' + (entity==="character"?" selected":"") + '>人物</option>'
-        + '<option value="location"' + (entity==="location"?" selected":"") + '>地点</option>'
-        + '<option value="outline"' + (entity==="outline"?" selected":"") + '>大纲</option>'
-        + '<option value="faction"' + (entity==="faction"?" selected":"") + '>势力</option>'
-        + '<option value="timeline"' + (entity==="timeline"?" selected":"") + '>时间线</option>'
-        + '<option value="chain_todos"' + (entity==="chain_todos"?" selected":"") + '>📋 任务清单</option>';
+        + '<option value="character"' + (entity==="character"?" selected":"") + '>👤 人物</option>'
+        + '<option value="location"' + (entity==="location"?" selected":"") + '>📍 地点</option>'
+        + '<option value="outline"' + (entity==="outline"?" selected":"") + '>📖 大纲</option>'
+        + '<option value="faction"' + (entity==="faction"?" selected":"") + '>🏛️ 势力</option>'
+        + '<option value="timeline"' + (entity==="timeline"?" selected":"") + '>⏳ 时间线</option>'
+        + '<option value="chain_todos"' + (entity==="chain_todos"?" selected":"") + '>📋 待办清单</option>';
     var fieldsList = WRITE_FIELDS[entity] || [];
+    var fieldLabels = { name:"名称", aliases:"别名", description:"描述", status:"状态", is_active:"活跃", faction_name:"势力名", faction_role:"职位", is_always_context:"常驻上下文", attributes:"属性", scale_level:"层级", parent_name:"父级名称", grid_x:"网格X", grid_y:"网格Y", title:"标题", category:"分类", order_index:"排序", content:"内容", time_label:"时间标签", event_type:"事件类型", base_location_name:"驻地" };
     var fieldOpts = '<option value="">-- 字段 --</option>';
     fieldsList.forEach(function(f) {
-        fieldOpts += '<option value="' + f + '"' + (field===f?" selected":"") + '>' + f + '</option>';
+        fieldOpts += '<option value="' + f + '"' + (field===f?" selected":"") + '>' + (fieldLabels[f]||f) + '</option>';
     });
     var subInput = "";
     if (entity === "character" && field === "attributes") {
@@ -2586,10 +2587,10 @@ function buildWriteToHTML(node) {
     } else {
         subInput = '<input class="write-sub" placeholder="子字段(可选)" value="' + e(sub) + '" style="width:70px;">';
     }
-    var actOpts = '<option value="auto"' + (action==="auto"?" selected":"") + '>自动</option>'
-        + '<option value="create"' + (action==="create"?" selected":"") + '>新建</option>'
+    var actOpts = '<option value="create"' + (action==="create"?" selected":"") + '>新建</option>'
         + '<option value="update"' + (action==="update"?" selected":"") + '>更新</option>';
     return '<select class="write-entity">' + entityOpts + '</select>'
+        + '<span style="font-size:.65rem;margin:0 2px;">→</span>'
         + '<select class="write-field">' + fieldOpts + '</select>'
         + subInput
         + '<select class="write-action">' + actOpts + '</select>';
@@ -2609,7 +2610,7 @@ function bindWriteToEvents(card, node) {
         node.write_to.field = fieldSel.value || "";
         var subInput = row.querySelector(".write-sub");
         node.write_to.sub_field = subInput ? subInput.value : "";
-        node.write_to.action = actionSel.value || "auto";
+        node.write_to.action = actionSel.value || "create";
         if (!node.write_to.entity) { node.write_to = {}; }
         autoSave();
     }

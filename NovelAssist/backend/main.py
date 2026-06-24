@@ -1993,7 +1993,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         field_desc = wt.get("field", "")
         if wt.get("sub_field"):
             field_desc += f".{wt['sub_field']}"
-        action_desc = {"create": "新建", "update": "更新", "auto": "自动判断新建或更新"}.get(wt.get("action", "auto"), "写入")
+        action_desc = {"create": "新建", "update": "更新"}.get(wt.get("action", "create"), "写入")
         user_parts.append(
             f"【🎯 硬编码写入目标 — 强制执行，不得忽略】:\n"
             f"你必须将本节点的推理结果写入到: {el} → {field_desc or '默认字段'}\n"
