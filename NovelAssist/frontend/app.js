@@ -2379,6 +2379,49 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
+                    // ✅ 校验-确认节点：纯程序检查待办清单，不依赖 LLM
+                    if (node.type === "verify") {
+                        // 强制刷新 todos
+                        try {
+                            var freshV = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+                            rc.todos = freshV.todos || [];
+                        } catch(e) {}
+                        var vTodos = rc.todos || [];
+                        var vFilter = node.verify_filter || "";
+                        var filters = vFilter ? vFilter.split('|') : [];
+                        var hasPending = false;
+                        if (filters.length > 0) {
+                            for (var vti = 0; vti < vTodos.length; vti++) {
+                                if ((vTodos[vti].status === "pending" || vTodos[vti].status === "in_progress") && vTodos[vti].content) {
+                                    for (var fi = 0; fi < filters.length; fi++) {
+                                        if (vTodos[vti].content.indexOf(filters[fi]) >= 0) {
+                                            hasPending = true; break;
+                                        }
+                                    }
+                                    if (hasPending) break;
+                                }
+                            }
+                        } else {
+                            // 无过滤：检查是否有任何 pending 项
+                            for (var vti2 = 0; vti2 < vTodos.length; vti2++) {
+                                if (vTodos[vti2].status === "pending" || vTodos[vti2].status === "in_progress") {
+                                    hasPending = true; break;
+                                }
+                            }
+                        }
+                        var vBranch = hasPending ? "CONTINUE" : ((node.branches || []).some(function(b){return b.condition==="NEXT";}) ? "NEXT" : "DONE");
+                        var vTarget = null;
+                        for (var vbi = 0; vbi < (node.branches || []).length; vbi++) {
+                            if (node.branches[vbi].condition === vBranch) { vTarget = node.branches[vbi].next_node_id; break; }
+                        }
+                        if (!vTarget) vTarget = node.next_node_id || null;
+                        node.output = (hasPending ? "⏳ 仍有待办" : "✅ 全部完成") + " → " + vBranch;
+                        fullChainContext += "\n--- 【校验确认】 ---\n" + node.output;
+                        if (onLogCallback) onLogCallback("\n✅ [校验确认] " + node.output + "\n", "tool");
+                        currentNodeId = vTarget;
+                        continue;
+                    }
+
                     // 📝 写入节点：程序直接写入
                     if (node.type === "write") {
                         var wContent = fullChainContext.replace(/<\/?ROUTE>/g, "").trim();
