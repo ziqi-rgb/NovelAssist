@@ -2780,38 +2780,9 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             if (wt.entity === "chain_todos") {
                                 wToolName = "manage_chain_todos";
                                 if (wt.action === "update" && wt.field === "status") {
-                                    // 强制刷新 todos，确保拿到最新数据
-                                    try {
-                                        var freshRc2 = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
-                                        rc.todos = freshRc2.todos || [];
-                                    } catch(e) {}
-                                    var todos = (rc && rc.todos) ? rc.todos : [];
-                                    // 优先使用 pick_todo 阶段存储的 ID
+                                    // 直接使用 pick_todo 阶段存储的 ID，不解析上下文
                                     var targetId = rc._last_picked_todo_id;
-                                    var pending = null;
-                                    if (targetId) {
-                                        for (var ti = 0; ti < todos.length; ti++) {
-                                            if (todos[ti].id === targetId) { pending = todos[ti]; break; }
-                                        }
-                                    }
-                                    // 回退：按 filter 匹配第一个 pending 项（而非全表第一个）
-                                    if (!pending) {
-                                        var markFilter = node.verify_filter || node.pick_filter || "";
-                                        var mFilters = markFilter ? markFilter.split('|') : [];
-                                        for (var ti = 0; ti < todos.length; ti++) {
-                                            if (todos[ti].status === "pending" || todos[ti].status === "in_progress") {
-                                                if (mFilters.length > 0 && todos[ti].content) {
-                                                    for (var pfi = 0; pfi < mFilters.length; pfi++) {
-                                                        if (todos[ti].content.indexOf(mFilters[pfi]) >= 0) { pending = todos[ti]; break; }
-                                                    }
-                                                } else {
-                                                    pending = todos[ti];
-                                                }
-                                                if (pending) break;
-                                            }
-                                        }
-                                    }
-                                    wArgs = { action: "update_status", todo_id: pending ? pending.id : "none", status: "done" };
+                                    wArgs = { action: "update_status", todo_id: targetId || "none", status: "done" };
                                 } else if (!rc.todos || !rc.todos.length) {
                                     // 仅首次创建待办，后续只允许 update
                                     // 按行拆分 planning 输出，每条 `- [ ]` 行创建一个独立任务
