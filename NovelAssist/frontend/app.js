@@ -2568,7 +2568,9 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                     {"group":"背景故事","fields":["出身","经历"]},
                                     {"group":"人物关系","fields":[]}
                                 ];
-                                if (onLogCallback) onLogCallback("\n📸 [模板快照] 数据库无模板，已加载默认 4 分组\n", "tool");
+                                // 写入数据库持久化，后续重建不再重置
+                                try { await fetch("/api/novels/" + currentNovelId + "/template", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(rc._template_snapshot) }); } catch(e) {}
+                                if (onLogCallback) onLogCallback("\n📸 [模板快照] 数据库无模板，已加载默认并持久化\n", "tool");
                             } else if (onLogCallback) {
                                 onLogCallback("\n📸 [模板快照] 已冻结 " + (rc._template_snapshot.length || 0) + " 个分组\n", "tool");
                             }
