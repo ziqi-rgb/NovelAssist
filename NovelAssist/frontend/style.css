@@ -30,6 +30,8 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .nav-novel-select select{flex:1;width:0;padding:5px 3px;font-size:.72rem;border:1px solid #555;border-radius:4px;background:#3a3a4a;color:#ddd;outline:none}
 #novel-add-btn{padding:5px 7px;font-size:.75rem;font-weight:700;border:1px solid #555;border-radius:4px;background:#3a3a4a;color:#ddd;cursor:pointer}
 #novel-add-btn:hover{background:#555}
+#novel-del-btn{padding:5px 7px;font-size:.75rem;border:1px solid #555;border-radius:4px;background:#3a3a4a;color:#f87171;cursor:pointer}
+#novel-del-btn:hover{background:#7f1d1d;border-color:#f87171}
 .nav-btn{width:100%;padding:10px 8px;font-size:0;color:var(--nav-text);background:transparent;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:background .15s;border-radius:0}
 .nav-btn:hover{background:rgba(255,255,255,.08)}
 .nav-btn.active{color:var(--nav-active);background:rgba(233,69,96,.15)}
