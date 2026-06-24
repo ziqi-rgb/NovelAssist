@@ -1527,7 +1527,7 @@ document.getElementById("genesis-discard-btn")?.addEventListener("click", functi
 });
 
 function restoreProgressFromState(state) {
-    var stepIds = ["step-outline", "step-map", "step-char"];
+    var stepIds = ["step-map", "step-outline", "step-char"];
     if (state.parallel && state.chainStates) {
         var keys = ["outline", "map", "character"];
         keys.forEach(function(key, idx) {
@@ -2113,7 +2113,7 @@ function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, 
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
     // 标记当前阶段为 interrupted
-    var stepIds = ["step-outline", "step-map", "step-char"];
+    var stepIds = ["step-map", "step-outline", "step-char"];
     if (state.parallel && state.chainStates) {
         // 并行模式：标记所有未完成的链为 interrupted
         var keys = ["outline", "map", "character"];
@@ -2142,7 +2142,7 @@ function handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortB
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
     // 所有步骤标为 interrupted
-    var stepIds = ["step-outline", "step-map", "step-char"];
+    var stepIds = ["step-map", "step-outline", "step-char"];
     stepIds.forEach(function(id) {
         var el = document.getElementById(id);
         if (el && el.className === "step-active") el.className = "step-interrupted";

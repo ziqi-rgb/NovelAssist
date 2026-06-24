@@ -507,7 +507,7 @@
             </div>
             
             <p style="font-size:.72rem; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">
-                请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。引擎将按顺序调用推理链（大纲流 → 地图流 → 人设流）进行高精度顺序提炼，并在每一步都将结果回填到对应模块中，帮助您快速搭建起完整的世界观框架和丰富的角色设定！
+                请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。引擎将按顺序调用推理链（地图流 → 大纲流 → 人设流）进行高精度顺序提炼，并在每一步都将结果回填到对应模块中，帮助您快速搭建起完整的世界观框架和丰富的角色设定！
             </p>
             
             <!-- 🎯 建纲模式选择器 -->
@@ -562,11 +562,11 @@
             
             <!-- 🌟 三步骤高亮进度条 -->
             <div class="genesis-progress-bar" style="display: flex; gap: 8px; margin-bottom: 12px; font-size: 0.7rem; font-weight: 700;">
-                <div id="step-outline" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
-                    📖 1. 世界观与大纲
-                </div>
                 <div id="step-map" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
-                    🗺️ 2. 地理蓝图落子
+                    🗺️ 1. 地理蓝图落子
+                </div>
+                <div id="step-outline" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    📖 2. 世界观与大纲
                 </div>
                 <div id="step-char" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
                     👤 3. 群像人设质检
