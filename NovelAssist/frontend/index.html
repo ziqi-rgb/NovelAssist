@@ -351,6 +351,14 @@
                         <button id="placeholder-ref-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">💡 占位符速查表</button>
                         <button id="chain-settings-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">⚙️ 方案设置</button>
                     </div>
+                    <!-- 📋 推理链任务清单 -->
+                    <div id="chain-todos-panel" style="display:none;padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border);font-size:.72rem;max-height:150px;overflow-y:auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                            <strong style="color:var(--accent);">📋 任务清单</strong>
+                            <button id="chain-todos-toggle" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:1px 4px;">收起</button>
+                        </div>
+                        <div id="chain-todos-list"></div>
+                    </div>
                     <div class="canvas-container" id="reasoning-canvas">
                         <div id="chain-canvas">
                             <svg id="canvas-lines"></svg>

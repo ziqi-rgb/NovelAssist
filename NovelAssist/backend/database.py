@@ -96,6 +96,11 @@ def run_migration() -> None:
         if "map_y" not in loc_cols2:
             db.execute(text("ALTER TABLE locations ADD COLUMN map_y INTEGER"))
             db.commit()
+
+        rc_cols = [c["name"] for c in insp.get_columns("reasoning_chains")]
+        if "todos" not in rc_cols:
+            db.execute(text("ALTER TABLE reasoning_chains ADD COLUMN todos JSON DEFAULT '[]'"))
+            db.commit()
     finally:
         db.close()
 

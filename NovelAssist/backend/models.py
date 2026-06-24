@@ -255,6 +255,7 @@ class ReasoningChain(Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     nodes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     context_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {"use_outlines": True, "use_characters": True, "use_timeline": True})
+    todos: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # 推理链任务清单 [{id, content, status, created_at, updated_at, notes}]
 
     novel: Mapped[Novel] = relationship()
 

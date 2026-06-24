@@ -1653,7 +1653,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             }
                             var execRes = await fetch("/api/agent/execute/" + currentNovelId, {
                                 method: "POST", headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null }),
+                                body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null, chain_id: chainId }),
                             });
                             if (!execRes.ok) {
                                 var errBody = await execRes.json().catch(function() { return {detail: "未知错误"}; });
@@ -1863,7 +1863,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
             var premise = rawPremise2.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
             var promptT = node.prompt || "";
             var targetT = compileTarget(node.target);
-            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null }) });
+            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId }) });
             var txt = "";
             var gen = parseSSEStream(res);
             var chunkResult;
@@ -1875,7 +1875,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
                 else if (msg.type === "tool_proposal") {
                     await fetch("/api/agent/execute/" + currentNovelId, {
                         method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null }),
+                        body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null, chain_id: currentChainId || null }),
                     });
                     txt += "\n[🛠 工具已自动执行: " + msg.tool_name + "]";
                 }
@@ -2010,6 +2010,7 @@ async function loadGraph() {
     if (ti) { ti.disabled = isSys; if (isSys) ti.setAttribute("title","系统预设链不可重命名"); else ti.removeAttribute("title"); }
     renderAllNodes();
     renderLines();
+    renderTodos();
 }
 
 function renderAllNodes() {
@@ -2174,6 +2175,31 @@ function onDragEnd() {
     document.removeEventListener("mouseup", onDragEnd);
     autoSave();
     dragNode = null;
+}
+
+function renderTodos() {
+    var panel = document.getElementById("chain-todos-panel");
+    var list = document.getElementById("chain-todos-list");
+    if (!panel || !list) return;
+    var todos = (currentChain && currentChain.todos) ? currentChain.todos : [];
+    if (!todos.length) { panel.style.display = "none"; return; }
+    panel.style.display = "block";
+    var html = "";
+    todos.forEach(function(t) {
+        var icon = {"pending":"⏳","in_progress":"🔄","done":"✅"}[t.status] || "❓";
+        var color = {"pending":"#f59e0b","in_progress":"#3b82f6","done":"#22c55e"}[t.status] || "#888";
+        html += '<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);">';
+        html += '<span style="color:' + color + ';flex-shrink:0;">' + icon + '</span>';
+        html += '<span style="flex:1;word-break:break-all;">' + e(t.content||"") + '</span>';
+        html += '<span style="font-size:.6rem;color:var(--text-muted);flex-shrink:0;">' + e(t.id||"") + '</span>';
+        html += '</div>';
+        if (t.notes && t.notes.length) {
+            t.notes.forEach(function(n) {
+                html += '<div style="margin-left:22px;font-size:.65rem;color:var(--text-muted);padding:1px 0;">📝 ' + e(n.text||"") + '</div>';
+            });
+        }
+    });
+    list.innerHTML = html;
 }
 
 function renderLines() {
@@ -2473,7 +2499,7 @@ async function runNode(card, node) {
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null }),
+            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null }),
         });
         let rawResult = "";
         for await (const msg of parseSSEStream(res)) {
@@ -2621,6 +2647,12 @@ document.getElementById("cheat-sheet-close").addEventListener("click", () => doc
 document.querySelector("#cheat-sheet-modal .modal-backdrop").addEventListener("click", () => document.getElementById("cheat-sheet-modal").classList.add("hidden"));
 document.getElementById("cheat-prompt-btn").addEventListener("click", showCheatSheet);
 document.getElementById("placeholder-ref-btn")?.addEventListener("click", showCheatSheet);
+document.getElementById("chain-todos-toggle")?.addEventListener("click", function() {
+    var list = document.getElementById("chain-todos-list");
+    var btn = document.getElementById("chain-todos-toggle");
+    if (list.style.display === "none") { list.style.display = ""; btn.textContent = "收起"; }
+    else { list.style.display = "none"; btn.textContent = "展开"; }
+});
 
 // Click to copy on cheat sheet table cells
 document.querySelector("#cheat-sheet-modal table")?.addEventListener("click", function(e) {

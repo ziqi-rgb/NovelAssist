@@ -171,6 +171,24 @@ AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_chain_todos",
+            "description": "管理当前推理链的任务清单（Todo List）。可新增任务、更新状态、追加备注。禁止删除任务。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "update_status", "append_note"], "description": "add=新增任务, update_status=更新状态, append_note=追加备注"},
+                    "todo_id": {"type": "string", "description": "任务ID（update_status/append_note 时必填）"},
+                    "content": {"type": "string", "description": "任务内容（add 时必填）"},
+                    "status": {"type": "string", "enum": ["pending", "in_progress", "done"], "description": "任务状态（update_status 时必填）"},
+                    "note": {"type": "string", "description": "追加的备注文本（append_note 时必填）"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 SYSTEM_CHAIN_NAMES = [
@@ -652,6 +670,7 @@ class ReasoningChainOut(BaseModel):
     title: str
     nodes: list
     context_settings: dict
+    todos: list = []
     class Config:
         from_attributes = True
 
@@ -1813,6 +1832,7 @@ class ReasoningExecuteRequest(BaseModel):
     model: str = "gpt-3.5-turbo"
     context_settings: dict = {}
     write_to: dict | None = None  # {entity, field, sub_field, action}
+    chain_id: int | None = None   # 推理链ID（解析 {chain_todos} 时使用）
 
 
 async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str, system_prompt: str) -> str:
@@ -1894,6 +1914,26 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         resolved_premise = req.premise or ""
         resolved_prompt = req.prompt or ""
         resolved_target = req.target or ""
+
+    # 🎯 {chain_todos} 专用解析
+    ct_str = "(当前推理链无活跃任务清单)"
+    if req.chain_id:
+        chain = db.get(ReasoningChain, req.chain_id)
+        if chain and isinstance(chain.todos, list) and chain.todos:
+            lines = []
+            for t in chain.todos:
+                status_icon = {"pending": "⏳", "in_progress": "🔄", "done": "✅"}.get(t.get("status", ""), "❓")
+                line = f"- [{status_icon} {t.get('id','')}] {t.get('content','')}"
+                notes = t.get("notes", [])
+                if isinstance(notes, list) and notes:
+                    for n in notes:
+                        if isinstance(n, dict):
+                            line += f"\n    📝 {n.get('text','')}"
+                lines.append(line)
+            ct_str = "【推理链任务清单】:\n" + "\n".join(lines)
+    resolved_premise = resolved_premise.replace("{chain_todos}", ct_str)
+    resolved_prompt = resolved_prompt.replace("{chain_todos}", ct_str)
+    resolved_target = resolved_target.replace("{chain_todos}", ct_str)
 
     novel = db.get(Novel, req.novel_id)
     ctx = req.context_settings or {}
@@ -2557,6 +2597,7 @@ class ToolExecuteReq(BaseModel):
     tool_name: str
     arguments: dict
     write_to: dict | None = None  # {entity, field, sub_field, action}
+    chain_id: int | None = None   # 推理链ID（manage_chain_todos 使用）
 
 
 @app.post("/api/agent/execute/{novel_id}")
@@ -3037,6 +3078,69 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         db.commit()
         return {"status": "success", "msg": f"{etype} {action} 成功。"}
+
+    if req.tool_name == "manage_chain_todos":
+        if not req.chain_id:
+            raise HTTPException(400, "缺少 chain_id，无法操作推理链任务清单")
+        chain = db.get(ReasoningChain, req.chain_id)
+        if not chain:
+            raise HTTPException(404, "推理链不存在")
+        action = req.arguments.get("action")
+        todos: list = list(chain.todos) if isinstance(chain.todos, list) else []
+
+        if action == "add":
+            content = req.arguments.get("content", "").strip()
+            if not content:
+                raise HTTPException(400, "任务内容不能为空")
+            now = datetime.utcnow().isoformat()
+            new_todo = {
+                "id": "td_" + uuid.uuid4().hex[:8],
+                "content": content,
+                "status": "pending",
+                "created_at": now,
+                "updated_at": now,
+                "notes": [],
+            }
+            todos.append(new_todo)
+            chain.todos = todos
+            flag_modified(chain, "todos")
+            db.commit()
+            return {"status": "success", "msg": f"任务 [{new_todo['id']}] 已创建", "todo": new_todo}
+
+        todo_id = req.arguments.get("todo_id", "").strip()
+        if not todo_id:
+            raise HTTPException(400, "缺少 todo_id")
+        target = next((t for t in todos if t.get("id") == todo_id), None)
+        if not target:
+            raise HTTPException(404, f"任务 {todo_id} 不存在")
+
+        if action == "update_status":
+            new_status = req.arguments.get("status", "").strip()
+            if new_status not in ("pending", "in_progress", "done"):
+                raise HTTPException(400, f"无效状态: {new_status}，只能为 pending/in_progress/done")
+            target["status"] = new_status
+            target["updated_at"] = datetime.utcnow().isoformat()
+            chain.todos = todos
+            flag_modified(chain, "todos")
+            db.commit()
+            return {"status": "success", "msg": f"任务 [{todo_id}] 状态更新为 {new_status}"}
+
+        if action == "append_note":
+            note = req.arguments.get("note", "").strip()
+            if not note:
+                raise HTTPException(400, "备注内容不能为空")
+            notes: list = target.get("notes", [])
+            if not isinstance(notes, list):
+                notes = []
+            notes.append({"text": note, "at": datetime.utcnow().isoformat()})
+            target["notes"] = notes
+            target["updated_at"] = datetime.utcnow().isoformat()
+            chain.todos = todos
+            flag_modified(chain, "todos")
+            db.commit()
+            return {"status": "success", "msg": f"已为任务 [{todo_id}] 追加备注"}
+
+        raise HTTPException(400, f"不支持的操作: {action}（仅支持 add/update_status/append_note）")
 
     if req.tool_name == "generate_reasoning_chain":
         action = req.arguments.get("action")
