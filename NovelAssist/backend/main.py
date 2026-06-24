@@ -244,16 +244,28 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "id": "c_ask_template", "type": "ask", "x": X1, "y": 500,
                 "premise": "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段（一次性，不循环）。",
                 "prompt": "【模板校准提问】\n当前小说的人物属性模板为：\n{character_template}\n\n请生成一个问题，询问用户：\n1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？\n2. 是否有现有分组需要增加或删减字段？\n\n用户回复后，将这些修改要求作为后续创建角色时的额外指引。",
-                "target": [], "branches": [], "next_node_id": "c_create", "output": ""
+                "target": [], "branches": [], "next_node_id": "c_gen_template", "output": ""
             },
             {
-                "id": "c_create", "x": X1, "y": 950,
+                "id": "c_gen_template", "x": X1, "y": 950,
+                "premise": "根据用户回复，生成更新后的人物属性模板（合并原有分组+新增分组）。",
+                "prompt": "【模板更新】\n当前模板：{character_template}\n用户的修改要求：从上文 c_ask_template 节点的输出中获取。\n\n请输出合并后的完整模板 JSON 数组。每个分组格式：{\"group\":\"分组名\",\"fields\":[\"字段1\",\"字段2\"]}。保留所有原有分组，在原有基础上追加用户要求的新分组和字段。\n末尾输出 <ROUTE>DONE</ROUTE>。",
+                "format": "", "target": [], "branches": [], "next_node_id": "c_update_template", "output": ""
+            },
+            {
+                "id": "c_update_template", "type": "write", "x": X2, "y": 950,
+                "premise": "将更新后的人物属性模板写入小说设定（合并模式——只追加新分组/字段）。",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_create", "output": "",
+                "write_to": {"entity": "character_template", "field": "attributes", "action": "update"}
+            },
+            {
+                "id": "c_create", "x": X1, "y": 1400,
                 "premise": "从待办清单中找出第一个未完成的角色，按模板生成完整属性。",
                 "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n推理链待办：{chain_todos}\n\n请从待办中找出第一个未完成的角色，为其生成完整饱满的属性字典，严格对齐模板的每个分组和每个字段。势力不存在时自动创建（写入 faction_name）。",
                 "format": "character", "target": [], "branches": [], "next_node_id": "c_validate", "output": ""
             },
             {
-                "id": "c_validate", "type": "validate", "x": X2, "y": 950,
+                "id": "c_validate", "type": "validate", "x": X2, "y": 1400,
                 "premise": "校验生成的角角色数据——检查模板字段是否全部填满。",
                 "prompt": "", "format": "character", "target": [],
                 "branches": [
@@ -263,19 +275,19 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_write", "type": "write", "x": X1, "y": 1400,
+                "id": "c_write", "type": "write", "x": X1, "y": 1850,
                 "premise": "将生成的完整角色属性写入数据库（势力自动关联）。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_todos_update", "output": "",
                 "write_to": {"entity": "character", "field": "attributes", "action": "create"}
             },
             {
-                "id": "c_todos_update", "type": "write", "x": X2, "y": 1400,
+                "id": "c_todos_update", "type": "write", "x": X2, "y": 1850,
                 "premise": "将待办中对应角色标记为已完成。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_verify", "output": "",
                 "write_to": {"entity": "chain_todos", "field": "status", "action": "update"}
             },
             {
-                "id": "c_verify", "x": X1, "y": 1850,
+                "id": "c_verify", "x": X1, "y": 2300,
                 "premise": "校验：所有角色是否已全部创建完成？",
                 "prompt": "【角色创建校验】\n推理链待办：{chain_todos}\n已有角色：{characters_full_detail}\n\n请检查待办中的所有角色是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>",
                 "format": "", "target": [],
@@ -373,11 +385,11 @@ async def lifespan(app: FastAPI):
                 if t_chain and isinstance(t_chain.nodes, list):
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 6:
-                        print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→6，执行迁移...")
+                    if ver is None or ver < 7:
+                        print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→7，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 6
+                        cs["_version"] = 7
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "context_settings")
@@ -1526,13 +1538,13 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 6:
-                print(f"[Runtime Migration] 链「{name}」版本 {ver}→6")
+            if ver < 7:
+                print(f"[Runtime Migration] 链「{name}」版本 {ver}→7")
                 chain.nodes = _get_system_chain_nodes(name)
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 6
+                    chain.context_settings["_version"] = 7
                 else:
-                    chain.context_settings = {"_version": 6}
+                    chain.context_settings = {"_version": 7}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "context_settings")
                 db.commit()
@@ -2650,7 +2662,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         wt = req.write_to
         if wt and wt.get("entity"):
             entity_map = {"character": "character", "location": "location", "outline": "outline",
-                          "faction": "faction", "timeline": "timeline"}
+                          "faction": "faction", "timeline": "timeline", "character_template": "character_template"}
             expected_etype = entity_map.get(wt["entity"])
             if expected_etype and etype != expected_etype:
                 raise HTTPException(400,
@@ -3126,8 +3138,22 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(Volume).filter(Volume.id == eid).delete()
 
         elif etype == "character_template":
-            if action == "update" and "attributes" in data:
-                novel.character_template = data["attributes"]
+            if "attributes" in data and isinstance(data["attributes"], list):
+                existing: list = list(novel.character_template) if isinstance(novel.character_template, list) else []
+                incoming: list = data["attributes"]
+                existing_groups = {g.get("group",""): g for g in existing if isinstance(g, dict)}
+                for g in incoming:
+                    if isinstance(g, dict) and g.get("group"):
+                        gname = g["group"]
+                        if gname in existing_groups:
+                            # 合并字段：去重
+                            old_fields = set(existing_groups[gname].get("fields", []))
+                            new_fields = [f for f in g.get("fields", []) if f not in old_fields]
+                            if new_fields:
+                                existing_groups[gname]["fields"] = existing_groups[gname].get("fields", []) + new_fields
+                        else:
+                            existing.append(g)
+                novel.character_template = existing
                 flag_modified(novel, "character_template")
 
         db.commit()

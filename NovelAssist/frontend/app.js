@@ -2570,6 +2570,7 @@ const WRITE_FIELDS = {
     faction: ["name","description","base_location_name"],
     timeline: ["time_label","content","event_type"],
     chain_todos: ["content","status"],
+    character_template: ["attributes"],
 };
 
 function buildWriteToHTML(node) {
@@ -2584,7 +2585,8 @@ function buildWriteToHTML(node) {
         + '<option value="outline"' + (entity==="outline"?" selected":"") + '>📖 大纲</option>'
         + '<option value="faction"' + (entity==="faction"?" selected":"") + '>🏛️ 势力</option>'
         + '<option value="timeline"' + (entity==="timeline"?" selected":"") + '>⏳ 时间线</option>'
-        + '<option value="chain_todos"' + (entity==="chain_todos"?" selected":"") + '>📋 待办清单</option>';
+        + '<option value="chain_todos"' + (entity==="chain_todos"?" selected":"") + '>📋 待办清单</option>'
+        + '<option value="character_template"' + (entity==="character_template"?" selected":"") + '>📐 人物模板</option>';
     var fieldsList = WRITE_FIELDS[entity] || [];
     var fieldLabels = { name:"名称", aliases:"别名", description:"描述", status:"状态", is_active:"活跃", faction_name:"势力名", faction_role:"职位", is_always_context:"常驻上下文", attributes:"属性", scale_level:"层级", parent_name:"父级名称", grid_x:"网格X", grid_y:"网格Y", title:"标题", category:"分类", order_index:"排序", content:"内容", time_label:"时间标签", event_type:"事件类型", base_location_name:"驻地" };
     var fieldOpts = '<option value="">-- 字段 --</option>';
