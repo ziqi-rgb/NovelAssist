@@ -1613,14 +1613,33 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
                 var nodeToolCalls = "";
                 try {
-                    // ❓ 提问节点在无人值守模式下：记录提问内容但不暂停
+                    // ❓ 交互节点在无人值守模式下：记录提问内容但不暂停
                     if (node.type === "ask") {
-                        if (onLogCallback) onLogCallback("\n❓ 提问节点（无人值守模式）: " + (node.premise || "(无提问内容)") + "\n", "warning");
-                        node.output = "【自动跳过提问】\n" + (node.premise || "");
-                        // 尝试寻找默认分支或顺序路由
-                        var askNextId = null;
-                        if (node.next_node_id) askNextId = node.next_node_id;
+                        if (onLogCallback) onLogCallback("\n❓ 交互节点（无人值守模式）: " + (node.premise || "(无提问内容)") + "\n", "warning");
+                        node.output = "【自动跳过交互】\n" + (node.premise || "");
+                        var askNextId = node.next_node_id || null;
                         currentNodeId = askNextId;
+                        continue;
+                    }
+
+                    // 🔀 路由节点：直接提取上游 ROUTE 值做分支判定
+                    if (node.type === "router") {
+                        var rv = "";
+                        var rvm = fullChainContext.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+                        if (rvm) rv = rvm[1].trim();
+                        var rNextId = null;
+                        if (node.branches && node.branches.length && rv) {
+                            for (var rbi = 0; rbi < node.branches.length; rbi++) {
+                                if (node.branches[rbi].condition && rv.includes(node.branches[rbi].condition)) {
+                                    rNextId = node.branches[rbi].next_node_id; break;
+                                }
+                            }
+                        }
+                        if (!rNextId) rNextId = node.next_node_id || null;
+                        node.output = "🔀 路由: [" + (rv || "无值") + "] → " + (rNextId || "终止");
+                        fullChainContext += "\n--- 【路由判定】 ---\n" + node.output;
+                        if (onLogCallback) onLogCallback("\n🔀 [路由判定] " + (rv || "无路由值") + " → " + (rNextId || "终止") + "\n", "step");
+                        currentNodeId = rNextId;
                         continue;
                     }
 
@@ -2034,7 +2053,9 @@ function renderAllNodes() {
     (currentChain.nodes || []).forEach((node, idx) => {
         if (!node.id) node.id = "n" + (idx + 1);
         if (!node.branches) node.branches = [];
-        const card = document.createElement("div"); card.className = "node-card" + (node.type === "ask" ? " node-type-ask" : ""); card.dataset.nid = node.id;
+        var ntype = node.type || "reasoning";
+        var cardCls = "node-card" + (ntype === "router" ? " node-type-router" : "") + (ntype === "ask" ? " node-type-ask" : "");
+        const card = document.createElement("div"); card.className = cardCls; card.dataset.nid = node.id;
         card.style.left = (node.x || 50 + idx * 60) + "px";
         card.style.top = (node.y || 50 + idx * 80) + "px";
         const bcount = (node.branches || []).length;
@@ -2047,15 +2068,24 @@ function renderAllNodes() {
             }
             outPorts += `<div class="port port-out port-add" data-nid="${node.id}" data-port="${bcount}" style="top:${20+bcount*16}px;background:#888" title="新增连接">+</div>`;
         }
-        card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);"><option value="normal" ${(node.type||"normal")==="normal"?"selected":""}>🔵 普通</option><option value="ask" ${(node.type||"")==="ask"?"selected":""}>❓ 提问</option></select><button class="node-del">&#128465;</button></span></div>
+        var ntype = node.type || "reasoning";
+        var isRouter = ntype === "router";
+        var isAsk = ntype === "ask";
+        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : "▶ 运行");
+        var promptHTML = isRouter ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>`;
+        var targetHTML = isRouter || isAsk ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
+        var writeHTML = isRouter || isAsk ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
+        var branchHTML = isAsk ? "" : `<div class="node-section"><label>分支路由</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
+
+        card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);"><option value="reasoning" ${ntype==="reasoning"?"selected":""}>🧠 推理</option><option value="router" ${ntype==="router"?"selected":""}>🔀 路由</option><option value="ask" ${ntype==="ask"?"selected":""}>❓ 交互</option></select><button class="node-del">&#128465;</button></span></div>
             <div class="node-body">
-                <div class="node-section"><label>传入内容</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
-                <div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>
-                <div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>
-                <div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>
-                <div class="node-section"><label>分支路由</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>
+                <div class="node-section"><label>${isRouter ? "判定依据" : "传入内容"}</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
+                ${promptHTML}
+                ${targetHTML}
+                ${writeHTML}
+                ${branchHTML}
                 <div class="node-section"><label>顺序路由（默认下一节点）</label><select class="next-node-sel"><option value="">-- 无 --</option></select></div>
-                <button class="node-run-btn">${node.type === "ask" ? "❓ 提问" : "&#9654; 运行本节点"}</button>
+                <button class="node-run-btn">${runLabel}</button>
                 <div class="node-output" style="display:none;margin-top:6px;padding:8px;border-top:1px solid var(--border);font-size:.78rem;line-height:1.6;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;">${e(node.output||"")}</div>
             </div>
             <div class="port port-in" data-nid="${node.id}" title="接收连接"><span>&#9664;</span></div>
@@ -2073,7 +2103,7 @@ function bindNodeEvents(card, node, idx) {
     hdr.addEventListener("mousedown", e => { if (e.target.closest("button") || e.target.closest("select")) return; startDrag(e, card, node, idx); });
     card.querySelector(".node-del").addEventListener("click", () => { currentChain.nodes.splice(idx, 1); renderAllNodes(); renderLines(); autoSave(); });
     var typeSel = card.querySelector(".node-type-sel");
-    if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value === "ask" ? "ask" : "normal"; renderAllNodes(); renderLines(); autoSave(); }); }
+    if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value; if (node.type === "reasoning") node.type = "reasoning"; renderAllNodes(); renderLines(); autoSave(); }); }
     card.querySelector(".premise-ta").addEventListener("input", e => { node.premise = e.target.value; autoSave(); });
     card.querySelector(".prompt-ta").addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
     card.querySelector(".branch-add-btn").addEventListener("click", () => { node.branches.push({ condition: "", next_node_id: "" }); renderBranches(card, node); autoSave(); });
@@ -2527,6 +2557,38 @@ async function runNode(card, node) {
             autoSave();
         } catch(e) { outDiv.textContent += "\n[错误: " + e.message + "]"; }
         finally { btn.disabled = false; btn.textContent = "❓ 提问"; }
+        return;
+    }
+
+    if (node.type === "router") {
+        // 🔀 路由节点：读取上游路由值，匹配分支，不调用 AI
+        btn.textContent = "判定中...";
+        try {
+            var routeVal = "";
+            var rm2 = prevOutput.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+            if (rm2) routeVal = rm2[1].trim();
+            var matchedBranch = null;
+            if (node.branches && node.branches.length && routeVal) {
+                for (var ri = 0; ri < node.branches.length; ri++) {
+                    if (node.branches[ri].condition && routeVal.includes(node.branches[ri].condition)) {
+                        matchedBranch = node.branches[ri];
+                        break;
+                    }
+                }
+            }
+            if (matchedBranch) {
+                node.output = "🔀 路由命中: [" + routeVal + "] → " + matchedBranch.next_node_id;
+                outDiv.innerHTML = '<span style="color:#f59e0b;">🔀 路由命中: <b>' + e(routeVal) + '</b></span><br><span>➡️ 流转至 ' + e(matchedBranch.next_node_id) + '</span>';
+            } else if (node.next_node_id) {
+                node.output = "🔀 默认路由: [" + (routeVal || "无路由值") + "] → " + node.next_node_id;
+                outDiv.innerHTML = '<span style="color:#888;">🔀 无匹配分支，默认流转至 <b>' + e(node.next_node_id) + '</b></span>';
+            } else {
+                node.output = "🔀 路由终止: [" + (routeVal || "无路由值") + "] → 无下文";
+                outDiv.innerHTML = '<span style="color:#ef4444;">🛑 路由终止</span>';
+            }
+            autoSave();
+        } catch(e) { outDiv.textContent += "\n[错误: " + e.message + "]"; }
+        finally { btn.disabled = false; btn.textContent = "🔀 判定"; }
         return;
     }
 

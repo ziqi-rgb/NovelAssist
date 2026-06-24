@@ -201,12 +201,12 @@ SYSTEM_CHAIN_NAMES = [
 def _get_system_chain_nodes(title: str) -> list[dict]:
     if title == "🗺️ 蓝图规划与逐层搭建流":
         return [
-            {"id":"node_eval","x":400,"y":60,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_plan"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
+            {"id":"node_eval","type":"router","x":400,"y":60,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_plan"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
             {"id":"node_true_plan","x":900,"y":60,"premise":"上级已存在，以该上级为锚点规划子层级清单。","prompt":"【局部路径规划】（⚠️绝对禁止调用工具！）\n探测到目标地点的上级地图已存在于数据库中（详见上文环境）。\n请以该已有的上级节点为锚点，自顶向下规划前往目标地点所需的完整子层级嵌套清单，确定每一个子地点的 scale（只能是大陆/国家/城池/街区之一）与具体 grid_x/grid_y 坐标（0-24 之间），并仅以纯文本输出清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度设定，使生成的地点描述与空间结构与之完全对齐：\n【世界观大纲】：\n{outline_cat_world}\n【世界势力大纲】：\n{outline_cat_faction}\n【地理大纲】：\n{outline_cat_geo}\n【能力体系大纲】：\n{outline_cat_power}\n\n请仅输出纯文本规划清单。明确标出谁是谁的 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
             {"id":"node_plan","x":30,"y":650,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度背景设定，使生成的地点名、描述、空间结构与其完美对齐，互为表里：\n【世界观设定】：\n{outline_cat_world}\n【世界势力设定】：\n{outline_cat_faction}\n【地理知识设定】：\n{outline_cat_geo}\n【能力体系设定】：\n{outline_cat_power}\n\n【空间标尺法则】：[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
             {"id":"node_desc","x":450,"y":700,"premise":"填充各层级的详细设定描述。","prompt":"【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
             {"id":"node_build_top","x":450,"y":1300,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数）。\n4. 【强制】scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
-            {"id":"node_check_bottom","x":450,"y":1900,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 已经是目标地点了，输出 <ROUTE>DONE</ROUTE>\n- 还没到底，输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
+            {"id":"node_check_bottom","type":"router","x":450,"y":1900,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 已经是目标地点了，输出 <ROUTE>DONE</ROUTE>\n- 还没到底，输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
         ]
     if title == "👤 严谨人设与模板质检流":
         return [
@@ -217,7 +217,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
             },
             {
-                "id": "c_n2_check_faction", "x": 400, "y": 600,
+                "id": "c_n2_check_faction", "type": "router", "x": 400, "y": 600,
                 "premise": "判定是否需要建立新势力。",
                 "prompt": "【势力存在判定】（⚠️绝对禁止调用工具！）\n对比当前初步人设中的所属势力，并仔细核对已有的势力名录：{locations_list}（地理大纲中已有的势力也视同存在）。\n- 如果该势力在名录中已存在，【绝对禁止重复创建】，直接输出 <ROUTE>NO</ROUTE> 路由至编号节点；\n- 只有在确属全新的空白势力时，才输出 <ROUTE>YES</ROUTE> 前往建立节点。",
                 "target": [],
@@ -260,7 +260,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
-                "id": "c_n6_verify_template", "x": 400, "y": 2220,
+                "id": "c_n6_verify_template", "type": "router", "x": 400, "y": 2220,
                 "premise": "第一漏斗：已建角色属性模板质检。",
                 "prompt": (
                     "【属性模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n"
@@ -301,7 +301,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
-                "id": "c_n8_verify_quantity", "x": 400, "y": 2760,
+                "id": "c_n8_verify_quantity", "type": "router", "x": 400, "y": 2760,
                 "premise": "第二漏斗：已建角色数量核对。",
                 "prompt": (
                     "【角色数量核对】（⚠️绝对禁止调用工具！仅限输出路由！）\n"
@@ -348,7 +348,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
             next_check = f"o_{next_m_id}_check" if next_m_id != "end" else ""
             contract = contracts.get(cat, "")
-            nodes.append({"id":f"o_{m_id}_check","x":col_x[0],"y":base_y,"premise":f"进入 {m_name}。","prompt":f"【模块判定】（⚠️绝对禁止调用工具！）\n判断：是否需要创建或扩充【{m_name}】？\n- 需要，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"o_{m_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"进入 {m_name}。","prompt":f"【模块判定】（⚠️绝对禁止调用工具！）\n判断：是否需要创建或扩充【{m_name}】？\n- 需要，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
             plan = f"【分条规划】\n【{cat} 硬性契约】：{contract}\n请对【{m_name}】进行详细规划，拆分为多个条目。\n"
             build = f"【执行创建】（✅允许调用工具）\n查阅规划清单。挑出最高级未建节点，调用 manage_world_element (etype: outline) 建立它。\ncategory 必须填入 '{cat}'。\n"
             if m_id != "char":
@@ -359,7 +359,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             plan += "纯文本输出清单！"
             nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name}。","prompt":plan,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
             nodes.append({"id":f"o_{m_id}_build","x":col_x[2],"y":base_y,"premise":f"创建 {m_name}。","prompt":build,"target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
-            nodes.append({"id":f"o_{m_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验 {m_name}。","prompt":f"【进度判定】（⚠️绝对禁止调用工具！）\n比对规划清单，【{m_name}】是否全部创建完毕？\n- 未完工，输出 <ROUTE>CONTINUE</ROUTE>\n- 全部完工，输出 <ROUTE>DONE</ROUTE>\n仅输出标签！","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"o_{m_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验 {m_name}。","prompt":f"【进度判定】（⚠️绝对禁止调用工具！）\n比对规划清单，【{m_name}】是否全部创建完毕？\n- 未完工，输出 <ROUTE>CONTINUE</ROUTE>\n- 全部完工，输出 <ROUTE>DONE</ROUTE>\n仅输出标签！","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
     return []
 

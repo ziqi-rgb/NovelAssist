@@ -131,6 +131,9 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .node-type-ask{border-color:#f59e0b;box-shadow:0 2px 8px rgba(245,158,11,.15)}
 .node-type-ask .node-hdr{background:#3d2e00;color:#fbbf24}
 .node-type-ask .node-run-btn{background:linear-gradient(135deg,#d97706,#b45309);border-color:#f59e0b;color:#fff}
+.node-type-router{border-color:#8b5cf6;box-shadow:0 2px 8px rgba(139,92,246,.15)}
+.node-type-router .node-hdr{background:#2d1b4e;color:#c4b5fd}
+.node-type-router .node-run-btn{background:linear-gradient(135deg,#7c3aed,#6d28d9);border-color:#8b5cf6;color:#fff}
 .node-hdr .node-del:hover{color:#f38ba8}
 .node-body{padding:10px 12px}
 .node-section{margin-bottom:8px}
