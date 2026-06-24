@@ -2986,6 +2986,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         }
                     }
                     if (onLogCallback && txt) onLogCallback(txt, "chunk");
+                    lastReasoning = txt;
                     var routeKey = null;
                     // 🛡️ 输出格式强制校验
                     var cleanTxt = txt;
