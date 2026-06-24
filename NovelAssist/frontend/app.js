@@ -1288,16 +1288,20 @@ async function loadCharacters() {
     localStorage.setItem("activated_chars", JSON.stringify(activated));
     chars.forEach(ch => {
         const d = document.createElement("div"); d.className = "character-card"; d.style.cursor = "pointer";
-        let attrHtml = "";
-        if (ch.attributes && typeof ch.attributes === "object") {
-            ["基础信息", "外貌特征"].forEach(g => {
-                const fields = ch.attributes[g];
-                if (fields && typeof fields === "object") {
-                    Object.entries(fields).forEach(([k, v]) => { if (v) attrHtml += `<div class="char-desc"><b>${e(k)}</b>: ${e(String(v))}</div>`; });
-                }
-            });
-        }
-        d.innerHTML = `<div class="char-name">${e(ch.name)||"(未)"}${getStatusBadge(ch)}</div>${ch.aliases?`<div class="char-aliases">${e(ch.aliases)}</div>`:""}${attrHtml}${ch.description?`<div class="char-desc">${e(ch.description)}</div>`:""}<label class="char-activate"><input type="checkbox" data-cid="${ch.id}" ${ch.is_always_context?"checked":""}> 启动</label>`;
+        var attrs = ch.attributes || {};
+        var basic = attrs["基础信息"] || {};
+        var appearance = attrs["外貌特征"] || {};
+        // 精选六要素：姓名、年龄、性别、性格、身高、一句话描述
+        var lines = [];
+        if (basic["年龄"]) lines.push('<span><b>年龄</b>: ' + e(String(basic["年龄"])) + '</span>');
+        if (basic["性别"]) lines.push('<span><b>性别</b>: ' + e(String(basic["性别"])) + '</span>');
+        if (basic["性格"]) lines.push('<span><b>性格</b>: ' + e(String(basic["性格"])) + '</span>');
+        if (appearance["身高"]) lines.push('<span><b>身高</b>: ' + e(String(appearance["身高"])) + '</span>');
+        var summary = lines.length ? lines.join(" · ") : "";
+        d.innerHTML = '<div class="char-name">' + e(ch.name||"(未)") + getStatusBadge(ch) + '</div>'
+            + (summary ? '<div class="char-desc" style="font-size:0.72rem;color:var(--text-muted);">' + summary + '</div>' : '')
+            + (ch.description ? '<div class="char-desc" style="font-size:0.75rem;line-height:1.4;">' + e(ch.description) + '</div>' : '')
+            + '<label class="char-activate"><input type="checkbox" data-cid="' + ch.id + '" ' + (ch.is_always_context?"checked":"") + '> 启动</label>';
         d.addEventListener("click", (e) => { if (e.target.tagName === "INPUT") return; switchToCharactersModule(ch.id); });
         c.appendChild(d);
     });

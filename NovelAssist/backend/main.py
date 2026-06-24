@@ -323,7 +323,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_create", "x": X1, "y": 1400,
                 "premise": "为选取的待办项生成完整角色属性。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】必须填写所属势力全名！参考已有角色和世界观中的势力名称。无势力归属的散人填「散修」，不要填「无」或留空\n- 【faction_role】在势力中的职位/身份\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】必须填写所属势力全名！参考已有角色和世界观中的势力名称。无势力归属的散人填「散修」，不要填「无」或留空\n- 【faction_role】在势力中的职位/身份\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】一句话概述角色核心特质（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
                 "format": "character", "target": [], "branches": [], "next_node_id": "c_write", "output": ""
             },
             {
