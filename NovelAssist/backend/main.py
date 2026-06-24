@@ -665,6 +665,33 @@ def create_novel(body: NovelCreate, db: Session = Depends(get_db)):
     return n
 
 
+@app.delete("/api/novels/{novel_id}")
+def delete_novel(novel_id: int, db: Session = Depends(get_db)):
+    """删除整本小说及其全部关联数据"""
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+
+    # 级联删除顺序：从叶子到根，避免外键约束冲突
+    db.execute(text("DELETE FROM character_snapshots WHERE character_id IN (SELECT id FROM characters WHERE novel_id=:nid)"), {"nid": novel_id})
+    db.execute(text("DELETE FROM character_routines WHERE character_id IN (SELECT id FROM characters WHERE novel_id=:nid)"), {"nid": novel_id})
+    db.execute(text("DELETE FROM character_trajectories WHERE character_id IN (SELECT id FROM characters WHERE novel_id=:nid)"), {"nid": novel_id})
+    db.execute(text("DELETE FROM character_relations WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM characters WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM timeline_events WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM world_events WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM chapters WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM volumes WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM outlines WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM locations WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM factions WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM reasoning_chains WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM novels WHERE id=:nid"), {"nid": novel_id})
+
+    db.commit()
+    return {"ok": True, "deleted_novel_id": novel_id}
+
+
 @app.put("/api/novels/{novel_id}/template")
 def update_novel_template(novel_id: int, body: list = Body(...), db: Session = Depends(get_db)):
     n = db.get(Novel, novel_id)
@@ -1885,7 +1912,14 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
 
     messages = [
         {"role": "system", "content": resolve_placeholders(
-            "你是小说推演引擎，严格按用户指令输出。\n{outlines_list}\n{characters_list}",
+            "你是小说推演引擎，严格遵守以下【输出铁律】：\n"
+            "1. 绝对不要输出任何解释、客套话、分析性文字（如'好的'、'以下是'、'根据设定'等）。\n"
+            "2. 禁止用 ``` 或 markdown 代码块包裹输出。\n"
+            "3. 如果[输出要求]中指定了区块格式，必须严格按照区块编号顺序输出，不得跳过或打乱。\n"
+            "4. 如果[输出要求]中要求输出 <ROUTE> 标签，必须在输出末尾精确包含该标签，不得遗漏。\n"
+            "5. 如果[输出要求]中有布尔/选项判断，必须从给定选项中选一个，不得自创。\n"
+            "6. 当用户指令明确要求调用工具操作某个实体时，必须调用对应工具，参数中的名称、描述等必须与指令完全一致。\n"
+            "{outlines_list}\n{characters_list}",
             req.novel_id, db,
         )},
         {"role": "user", "content": "\n\n".join(user_parts)},

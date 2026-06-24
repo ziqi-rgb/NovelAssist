@@ -72,6 +72,18 @@ document.getElementById("novel-add-btn").addEventListener("click", async () => {
     await fetch("/api/novels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: t }) });
     await loadNovels(); switchNovel(Number(document.getElementById("novel-select").lastElementChild.value));
 });
+document.getElementById("novel-del-btn").addEventListener("click", async () => {
+    const sel = document.getElementById("novel-select");
+    const nid = Number(sel.value);
+    const name = sel.options[sel.selectedIndex]?.textContent || "未知";
+    if (!confirm(`⚠️ 确定要删除整本小说「${name}」吗？\n\n这将永久清除该小说的：\n- 全部章节和分卷\n- 全部人物档案、势力、关系\n- 全部地点和地图\n- 全部大纲和时间线\n- 全部推理链方案\n\n此操作不可撤销！`)) return;
+    const r = await fetch(`/api/novels/${nid}`, { method: "DELETE" });
+    if (!r.ok) { alert("删除失败：" + (await r.json()).detail); return; }
+    await loadNovels();
+    const newSel = document.getElementById("novel-select");
+    if (newSel.options.length > 0) { switchNovel(Number(newSel.options[0].value)); }
+    else { location.reload(); }
+});
 function nidQ() { return `?novel_id=${currentNovelId}`; }
 
 async function apiDel(url, id) { return await fetch(`${url}/${id}`, { method: "DELETE" }); }
@@ -1354,6 +1366,41 @@ document.getElementById("outline-genesis-btn")?.addEventListener("click", functi
     modal.classList.remove("hidden");
 });
 
+/* ═══════════ 文件拖拽导入 ═══════════ */
+(function setupFileImport() {
+    var dropZone = document.getElementById("import-drop-zone");
+    var fileInput = document.getElementById("import-file-input");
+    var textarea = document.getElementById("import-textarea");
+    if (!dropZone || !fileInput || !textarea) return;
+
+    function readFile(file) {
+        if (!file) return;
+        var ext = (file.name || "").split(".").pop().toLowerCase();
+        if (ext !== "txt" && ext !== "md" && ext !== "text") {
+            alert("仅支持 .txt 和 .md 文本文件");
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            textarea.value = e.target.result;
+            textarea.dispatchEvent(new Event("input"));
+            dropZone.style.borderColor = "#22c55e";
+            dropZone.style.background = "rgba(34,197,94,0.06)";
+            var info = dropZone.querySelector("p");
+            if (info) info.textContent = "✅ 已加载: " + file.name + " (" + (file.size/1024).toFixed(1) + " KB)";
+        };
+        reader.onerror = function() { alert("文件读取失败"); };
+        reader.readAsText(file, "UTF-8");
+    }
+
+    dropZone.addEventListener("click", function() { fileInput.click(); });
+    fileInput.addEventListener("change", function() { readFile(fileInput.files[0]); });
+
+    dropZone.addEventListener("dragover", function(e) { e.preventDefault(); dropZone.style.borderColor = "#9333ea"; dropZone.style.background = "rgba(147,51,234,0.06)"; });
+    dropZone.addEventListener("dragleave", function(e) { e.preventDefault(); dropZone.style.borderColor = "var(--border)"; dropZone.style.background = "var(--bg)"; });
+    dropZone.addEventListener("drop", function(e) { e.preventDefault(); dropZone.style.borderColor = "var(--border)"; dropZone.style.background = "var(--bg)"; readFile(e.dataTransfer.files[0]); });
+})();
+
 document.getElementById("genesis-submit-btn")?.addEventListener("click", async function() {
     var text = document.getElementById("import-textarea").value.trim();
     if (!text) { alert("请输入需要重构或提炼的文本设定！"); return; }
@@ -1605,13 +1652,39 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 card.classList.add("tp-executed");
                                 card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
                             }
-                            nodeToolCalls += "\n[系统记录：调用了工具 " + msg.tool_name + "，参数: " + JSON.stringify(msg.arguments) + "]";
+                            nodeToolCalls += "\n[✅ 系统已记录：成功调用 '" + msg.tool_name + "' 归档数据: " + toolTitle + "]";
                         }
                     }
                     var routeKey = null;
-                    var rm = txt.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+                    // 🛡️ 输出格式强制校验
+                    var cleanTxt = txt;
+                    // 剥离 AI 可能输出的 markdown 代码块包裹
+                    var codeBlockMatch = cleanTxt.match(/```[\s\S]*?```/);
+                    if (codeBlockMatch) {
+                        cleanTxt = cleanTxt.replace(/```[\s\S]*?```/g, function(m) { return m.replace(/```\w*\n?/g, "").replace(/```/g, ""); });
+                        if (onLogCallback) onLogCallback("\n⚠️ 校验器剥离了 markdown 代码块包裹\n", "warning");
+                    }
+                    var rm = cleanTxt.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
                     if (rm) routeKey = rm[1].trim();
-                    var cleanOutput = txt.replace(/<\/?ROUTE>/g, "").trim();
+                    
+                    // 校验：有分支但没有 ROUTE 标签
+                    if ((!routeKey) && node.branches && node.branches.length > 0) {
+                        if (onLogCallback) onLogCallback("\n⚠️ 校验警告：节点有 " + node.branches.length + " 个分支但 AI 未输出 <ROUTE> 标签，将尝试模糊匹配...\n", "warning");
+                    }
+                    // 校验：有 ROUTE 标签但无法匹配任何分支
+                    if (routeKey && node.branches && node.branches.length > 0) {
+                        var matchedAny = false;
+                        for (var bi2 = 0; bi2 < node.branches.length; bi2++) {
+                            if (node.branches[bi2].condition && (routeKey === node.branches[bi2].condition || routeKey.includes(node.branches[bi2].condition))) {
+                                matchedAny = true; break;
+                            }
+                        }
+                        if (!matchedAny && onLogCallback) {
+                            onLogCallback("\n⚠️ 校验警告：ROUTE 标签值 '" + routeKey + "' 未匹配任何分支条件，将回退到默认顺序执行\n", "warning");
+                        }
+                    }
+                    
+                    var cleanOutput = cleanTxt.replace(/<\/?ROUTE>/g, "").trim();
                     node.output = cleanOutput;
 
                     fullChainContext += "\n\n--- 【节点输出】 ---\n" + cleanOutput;
@@ -2263,14 +2336,15 @@ function removeTargetBlock(nodeId, index) {
 function compileTarget(target) {
     if (typeof target === "string") return target;
     if (!Array.isArray(target) || !target.length) return "";
-    var compiled = "请严格按照以下【区块顺序】和规则组合最终的输出内容，绝对不要包含任何多余解释：\n\n";
+    var compiled = "【输出铁律 — 必须逐字遵守，违反将导致流程失败】\n\n请严格按照以下【区块顺序】输出，每个区块单独一行，绝对不要添加任何解释、标记或额外文字：\n\n";
     target.forEach(function(block, index) {
         var n = index + 1;
-        if (block.type === "placeholder") compiled += "[区块" + n + "]: 必须原样输出占位符字符串 " + (block.value||"") + " ，不要擅自解析或修改。\n";
-        if (block.type === "text") compiled += "[区块" + n + "]: 严格按照以下要求输出：" + (block.value||"") + "\n";
-        if (block.type === "bool") compiled += "[区块" + n + "]: 逻辑判断【" + (block.condition||"") + "】，若为真则严格输出：<ROUTE>" + (block.trueVal||"") + "</ROUTE>，否则严格输出：<ROUTE>" + (block.falseVal||"") + "</ROUTE>\n";
-        if (block.type === "enum") compiled += "[区块" + n + "]: 根据情景从选项【" + (block.options||"") + "】中选择一项。你必须将最终选择的结果包裹在 <ROUTE> 标签中，例如 <ROUTE>选项1</ROUTE>。\n";
+        if (block.type === "placeholder") compiled += "[区块" + n + " — 强制占位符输出]: 仅输出这一行占位符字符串：" + (block.value||"") + " ，不要添加任何前缀或后缀。\n";
+        if (block.type === "text") compiled += "[区块" + n + " — 强制文本输出]: 仅输出以下要求的文本内容：" + (block.value||"") + "\n";
+        if (block.type === "bool") compiled += "[区块" + n + " — 强制布尔路由]: 仅输出 <ROUTE>" + (block.trueVal||"") + "</ROUTE> 或 <ROUTE>" + (block.falseVal||"") + "</ROUTE> 中的一个。\n";
+        if (block.type === "enum") compiled += "[区块" + n + " — 强制选项路由]: 从以下选项中精确选择一个，仅输出 <ROUTE>选项值</ROUTE> 格式。可选值为: " + (block.options||"") + "\n";
     });
+    compiled += "\n⚠️ 再次强调：只输出上述区块的内容，禁止添加任何解释、前言、后缀或 markdown 代码块。";
     return compiled;
 }
 
@@ -2320,11 +2394,17 @@ async function runNode(card, node) {
                     + '</div>';
             }
             else if (msg.type === "done") {
+                // 🛡️ 输出格式强制校验
+                var cleanPreValidate = rawResult;
+                var codeBlockMatch = cleanPreValidate.match(/```[\s\S]*?```/);
+                if (codeBlockMatch) {
+                    cleanPreValidate = cleanPreValidate.replace(/```[\s\S]*?```/g, function(m) { return m.replace(/```\w*\n?/g, "").replace(/```/g, ""); });
+                }
                 // Extract ROUTE key and strip tags
                 let routeKey = null;
-                var rm = rawResult.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+                var rm = cleanPreValidate.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
                 if (rm) { routeKey = rm[1].trim(); }
-                var cleanResult = rawResult.replace(/<\/?ROUTE>/g, "").trim();
+                var cleanResult = cleanPreValidate.replace(/<\/?ROUTE>/g, "").trim();
                 node.output = cleanResult;
                 autoSave();
                 // Route matching & visual feedback

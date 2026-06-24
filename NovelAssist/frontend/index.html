@@ -135,7 +135,7 @@
 
     <div id="app-root">
         <nav class="nav-sidebar">
-            <div class="nav-novel-select"><select id="novel-select"></select><button id="novel-add-btn">+</button></div>
+            <div class="nav-novel-select"><select id="novel-select"></select><button id="novel-add-btn">+</button><button id="novel-del-btn" title="删除当前小说">🗑</button></div>
             <button class="nav-btn active" data-module="writing"><span class="nav-icon">&#9997;</span><span class="nav-label">正文创作</span></button>
             <button class="nav-btn" data-module="outline"><span class="nav-icon">&#128196;</span><span class="nav-label">设定大纲</span></button>
             <button class="nav-btn" data-module="characters"><span class="nav-icon">&#127917;</span><span class="nav-label">人物档案</span></button>
@@ -501,6 +501,13 @@
             <p style="font-size:.72rem; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">
                 请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。引擎将按顺序调用推理链（大纲流 → 地图流 → 人设流）进行高精度顺序提炼，并在每一步都将结果回填到对应模块中，帮助您快速搭建起完整的世界观框架和丰富的角色设定！
             </p>
+            
+            <!-- 📁 拖拽文件上传区 -->
+            <div id="import-drop-zone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center; margin-bottom: 12px; cursor: pointer; background: var(--bg); transition: border-color 0.2s, background 0.2s;">
+                <span style="font-size:1.5rem;">📂</span>
+                <p style="margin:4px 0 0; font-size:.75rem; color:var(--text-muted);">拖拽 .txt 或 .md 文件到此处，或点击选择文件</p>
+                <input type="file" id="import-file-input" accept=".txt,.md,.text" style="display:none;">
+            </div>
             
             <textarea id="import-textarea" placeholder="在这里贴入您的设定或正文章节...&#10;&#10;- 如果是设定：AI将为您搭建好全书的大纲框架并生成基础设定。&#10;- 如果是小说正文：AI将自动提炼正文里的门派总部、新人物卡、功法境界并回填！（其实没差）" style="width:100%; height:150px; padding:8px; border:1px solid var(--border); border-radius:4px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; box-sizing:border-box; background:var(--bg); margin-bottom: 12px;"></textarea>
             
