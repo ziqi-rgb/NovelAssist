@@ -2377,7 +2377,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 currentNodeId = node.next_node_id || null;
                             }
                         }
-                        saveHeadlessLog();
                         continue;
                     }
 
