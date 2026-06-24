@@ -3021,6 +3021,8 @@ function renderAllNodes() {
     const canvas = document.getElementById("chain-canvas");
     canvas.querySelectorAll(".node-card").forEach(n => n.remove());
     var nodes = currentChain.nodes || [];
+    var sysTitles = ["🗺️ 蓝图规划与逐层搭建流","👤 严谨人设与模板质检流","📖 全维世界观与大纲流水线"];
+    var isSys = sysTitles.indexOf((currentChain && currentChain.title) || "") >= 0;
     for (var idx = 0; idx < nodes.length; idx++) {
         var node = nodes[idx];
         try {
