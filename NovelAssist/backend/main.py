@@ -263,13 +263,23 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_update_template", "type": "write", "x": X2, "y": 950,
                 "premise": "将新增的属性分组和字段写入小说模板（合并模式——只追加，不覆盖原有）。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_create", "output": "",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_pick", "output": "",
                 "write_to": {"entity": "character_template", "field": "attributes", "action": "create"}
             },
             {
+                "id": "c_pick", "type": "pick_todo", "x": X1-50, "y": 1320,
+                "premise": "选取第一个未完成的角色待办",
+                "pick_filter": "",
+                "branches": [
+                    {"condition": "HAS_TODO", "next_node_id": "c_create"},
+                    {"condition": "NO_TODO", "next_node_id": "c_verify"}
+                ],
+                "next_node_id": "", "output": ""
+            },
+            {
                 "id": "c_create", "x": X1, "y": 1400,
-                "premise": "从待办清单中找出第一个未完成的角色，按模板生成完整属性。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n推理链待办：{chain_todos}\n\n请从待办中找出第一个未完成的角色，为其生成完整饱满的属性字典。\n\n⚠️ 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容：\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】所属势力\n- 【faction_role】职位\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
+                "premise": "为选取的待办项生成完整角色属性。",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成完整饱满的属性字典。\n\n⚠️ 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容：\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】所属势力\n- 【faction_role】职位\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
                 "format": "character", "target": [], "branches": [], "next_node_id": "c_write", "output": ""
             },
             {
@@ -284,7 +294,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "prompt": "", "format": "character", "target": [],
                 "branches": [
                     {"condition": "VALID", "next_node_id": "c_todos_update"},
-                    {"condition": "INVALID", "next_node_id": "c_create"}
+                    {"condition": "INVALID", "next_node_id": "c_pick"}
                 ],
                 "next_node_id": "", "output": ""
             },
@@ -299,7 +309,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "premise": "校验：所有角色是否已全部创建完成？",
                 "verify_filter": "",
                 "branches": [
-                    {"condition": "CONTINUE", "next_node_id": "c_create"},
+                    {"condition": "CONTINUE", "next_node_id": "c_pick"},
                     {"condition": "DONE", "next_node_id": ""}
                 ],
                 "next_node_id": "", "output": ""
@@ -758,6 +768,20 @@ def genesis_clear(novel_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"ok": True, "msg": f"已清空小说 {novel_id} 的大纲/地点/人物/势力数据及人物模板"}
+
+
+@app.post("/api/novels/{novel_id}/genesis/logs")
+async def genesis_save_logs(novel_id: int, body: dict, db: Session = Depends(get_db)):
+    """保存建纲完整日志到文件"""
+    logs = body.get("logs", "")
+    chain_title = body.get("chain_title", "unknown")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    safe_title = chain_title.replace(" ", "_").replace("/", "_")[:40]
+    log_path = log_dir / f"genesis_{novel_id}_{safe_title}_{timestamp}.log"
+    log_path.write_text(logs, encoding="utf-8")
+    return {"ok": True, "path": str(log_path)}
 
 
 @app.get("/api/novels/{novel_id}/time")

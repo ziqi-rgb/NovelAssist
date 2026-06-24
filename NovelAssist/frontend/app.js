@@ -1738,7 +1738,20 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
 
         if (startPhase <= 1) {
-            logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
+            var genesisFullLog = "";
+
+        async function saveGenesisLog(chainLog, chainTitle) {
+            if (!chainLog) return;
+            try {
+                await fetch("/api/novels/" + currentNovelId + "/genesis/logs", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({logs: chainLog, chain_title: chainTitle})
+                });
+            } catch(e) { /* 日志保存失败不阻塞建纲流程 */ }
+        }
+
+        logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
         }
         var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
         var chains = await chainsRes.json();
@@ -1768,7 +1781,10 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData1);
+            var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) {
+                genesisFullLog += "[" + typ + "] " + txt + "\n";
+                if (typ !== "chunk") logToConsole(txt, typ);
+            }, incCtx, resumeData1);
             if (genesisPaused) {
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
@@ -1778,6 +1794,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 return;
             }
             if (!res1.success) throw new Error("阶段 1 大纲推演失败: " + (res1.reason || "未知错误"));
+            await saveGenesisLog(genesisFullLog, chainOutline.title);
+            genesisFullLog = "";
             state.completedPhases[0] = true;
             state.phase = 2;
             state.currentChainId = null;
@@ -1807,7 +1825,10 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData2);
+            var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) {
+                genesisFullLog += "[" + typ + "] " + txt + "\n";
+                if (typ !== "chunk") logToConsole(txt, typ);
+            }, incCtx, resumeData2);
             if (genesisPaused) {
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
@@ -1817,6 +1838,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 return;
             }
             if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
+            await saveGenesisLog(genesisFullLog, chainMap.title);
+            genesisFullLog = "";
             state.completedPhases[1] = true;
             state.phase = 3;
             state.currentChainId = null;
@@ -1846,7 +1869,10 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData3);
+            var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) {
+                genesisFullLog += "[" + typ + "] " + txt + "\n";
+                if (typ !== "chunk") logToConsole(txt, typ);
+            }, incCtx, resumeData3);
             if (genesisPaused) {
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
@@ -1856,6 +1882,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 return;
             }
             if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
+            await saveGenesisLog(genesisFullLog, chainChar.title);
+            genesisFullLog = "";
             state.completedPhases[2] = true;
             document.getElementById("step-char").className = "step-completed";
         } else if (state.completedPhases[2]) {
@@ -1981,6 +2009,7 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     }
 
     // 并行启动所有链
+    var parallelFullLogs = {};
     var promises = chainDefs.map(function(d) {
         var cs = state.chainStates[d.key];
         if (cs.completed) {
@@ -1991,7 +2020,11 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
         var resumeData = getResumeData(d.key);
         return runHeadlessChain(
             chainMap[d.key].id, text, null,
-            function(txt, typ) { loggers[d.key](txt, typ); },
+            function(txt, typ) {
+                if (!parallelFullLogs[d.key]) parallelFullLogs[d.key] = "";
+                parallelFullLogs[d.key] += "[" + typ + "] " + txt + "\n";
+                if (typ !== "chunk") loggers[d.key](txt, typ);
+            },
             incCtx,
             resumeData,
             d.key  // chainKey for state persistence
@@ -2035,6 +2068,14 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
 
     // 检查是否全部成功
     var allOk = outcomes.every(function(o) { return o.success || o.skipped; });
+
+    // 保存各链日志到文件
+    for (var d of chainDefs) {
+        if (parallelFullLogs[d.key]) {
+            try { await saveGenesisLog(parallelFullLogs[d.key], chainMap[d.key].title); } catch(e) {}
+        }
+    }
+
     if (allOk) {
         clearGenesisState();
         logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 三链并行建纲全部圆满成功！\n", "tool");
