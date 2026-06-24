@@ -2506,8 +2506,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
             while (currentNodeId) {
                 loopCount++;
-                if (loopCount > 200) {
-                    if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过200个循环)。\n", "warning");
+                if (loopCount > 300) {
+                    if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过300个循环)。\n", "warning");
                     break;
                 }
                 // 🛑 暂停检查：优雅停止，保存进度
@@ -2617,7 +2617,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
-                    // 🔍 校验节点：程序验证（含熔断：最多 3 次修正循环）
+                    // 🔍 校验节点：程序验证（含熔断：最多 5 次修正循环/连续空回 5 次）
                     if (node.type === "validate") {
                         var vFmt = node.format || "";
                         var vResult = { valid: true };
@@ -2671,13 +2671,13 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             fullChainContext += "\n\n--- 【校验失败 (#" + rc._validate_retries + ")】 ---\n" + errMsg;
                             node.output = "⛔ 校验失败: " + errMsg;
                             if (onLogCallback) onLogCallback("\n🔍 [校验失败 #" + rc._validate_retries + "] " + errMsg + "\n", "warning");
-                            // 空输出且非首次：直接熔断，避免无意义循环
-                            if (rc._validate_retries >= 2 && (!txt || !txt.trim())) {
-                                rc._validate_retries = 3;
+                            // 连续空回 5 次直接熔断
+                            if (rc._validate_retries >= 5 && (!txt || !txt.trim())) {
+                                rc._validate_retries = 5;
                             }
                             var retryTarget = (node.branches || []).find(function(b) { return b.condition === "INVALID"; });
-                            // 熔断：超过 3 次强制放行
-                            if (rc._validate_retries >= 3) {
+                            // 熔断：同一个循环修正 5 次强制放行
+                            if (rc._validate_retries >= 5) {
                                 fullChainContext += "\n[系统指令] 已修正 " + rc._validate_retries + " 次仍未通过，熔断放行，保留当前输出。";
                                 if (onLogCallback) onLogCallback("\n⚠️ [校验熔断] 修正 " + rc._validate_retries + " 次未通过，强制放行\n", "warning");
                                 rc._validate_retries = 0;
