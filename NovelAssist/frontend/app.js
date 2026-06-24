@@ -2608,14 +2608,21 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         var vResult = { valid: true };
                         var vItems = [];
                         if (vFmt) {
-                            // 断点恢复时快照可能丢失，回退到默认模板
+                            // 断点恢复时快照可能丢失，重新从数据库获取
                             if (!rc._template_snapshot || !rc._template_snapshot.length) {
-                                rc._template_snapshot = [
-                                    {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
-                                    {"group":"外貌特征","fields":["身高","发色","瞳色"]},
-                                    {"group":"背景故事","fields":["出身","经历"]},
-                                    {"group":"人物关系","fields":[]}
-                                ];
+                                try {
+                                    var snapNovel = await (await fetch("/api/novels/" + currentNovelId)).json();
+                                    rc._template_snapshot = snapNovel.character_template || [];
+                                } catch(e) { rc._template_snapshot = []; }
+                                // 数据库也无模板时回退默认
+                                if (!rc._template_snapshot || !rc._template_snapshot.length) {
+                                    rc._template_snapshot = [
+                                        {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
+                                        {"group":"外貌特征","fields":["身高","发色","瞳色"]},
+                                        {"group":"背景故事","fields":["出身","经历"]},
+                                        {"group":"人物关系","fields":[]}
+                                    ];
+                                }
                             }
                             // 直接解析 LLM 原始输出，不经过 parser
                             var vCleaned = (txt || "").replace(/<ROUTE>[\s\S]*?<\/ROUTE>/g, "").trim();
