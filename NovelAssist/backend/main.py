@@ -680,10 +680,19 @@ def delete_novel(novel_id: int, db: Session = Depends(get_db)):
     db.execute(text("DELETE FROM outlines WHERE novel_id=:nid"), {"nid": novel_id})
     db.execute(text("DELETE FROM locations WHERE novel_id=:nid"), {"nid": novel_id})
     db.execute(text("DELETE FROM factions WHERE novel_id=:nid"), {"nid": novel_id})
-    db.execute(text("DELETE FROM reasoning_chains WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM reasoning_chains WHERE novel_id=:nid AND title NOT IN ('🗺️ 蓝图规划与逐层搭建流', '👤 严谨人设与模板质检流', '📖 全维世界观与大纲流水线')"), {"nid": novel_id})
     db.execute(text("DELETE FROM novels WHERE id=:nid"), {"nid": novel_id})
 
     db.commit()
+
+    # 将幸存系统链重新绑定到剩余的第一本小说
+    remaining = db.scalars(select(Novel).order_by(Novel.id).limit(1)).first()
+    if remaining:
+        db.execute(text(
+            "UPDATE reasoning_chains SET novel_id=:new_nid WHERE novel_id=:old_nid"
+        ), {"new_nid": remaining.id, "old_nid": novel_id})
+        db.commit()
+
     return {"ok": True, "deleted_novel_id": novel_id}
 
 
@@ -1512,6 +1521,23 @@ def delete_snapshot(snap_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/reasoning_chains", response_model=list[ReasoningChainOut])
 def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    # 兜底补种：若当前小说缺少系统链则自动创建
+    for name in SYSTEM_CHAIN_NAMES:
+        exists = db.scalars(
+            select(ReasoningChain).where(
+                ReasoningChain.novel_id == novel_id,
+                ReasoningChain.title == name,
+            )
+        ).first()
+        if not exists:
+            nodes = _get_system_chain_nodes(name)
+            db.add(ReasoningChain(
+                novel_id=novel_id,
+                title=name,
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
+                nodes=nodes,
+            ))
+    db.commit()
     return db.scalars(select(ReasoningChain).where(ReasoningChain.novel_id == novel_id).order_by(ReasoningChain.id)).all()
 
 @app.get("/api/reasoning_chains/{chain_id}", response_model=ReasoningChainOut)
