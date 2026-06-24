@@ -772,15 +772,22 @@ def genesis_clear(novel_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/novels/{novel_id}/genesis/logs")
 async def genesis_save_logs(novel_id: int, body: dict, db: Session = Depends(get_db)):
-    """保存建纲完整日志到文件"""
+    """实时写入建纲日志到文件（支持追加模式）"""
     logs = body.get("logs", "")
     chain_title = body.get("chain_title", "unknown")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    append = body.get("append", False)
+    existing_path = body.get("log_path", "")
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    safe_title = chain_title.replace(" ", "_").replace("/", "_")[:40]
-    log_path = log_dir / f"genesis_{novel_id}_{safe_title}_{timestamp}.log"
-    log_path.write_text(logs, encoding="utf-8")
+    if append and existing_path:
+        log_path = Path(existing_path)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(logs)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_title = chain_title.replace(" ", "_").replace("/", "_")[:40]
+        log_path = log_dir / f"genesis_{novel_id}_{safe_title}_{timestamp}.log"
+        log_path.write_text(logs, encoding="utf-8")
     return {"ok": True, "path": str(log_path)}
 
 

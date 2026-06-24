@@ -1739,16 +1739,40 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
 
         if (startPhase <= 1) {
             var genesisFullLog = "";
+        var genesisLogPath = "";
+        var genesisLogTimer = null;
+        var genesisLogChainTitle = "";
 
-        async function saveGenesisLog(chainLog, chainTitle) {
-            if (!chainLog) return;
+        async function flushGenesisLog(isFinal) {
+            if (!genesisFullLog) return;
+            var chunk = genesisFullLog;
+            genesisFullLog = "";
             try {
-                await fetch("/api/novels/" + currentNovelId + "/genesis/logs", {
+                var body = {logs: chunk, chain_title: genesisLogChainTitle, append: !!genesisLogPath, log_path: genesisLogPath};
+                var resp = await fetch("/api/novels/" + currentNovelId + "/genesis/logs", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({logs: chainLog, chain_title: chainTitle})
+                    body: JSON.stringify(body)
                 });
-            } catch(e) { /* 日志保存失败不阻塞建纲流程 */ }
+                var data = await resp.json();
+                if (data.path) genesisLogPath = data.path;
+            } catch(e) { /* 日志保存失败不阻塞 */ }
+            if (isFinal) {
+                genesisLogPath = "";
+                if (genesisLogTimer) { clearInterval(genesisLogTimer); genesisLogTimer = null; }
+            }
+        }
+
+        function startLogFlusher(chainTitle) {
+            genesisLogChainTitle = chainTitle;
+            genesisLogPath = "";
+            genesisFullLog = "";
+            if (genesisLogTimer) clearInterval(genesisLogTimer);
+            genesisLogTimer = setInterval(function() { flushGenesisLog(false); }, 5000);
+        }
+
+        function stopLogFlusher() {
+            if (genesisLogTimer) { clearInterval(genesisLogTimer); genesisLogTimer = null; }
         }
 
         logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
@@ -1774,6 +1798,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 state.executedNodeCount = 0;
                 saveGenesisState(state);
             }
+            startLogFlusher(chainMap.title);
             logToConsole("[System] \n===== 🚀 阶段 1: 空间地理蓝图搭建启动 =====\n", "step");
             document.getElementById("step-map").className = "step-active";
             var resumeData1 = (state.currentChainId === chainMap.id && state.currentNodeId) ? {
@@ -1794,8 +1819,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 return;
             }
             if (!res1.success) throw new Error("阶段 1 蓝图搭建失败: " + (res1.reason || "未知错误"));
-            await saveGenesisLog(genesisFullLog, chainMap.title);
-            genesisFullLog = "";
+            await flushGenesisLog(true);
             state.completedPhases[0] = true;
             state.phase = 2;
             state.currentChainId = null;
@@ -1825,6 +1849,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 state.fullChainContext = "";
                 saveGenesisState(state);
             }
+            startLogFlusher(chainOutline.title);
             logToConsole("[System] \n===== 📖 阶段 2: 全维世界大纲推演启动 =====\n", "step");
             document.getElementById("step-outline").className = "step-active";
             var resumeData2 = (state.currentChainId === chainOutline.id && state.currentNodeId) ? {
@@ -1845,8 +1870,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 return;
             }
             if (!res2.success) throw new Error("阶段 2 全维世界大纲推演失败: " + (res2.reason || "未知错误"));
-            await saveGenesisLog(genesisFullLog, chainOutline.title);
-            genesisFullLog = "";
+            await flushGenesisLog(true);
             state.completedPhases[1] = true;
             state.phase = 3;
             state.currentChainId = null;
@@ -1869,6 +1893,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 state.fullChainContext = "";
                 saveGenesisState(state);
             }
+            startLogFlusher(chainChar.title);
             logToConsole("[System] \n===== 👤 阶段 3: 群像人设质检与繁衍启动 =====\n", "step");
             document.getElementById("step-char").className = "step-active";
             var resumeData3 = (state.currentChainId === chainChar.id && state.currentNodeId) ? {
@@ -1889,8 +1914,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 return;
             }
             if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
-            await saveGenesisLog(genesisFullLog, chainChar.title);
-            genesisFullLog = "";
+            await flushGenesisLog(true);
             state.completedPhases[2] = true;
             document.getElementById("step-char").className = "step-completed";
         } else if (state.completedPhases[2]) {
@@ -1898,6 +1922,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         }
 
         // 全部完成
+        stopLogFlusher();
         clearGenesisState();
         logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 世界大纲推演、地理蓝图落地、群像角色繁衍全部圆满成功！\n", "tool");
         statusBadge.textContent = "创世圆满成功";
@@ -2079,7 +2104,13 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     // 保存各链日志到文件
     for (var d of chainDefs) {
         if (parallelFullLogs[d.key]) {
-            try { await saveGenesisLog(parallelFullLogs[d.key], chainMap[d.key].title); } catch(e) {}
+            try {
+                await fetch("/api/novels/" + currentNovelId + "/genesis/logs", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({logs: parallelFullLogs[d.key], chain_title: chainMap[d.key].title})
+                });
+            } catch(e) {}
         }
     }
 
@@ -2102,6 +2133,8 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
 function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop) {
     state.status = "interrupted";
     saveGenesisState(state);
+    stopLogFlusher();
+    flushGenesisLog(true);  // 保存剩余日志
     statusBadge.textContent = "已暂停 · 可恢复";
     statusBadge.style.color = "#f59e0b";
     var consoleEl = document.getElementById("genesis-console");
@@ -2130,6 +2163,8 @@ function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, 
 }
 
 function handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop) {
+    stopLogFlusher();
+    flushGenesisLog(true);  // 保存中断前的日志
     clearGenesisState();
     statusBadge.textContent = "已中断 · 不可恢复";
     statusBadge.style.color = "#ef4444";
