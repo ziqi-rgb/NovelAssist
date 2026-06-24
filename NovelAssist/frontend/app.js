@@ -2353,7 +2353,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         var vResult = { valid: true };
                         if (vParser) {
                             var vItems = vParser(lastReasoning || "");
-                            vResult = validateStructuredOutput(vFmt, vItems, currentChain ? currentChain.nodes : null);
+                            vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null);
                         }
                         if (vResult.valid) {
                             fullChainContext += "\n\n--- 【校验通过】 ---\n" + lastReasoning;
@@ -2361,7 +2361,9 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             // 转跳到写入节点
                             var writeTarget = (node.branches || []).find(function(b) { return b.condition === "VALID"; });
                             if (writeTarget && writeTarget.next_node_id) {
-                                currentIndex = (currentChain.nodes || []).findIndex(function(n) { return n.id === writeTarget.next_node_id; }) - 1;
+                                currentNodeId = writeTarget.next_node_id;
+                            } else {
+                                currentNodeId = node.next_node_id || null;
                             }
                         } else {
                             fullChainContext += "\n\n--- 【校验失败】 ---\n" + vResult.errors.join("; ");
@@ -2370,7 +2372,9 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             var retryTarget = (node.branches || []).find(function(b) { return b.condition === "INVALID"; });
                             if (retryTarget && retryTarget.next_node_id) {
                                 fullChainContext += "\n[系统指令] 上一个节点的输出未通过数据校验，请根据以下错误修正后重新输出：\n" + vResult.errors.map(function(e) { return "- " + e; }).join("\n");
-                                currentIndex = (currentChain.nodes || []).findIndex(function(n) { return n.id === retryTarget.next_node_id; }) - 1;
+                                currentNodeId = retryTarget.next_node_id;
+                            } else {
+                                currentNodeId = node.next_node_id || null;
                             }
                         }
                         saveHeadlessLog();
@@ -2391,7 +2395,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             if (wt.entity === "chain_todos") {
                                 wToolName = "manage_chain_todos";
                                 if (wt.action === "update" && wt.field === "status") {
-                                    var todos = (currentChain && currentChain.todos) ? currentChain.todos : [];
+                                    var todos = (rc && rc.todos) ? rc.todos : [];
                                     var pending = null;
                                     for (var ti = 0; ti < todos.length; ti++) {
                                         if (todos[ti].status === "pending" || todos[ti].status === "in_progress") {
