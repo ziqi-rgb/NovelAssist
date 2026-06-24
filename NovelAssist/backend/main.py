@@ -206,13 +206,13 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             ("nation", "国家", "国家", "国家", "国家"),
             ("city", "城池", "城池→街区", "城池", "街区"),
         ]
-        col_x = [30, 380, 730, 1080, 1430, 1780]
+        col_x = [30, 420, 810, 1200, 1590, 1980]
         nodes: list[dict] = []
         # 📋 步骤1-2：全局规划 + 写入待办
         nodes.append({"id":"m_plan","x":col_x[0],"y":-400,"premise":"明确需要建立的所有地点（含所有层级），结构化输出地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，规划所有需要创建的地点。覆盖四个层级：大千世界→星球→大陆→国家→城池→街区。\n注意：可以有下级没有上级，但不能有上级没有下级！每个地点必须指明 parent_name 和 scale_level。\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。","format":"location","target":[],"branches":[],"next_node_id":"m_todos","output":""})
         nodes.append({"id":"m_todos","type":"write","x":col_x[2],"y":-400,"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (s_id, s_label, s_scales, s_top, s_bottom) in enumerate(stages):
-            base_y = i * 500
+            base_y = i * 600
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
             next_router = f"m_{next_s_id}_router" if next_s_id != "end" else ""
             nodes.append({"id":f"m_{s_id}_create","x":col_x[0],"y":base_y,"premise":f"从待办清单中找出【{s_label}】层级第一个未完成的地点，生成完整属性。","prompt":f"【{s_label} 地点创建】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n推理链待办: {{chain_todos}}\n已有地点: {{locations_full_detail}}\n\n请从待办中找出【{s_label}】层级第一个未完成的地点，为其生成完整的属性字典（name、scale_level、parent_name、grid_x/grid_y、description）。如果待办中没有该层级的未完成项，输出 <ROUTE>ALL_DONE</ROUTE> 而不是创建。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_validate","output":""})
@@ -238,19 +238,19 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "write_to": {"entity": "chain_todos", "field": "content", "action": "create"}
             },
             {
-                "id": "c_ask_template", "type": "ask", "x": 400, "y": 400,
+                "id": "c_ask_template", "type": "ask", "x": 400, "y": 460,
                 "premise": "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段（一次性，不循环）。",
                 "prompt": "【模板校准提问】\n当前小说的人物属性模板为：\n{character_template}\n\n请生成一个问题，询问用户：\n1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？\n2. 是否有现有分组需要增加或删减字段？\n\n用户回复后，将这些修改要求作为后续创建角色时的额外指引。",
                 "target": [], "branches": [], "next_node_id": "c_create", "output": ""
             },
             {
-                "id": "c_create", "x": 400, "y": 800,
+                "id": "c_create", "x": 400, "y": 860,
                 "premise": "从待办清单中找出第一个未完成的角色，按模板生成完整属性。",
                 "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n推理链待办：{chain_todos}\n\n请从待办中找出第一个未完成的角色，为其生成完整饱满的属性字典，严格对齐模板的每个分组和每个字段。势力不存在时自动创建（写入 faction_name）。",
                 "format": "character", "target": [], "branches": [], "next_node_id": "c_validate", "output": ""
             },
             {
-                "id": "c_validate", "type": "validate", "x": 730, "y": 800,
+                "id": "c_validate", "type": "validate", "x": 850, "y": 860,
                 "premise": "校验生成的角角色数据——检查模板字段是否全部填满。",
                 "prompt": "", "format": "character", "target": [],
                 "branches": [
@@ -260,19 +260,19 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_write", "type": "write", "x": 850, "y": 800,
+                "id": "c_write", "type": "write", "x": 400, "y": 1260,
                 "premise": "将生成的完整角色属性写入数据库（势力自动关联）。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_todos_update", "output": "",
                 "write_to": {"entity": "character", "field": "attributes", "action": "create"}
             },
             {
-                "id": "c_todos_update", "type": "write", "x": 400, "y": 1200,
+                "id": "c_todos_update", "type": "write", "x": 850, "y": 1260,
                 "premise": "将待办中对应角色标记为已完成。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_verify", "output": "",
                 "write_to": {"entity": "chain_todos", "field": "status", "action": "update"}
             },
             {
-                "id": "c_verify", "x": 400, "y": 1600,
+                "id": "c_verify", "x": 400, "y": 1660,
                 "premise": "校验：所有角色是否已全部创建完成？",
                 "prompt": "【角色创建校验】\n推理链待办：{chain_todos}\n已有角色：{characters_full_detail}\n\n请检查待办中的所有角色是否已全部标记为完成？\n- 还有未完成的 → <ROUTE>CONTINUE</ROUTE>\n- 全部完成 → <ROUTE>DONE</ROUTE>",
                 "format": "", "target": [],
@@ -299,13 +299,13 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             "人物设定": "列出非核心主角的简略人设概述，不展开详细属性。",
             "能力体系设定": "系统化拆解修行体系、超凡境界、等级晋升要求。",
         }
-        col_x = [30, 380, 730, 1080, 1430, 1780]
+        col_x = [30, 420, 810, 1200, 1590, 1980]
         nodes: list[dict] = []
         # 📋 步骤1-2：全局规划 + 写入待办
         nodes.append({"id":"o_plan","x":col_x[0],"y":-400,"premise":"规划所有模块的大纲条目，结构化输出。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，对所有模块进行大纲条目规划。模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：必须 100% 参照已有地理和角色数据：{locations_full_detail} {characters_list}。","format":"outline","target":[],"branches":[],"next_node_id":"o_todos","output":""})
         nodes.append({"id":"o_todos","type":"write","x":col_x[2],"y":-400,"premise":"将所有大纲条目写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (m_id, m_name, cat, use_format) in enumerate(modules):
-            base_y = i * 500
+            base_y = i * 600
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
             next_router = f"o_{next_m_id}_router" if next_m_id != "end" else ""
             fmt = "outline" if use_format else ""
