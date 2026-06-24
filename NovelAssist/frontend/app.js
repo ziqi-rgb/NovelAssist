@@ -1613,6 +1613,17 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
                 var nodeToolCalls = "";
                 try {
+                    // ❓ 提问节点在无人值守模式下：记录提问内容但不暂停
+                    if (node.type === "ask") {
+                        if (onLogCallback) onLogCallback("\n❓ 提问节点（无人值守模式）: " + (node.premise || "(无提问内容)") + "\n", "warning");
+                        node.output = "【自动跳过提问】\n" + (node.premise || "");
+                        // 尝试寻找默认分支或顺序路由
+                        var askNextId = null;
+                        if (node.next_node_id) askNextId = node.next_node_id;
+                        currentNodeId = askNextId;
+                        continue;
+                    }
+
                     var targetT = compileTarget(node.target);
                     var res = await fetch("/api/reasoning/execute", {
                         method: "POST", headers: { "Content-Type": "application/json" },
@@ -2023,7 +2034,7 @@ function renderAllNodes() {
     (currentChain.nodes || []).forEach((node, idx) => {
         if (!node.id) node.id = "n" + (idx + 1);
         if (!node.branches) node.branches = [];
-        const card = document.createElement("div"); card.className = "node-card"; card.dataset.nid = node.id;
+        const card = document.createElement("div"); card.className = "node-card" + (node.type === "ask" ? " node-type-ask" : ""); card.dataset.nid = node.id;
         card.style.left = (node.x || 50 + idx * 60) + "px";
         card.style.top = (node.y || 50 + idx * 80) + "px";
         const bcount = (node.branches || []).length;
@@ -2036,7 +2047,7 @@ function renderAllNodes() {
             }
             outPorts += `<div class="port port-out port-add" data-nid="${node.id}" data-port="${bcount}" style="top:${20+bcount*16}px;background:#888" title="新增连接">+</div>`;
         }
-        card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><button class="node-del">&#128465;</button></div>
+        card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);"><option value="normal" ${(node.type||"normal")==="normal"?"selected":""}>🔵 普通</option><option value="ask" ${(node.type||"")==="ask"?"selected":""}>❓ 提问</option></select><button class="node-del">&#128465;</button></span></div>
             <div class="node-body">
                 <div class="node-section"><label>传入内容</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
                 <div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>
@@ -2044,7 +2055,7 @@ function renderAllNodes() {
                 <div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>
                 <div class="node-section"><label>分支路由</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>
                 <div class="node-section"><label>顺序路由（默认下一节点）</label><select class="next-node-sel"><option value="">-- 无 --</option></select></div>
-                <button class="node-run-btn">&#9654; 运行本节点</button>
+                <button class="node-run-btn">${node.type === "ask" ? "❓ 提问" : "&#9654; 运行本节点"}</button>
                 <div class="node-output" style="display:none;margin-top:6px;padding:8px;border-top:1px solid var(--border);font-size:.78rem;line-height:1.6;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;">${e(node.output||"")}</div>
             </div>
             <div class="port port-in" data-nid="${node.id}" title="接收连接"><span>&#9664;</span></div>
@@ -2059,8 +2070,10 @@ function renderAllNodes() {
 
 function bindNodeEvents(card, node, idx) {
     const hdr = card.querySelector(".node-hdr");
-    hdr.addEventListener("mousedown", e => { if (e.target.closest("button")) return; startDrag(e, card, node, idx); });
+    hdr.addEventListener("mousedown", e => { if (e.target.closest("button") || e.target.closest("select")) return; startDrag(e, card, node, idx); });
     card.querySelector(".node-del").addEventListener("click", () => { currentChain.nodes.splice(idx, 1); renderAllNodes(); renderLines(); autoSave(); });
+    var typeSel = card.querySelector(".node-type-sel");
+    if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value === "ask" ? "ask" : "normal"; renderAllNodes(); renderLines(); autoSave(); }); }
     card.querySelector(".premise-ta").addEventListener("input", e => { node.premise = e.target.value; autoSave(); });
     card.querySelector(".prompt-ta").addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
     card.querySelector(".branch-add-btn").addEventListener("click", () => { node.branches.push({ condition: "", next_node_id: "" }); renderBranches(card, node); autoSave(); });
@@ -2476,19 +2489,49 @@ async function runNode(card, node) {
     const s = getSettings();
     if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
     const outDiv = card.querySelector(".node-output");
-    outDiv.style.display = "block"; outDiv.textContent = "AI 思考中...\n";
-    const btn = card.querySelector(".node-run-btn"); btn.disabled = true; btn.textContent = "执行中...";
+    outDiv.style.display = "block";
+    const btn = card.querySelector(".node-run-btn"); btn.disabled = true;
 
     // find previous output from incoming connections
     let prevOutput = "";
     (currentChain.nodes || []).forEach(n => {
-        // sequential: next_node_id points to this node
         if (n.next_node_id === node.id && n.output) prevOutput += (prevOutput ? "\n" : "") + n.output;
-        // branch: branches point to this node
         (n.branches || []).forEach(br => {
             if (br.next_node_id === node.id && n.output) prevOutput += (prevOutput ? "\n" : "") + n.output;
         });
     });
+
+    if (node.type === "ask") {
+        // ❓ 提问节点：AI 生成问题 → 弹窗 → 用户回答
+        btn.textContent = "生成问题中...";
+        try {
+            var askPrompt = (node.premise || "请根据上下文") + "\n\n请基于以上内容生成一个精准的、需要向用户提问的问题。只输出问题本身，不要任何解释或前缀。";
+            var res = await fetch("/api/reasoning/execute", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ novel_id: currentNovelId, premise: askPrompt, prompt: node.prompt || "", target: "", previous_output: prevOutput, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, chain_id: currentChainId || null }),
+            });
+            var question = "";
+            for await (const msg of parseSSEStream(res)) {
+                if (msg.type === "chunk") { question += msg.content; outDiv.textContent = "生成问题中...\n" + question; }
+            }
+            question = question.replace(/<\/?ROUTE>/g, "").trim();
+            outDiv.textContent = "❓ " + question;
+            var answer = prompt("🤖 AI 提问:\n\n" + question + "\n\n请输入你的回答（将传递给后续节点）:");
+            if (answer !== null) {
+                node.output = "【用户对问题的回答】\n问题: " + question + "\n回答: " + answer;
+                outDiv.innerHTML = '<span>❓ <b>' + e(question) + '</b></span><br><span style="color:#22c55e;">✅ 用户已回答: ' + e(answer) + '</span>';
+            } else {
+                node.output = "【用户跳过了提问】\n问题: " + question;
+                outDiv.innerHTML = '<span>❓ <b>' + e(question) + '</b></span><br><span style="color:#f59e0b;">⚠️ 用户跳过</span>';
+            }
+            autoSave();
+        } catch(e) { outDiv.textContent += "\n[错误: " + e.message + "]"; }
+        finally { btn.disabled = false; btn.textContent = "❓ 提问"; }
+        return;
+    }
+
+    outDiv.textContent = "AI 思考中...\n";
+    btn.textContent = "执行中...";
 
     try {
         // Merge upstream output into premise BEFORE placeholder resolution
