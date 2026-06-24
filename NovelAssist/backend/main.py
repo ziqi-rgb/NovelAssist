@@ -1511,6 +1511,27 @@ def delete_snapshot(snap_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/reasoning_chains", response_model=list[ReasoningChainOut])
 def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    # 🔧 运行时版本迁移：检测并更新旧版链
+    for name in SYSTEM_CHAIN_NAMES:
+        chain = db.scalars(
+            select(ReasoningChain).where(
+                ReasoningChain.novel_id == novel_id,
+                ReasoningChain.title == name,
+            )
+        ).first()
+        if chain and isinstance(chain.nodes, list):
+            cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
+            ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
+            if ver < 2:
+                print(f"[Runtime Migration] 链「{name}」版本 {ver}→2")
+                chain.nodes = _get_system_chain_nodes(name)
+                if isinstance(chain.context_settings, dict):
+                    chain.context_settings["_version"] = 2
+                else:
+                    chain.context_settings = {"_version": 2}
+                flag_modified(chain, "nodes")
+                flag_modified(chain, "context_settings")
+                db.commit()
     # 兜底补种：若当前小说缺少系统链则自动创建
     for name in SYSTEM_CHAIN_NAMES:
         exists = db.scalars(
