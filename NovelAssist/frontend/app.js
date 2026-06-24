@@ -1903,25 +1903,24 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             throw new Error("系统缺失预设的 3 大创世推理方案，请点击顶部的 [恢复默认] 按钮初始化方案！");
         }
 
-        // 阶段 1
+        // 阶段 1：人设（最先执行）
         if (startPhase <= 1 && !state.completedPhases[0]) {
-            // 非恢复：从头开始
             if (startPhase === 1 && !initialState.fullChainContext) {
                 state.phase = 1;
-                state.currentChainId = chainMap.id;
+                state.currentChainId = chainChar.id;
                 state.currentNodeId = null;
                 state.executedNodeCount = 0;
                 saveGenesisState(state);
             }
-            startLogFlusher(chainMap.title);
-            logToConsole("[System] \n===== 🚀 阶段 1: 空间地理蓝图搭建启动 =====\n", "step");
-            document.getElementById("step-map").className = "step-active";
-            var resumeData1 = (state.currentChainId === chainMap.id && state.currentNodeId) ? {
+            startLogFlusher(chainChar.title);
+            logToConsole("[System] \n===== 👤 阶段 1: 群像人设质检与繁衍启动 =====\n", "step");
+            document.getElementById("step-char").className = "step-active";
+            var resumeData1 = (state.currentChainId === chainChar.id && state.currentNodeId) ? {
                 currentNodeId: state.currentNodeId,
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res1 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) {
+            var res1 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) {
                 genesisFullLog += "[" + typ + "] " + txt + "\n";
                 if (typ !== "chunk") logToConsole(txt, typ);
             }, incCtx, resumeData1);
@@ -1940,7 +1939,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
-            if (!res1.success) throw new Error("阶段 1 蓝图搭建失败: " + (res1.reason || "未知错误"));
+            if (!res1.success) throw new Error("阶段 1 人设质检失败: " + (res1.reason || "未知错误"));
             await flushGenesisLog(true);
             state.completedPhases[0] = true;
             state.phase = 2;
@@ -1948,41 +1947,41 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             state.currentNodeId = null;
             state.fullChainContext = "";
             state.executedNodeCount = 0;
-            document.getElementById("step-map").className = "step-completed";
+            document.getElementById("step-char").className = "step-completed";
             saveGenesisState(state);
         } else if (state.completedPhases[0]) {
-            document.getElementById("step-map").className = "step-completed";
+            document.getElementById("step-char").className = "step-completed";
         }
 
-        // 🌍 获取地图数据注入到阶段2人设上下文
-        var charCtx = incCtx ? Object.assign({}, incCtx) : {};
+        // 🌍 获取人设数据注入到阶段2地图上下文
+        var mapCtx = incCtx ? Object.assign({}, incCtx) : {};
         try {
-            var mapLocs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
-            charCtx.locations_full_detail = JSON.stringify(mapLocs);
-        } catch(e) { /* 获取失败不阻塞 */ }
+            var mapChars = await (await fetch("/api/characters?novel_id=" + currentNovelId)).json();
+            mapCtx.characters_full_detail = JSON.stringify(mapChars);
+        } catch(e) {}
 
-        // 阶段 2：人设（先于大纲，以便大纲使用角色数据）
+        // 阶段 2：地图
         if (startPhase <= 2 && !state.completedPhases[1]) {
-            if (!state.currentChainId || state.currentChainId !== chainChar.id) {
+            if (!state.currentChainId || state.currentChainId !== chainMap.id) {
                 state.phase = 2;
-                state.currentChainId = chainChar.id;
+                state.currentChainId = chainMap.id;
                 state.currentNodeId = null;
                 state.executedNodeCount = 0;
                 state.fullChainContext = "";
                 saveGenesisState(state);
             }
-            startLogFlusher(chainChar.title);
-            logToConsole("[System] \n===== 👤 阶段 2: 群像人设质检与繁衍启动 =====\n", "step");
-            document.getElementById("step-char").className = "step-active";
-            var resumeData2 = (state.currentChainId === chainChar.id && state.currentNodeId) ? {
+            startLogFlusher(chainMap.title);
+            logToConsole("[System] \n===== 🚀 阶段 2: 空间地理蓝图搭建启动 =====\n", "step");
+            document.getElementById("step-map").className = "step-active";
+            var resumeData2 = (state.currentChainId === chainMap.id && state.currentNodeId) ? {
                 currentNodeId: state.currentNodeId,
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res2 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) {
+            var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) {
                 genesisFullLog += "[" + typ + "] " + txt + "\n";
                 if (typ !== "chunk") logToConsole(txt, typ);
-            }, charCtx, resumeData2);
+            }, mapCtx, resumeData2);
             if (genesisPaused) {
                 var pausedState = loadGenesisState();
                 if (pausedState) {
@@ -1998,7 +1997,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
-            if (!res2.success) throw new Error("阶段 2 人设质检失败: " + (res2.reason || "未知错误"));
+            if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
             await flushGenesisLog(true);
             state.completedPhases[1] = true;
             state.phase = 3;
@@ -2006,10 +2005,10 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             state.currentNodeId = null;
             state.fullChainContext = "";
             state.executedNodeCount = 0;
-            document.getElementById("step-char").className = "step-completed";
+            document.getElementById("step-map").className = "step-completed";
             saveGenesisState(state);
         } else if (state.completedPhases[1]) {
-            document.getElementById("step-char").className = "step-completed";
+            document.getElementById("step-map").className = "step-completed";
         }
 
         // 阶段 3：大纲（先注入地图+人设数据）
