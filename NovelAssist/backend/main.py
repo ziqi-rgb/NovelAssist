@@ -288,29 +288,17 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_todos", "type": "write", "x": X2, "y": 60,
                 "premise": "将角色名单写入推理链待办清单。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_ask_template", "output": "",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_snapshot", "output": "",
                 "write_to": {"entity": "chain_todos", "field": "content", "action": "create"}
             },
             {
-                "id": "c_ask_template", "type": "ask", "x": X1, "y": 500,
-                "premise": "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段（一次性，不循环）。",
-                "prompt": "【模板校准提问】\n当前小说的人物属性模板为：\n{character_template}\n\n请生成一个问题，询问用户：\n1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？\n2. 是否有现有分组需要增加或删减字段？\n\n用户回复后，将这些修改要求作为后续创建角色时的额外指引。",
-                "target": [], "branches": [], "next_node_id": "c_gen_template", "output": ""
-            },
-            {
-                "id": "c_gen_template", "x": X1, "y": 950,
-                "premise": "根据用户回复，生成更新后的人物属性模板（合并原有分组+新增分组）。",
-                "prompt": "【模板更新】\n当前模板：{character_template}\n用户的修改要求：从上文 c_ask_template 节点的输出中获取。\n\n请输出合并后的完整模板 JSON 数组。每个分组格式：{\"group\":\"分组名\",\"fields\":[\"字段1\",\"字段2\"]}。保留所有原有分组，在原有基础上追加用户要求的新分组和字段。\n末尾输出 <ROUTE>DONE</ROUTE>。",
-                "format": "", "target": [], "branches": [], "next_node_id": "c_update_template", "output": ""
-            },
-            {
-                "id": "c_update_template", "type": "write", "x": X2, "y": 950,
-                "premise": "将新增的属性分组和字段写入小说模板（合并模式——只追加，不覆盖原有）。",
+                "id": "c_snapshot", "type": "program", "x": X2, "y": 250,
+                "premise": "冻结当前人物属性模板，后续校验均以此快照为基准。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_pick", "output": "",
-                "write_to": {"entity": "character_template", "field": "attributes", "action": "create"}
+                "program_action": "capture_template"
             },
             {
-                "id": "c_pick", "type": "pick_todo", "x": X1-50, "y": 1320,
+                "id": "c_pick", "type": "pick_todo", "x": X1-50, "y": 450,
                 "premise": "选取第一个未完成的角色待办",
                 "pick_filter": "",
                 "branches": [
@@ -320,25 +308,40 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_create", "x": X1, "y": 1400,
+                "id": "c_create", "x": X1, "y": 550,
                 "premise": "为选取的待办项生成完整角色属性。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】必须填写所属势力全名！参考已有角色和世界观中的势力名称。无势力归属的散人填「散修」，不要填「无」或留空\n- 【faction_role】在势力中的职位/身份\n- 【is_always_context】true/false\n- 【attributes】严格只包含模板中定义的分组和字段，不得新增任何分组名或字段名\n- 【description】一句话概述角色核心特质（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
-                "format": "character", "target": [], "branches": [], "next_node_id": "c_write", "output": ""
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 所有字段必须填写具体内容，禁止输出「未知」「不详」「待定」等占位词——信息不足时请根据已有设定合理推测\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】必须填写所属势力全名！参考已有角色和世界观中的势力名称。无势力归属的散人填「散修」，不要填「无」或留空\n- 【faction_role】在势力中的职位/身份\n- 【is_always_context】true/false\n- 【attributes】严格只包含模板中定义的分组和字段，不得新增任何分组名或字段名\n- 【description】一句话概述角色核心特质（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
+                "format": "character", "target": [], "branches": [], "next_node_id": "c_validate", "output": ""
             },
             {
-                "id": "c_write", "type": "write", "x": X2, "y": 1400,
+                "id": "c_validate", "type": "validate", "x": X1, "y": 750,
+                "premise": "校验角色属性是否与模板快照完全吻合（不多不少）。",
+                "prompt": "", "format": "character", "target": [], "branches": [
+                    {"condition": "VALID", "next_node_id": "c_write"},
+                    {"condition": "INVALID", "next_node_id": "c_fix"}
+                ],
+                "next_node_id": "", "output": ""
+            },
+            {
+                "id": "c_fix", "x": X1, "y": 950,
+                "premise": "根据校验反馈修正角色属性。",
+                "prompt": "【角色属性修正】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n上方的校验未通过，请根据错误信息修正角色属性，严格按模板填写。\n禁止输出「未知」「不详」「待定」——信息不足时合理推测。\n末尾输出 <ROUTE>DONE</ROUTE>。",
+                "format": "character", "target": [], "branches": [], "next_node_id": "c_validate", "output": ""
+            },
+            {
+                "id": "c_write", "type": "write", "x": X2, "y": 750,
                 "premise": "将生成的完整角色属性写入数据库（势力自动关联）。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_todos_update", "output": "",
                 "write_to": {"entity": "character", "field": "attributes", "action": "create"}
             },
             {
-                "id": "c_todos_update", "type": "write", "x": X2, "y": 1850,
+                "id": "c_todos_update", "type": "write", "x": X2, "y": 950,
                 "premise": "将待办中对应角色标记为已完成。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_verify", "output": "",
                 "write_to": {"entity": "chain_todos", "field": "status", "action": "update"}
             },
             {
-                "id": "c_verify", "type": "verify", "x": X1, "y": 2300,
+                "id": "c_verify", "type": "verify", "x": X1, "y": 1150,
                 "premise": "校验：所有角色是否已全部创建完成？",
                 "verify_filter": "",
                 "branches": [
@@ -1999,6 +2002,7 @@ class ReasoningExecuteRequest(BaseModel):
     write_to: dict | None = None  # {entity, field, sub_field, action}
     chain_id: int | None = None   # 推理链ID（解析 {chain_todos} 时使用）
     response_format: dict | None = None  # {'type': 'json_object'} 用于 DeepSeek 结构化输出
+    no_tools: bool = False  # 禁用工具调用（Genesis 建纲模式）
 
 
 async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str, system_prompt: str) -> str:
@@ -2189,7 +2193,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         )},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, response_format=req.response_format)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=(None if req.no_tools else AGENT_TOOLS), response_format=req.response_format)
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:

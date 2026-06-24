@@ -2527,6 +2527,23 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
                 var nodeToolCalls = "";
                 try {
+                    // ⚙️ 程序节点：执行预设动作（capture_template 等）
+                    if (node.type === "program") {
+                        var progAction = node.program_action || "";
+                        if (progAction === "capture_template") {
+                            try {
+                                var novelData = await (await fetch("/api/novels/" + currentNovelId)).json();
+                                rc._template_snapshot = novelData.character_template || [];
+                                if (onLogCallback) onLogCallback("\n📸 [模板快照] 已冻结 " + (rc._template_snapshot.length || 0) + " 个分组\n", "tool");
+                            } catch(e) {
+                                rc._template_snapshot = [];
+                            }
+                        }
+                        node.output = "✅ 程序执行完毕";
+                        currentNodeId = node.next_node_id || null;
+                        continue;
+                    }
+
                     // ❓ 交互节点：建纲模式下自动回应「否」，无人值守模式下跳过
                     if (node.type === "ask") {
                         if (isGenesisRunning) {
@@ -2573,7 +2590,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         var vResult = { valid: true };
                         if (vParser) {
                             var vItems = vParser(lastReasoning || "");
-                            vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null);
+                            vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null, rc._template_snapshot || null);
                         }
                         if (vResult.valid) {
                             fullChainContext += "\n\n--- 【校验通过】 ---\n" + lastReasoning;
@@ -2883,6 +2900,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
                             context_settings: contextSettings || rc.context_settings || {},
                             response_format: (/deepseek/i.test(s.model) && node.format) ? {type: "json_object"} : undefined,
+                            no_tools: true,
                         }),
                         signal: genesisAbortController ? genesisAbortController.signal : undefined,
                     });
@@ -3976,7 +3994,7 @@ function getFormatPrompt(node) {
 }
 
 /* ═══════════ 校验节点：程序验证结构化输出 ═══════════ */
-function validateStructuredOutput(format, items, chainNodes) {
+function validateStructuredOutput(format, items, chainNodes, templateSnapshot) {
     // 返回 { valid: true } 或 { valid: false, errors: [...] }
     if (!items || !items.length) return { valid: false, errors: ["上游无结构化数据可校验"] };
     var item = items[0];
@@ -3991,27 +4009,47 @@ function validateStructuredOutput(format, items, chainNodes) {
         if (!item.description || item.description.trim().length < 3) errors.push("description 过短或缺失");
     } else if (format === "character") {
         if (!item.name || item.name.trim() === "" || item.name === "未知") errors.push("name 为空或无效");
+        // 优先使用快照模板，无快照则回退到 charTemplate
+        var tmpl = (templateSnapshot && templateSnapshot.length) ? templateSnapshot : charTemplate;
         if (!item.attributes || Object.keys(item.attributes).length === 0) {
             errors.push("attributes 为空，未按模板填写");
-        } else {
-            // 获取当前小说的角色模板
-            var tmpl = charTemplate;
-            if (tmpl && Array.isArray(tmpl)) {
-                tmpl.forEach(function(g) {
-                    var gname = g.group;
-                    var fields = g.fields || [];
-                    var groupData = item.attributes[gname];
-                    if (!groupData || Object.keys(groupData).length === 0) {
-                        errors.push("缺少模板分组: " + gname);
-                    } else {
-                        fields.forEach(function(f) {
-                            if (!groupData[f] || String(groupData[f]).trim() === "") {
-                                errors.push("分组「" + gname + "」缺少字段: " + f);
+        } else if (tmpl && Array.isArray(tmpl)) {
+            // 建立模板索引：分组名 → 字段集合
+            var tmplGroups = {};
+            tmpl.forEach(function(g) {
+                tmplGroups[g.group] = new Set(g.fields || []);
+            });
+            // 检查缺少的分组和字段
+            tmpl.forEach(function(g) {
+                var gname = g.group;
+                var fields = g.fields || [];
+                var groupData = item.attributes[gname];
+                if (!groupData || Object.keys(groupData).length === 0) {
+                    errors.push("缺少模板分组: " + gname);
+                } else {
+                    fields.forEach(function(f) {
+                        if (!groupData[f] || String(groupData[f]).trim() === "") {
+                            errors.push("分组「" + gname + "」缺少字段: " + f);
+                        }
+                    });
+                }
+            });
+            // 检查多余的分组和字段
+            Object.keys(item.attributes).forEach(function(actualGroup) {
+                if (!tmplGroups[actualGroup]) {
+                    errors.push("多余分组（模板中不存在）: " + actualGroup);
+                } else {
+                    var tmplFields = tmplGroups[actualGroup];
+                    var groupData = item.attributes[actualGroup];
+                    if (groupData && typeof groupData === "object") {
+                        Object.keys(groupData).forEach(function(actualField) {
+                            if (!tmplFields.has(actualField)) {
+                                errors.push("分组「" + actualGroup + "」多余字段: " + actualField);
                             }
                         });
                     }
-                });
-            }
+                }
+            });
         }
     } else if (format === "outline") {
         if (!item.title || item.title.trim() === "") errors.push("title 为空");
