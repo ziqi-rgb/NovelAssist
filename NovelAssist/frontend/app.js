@@ -2422,6 +2422,44 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
+                    // 🎯 取待办节点：程序顺序选取第一个未完成待办
+                    if (node.type === "pick_todo") {
+                        try {
+                            var freshP = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+                            rc.todos = freshP.todos || [];
+                        } catch(e) {}
+                        var pFilter = node.pick_filter || "";
+                        var filters = pFilter ? pFilter.split('|') : [];
+                        var picked = null;
+                        for (var pti = 0; pti < (rc.todos || []).length; pti++) {
+                            var td = rc.todos[pti];
+                            if (td.status === "pending" || td.status === "in_progress") {
+                                if (filters.length > 0 && td.content) {
+                                    for (var pfi = 0; pfi < filters.length; pfi++) {
+                                        if (td.content.indexOf(filters[pfi]) >= 0) { picked = td; break; }
+                                    }
+                                } else {
+                                    picked = td;
+                                }
+                                if (picked) break;
+                            }
+                        }
+                        if (picked) {
+                            node.output = picked.content || "";
+                            fullChainContext += "\n--- 【选取待办】 ---\n" + node.output;
+                            if (onLogCallback) onLogCallback("\n🎯 [选取待办] " + (picked.content || "").substring(0, 80) + "\n", "tool");
+                            var pNext = (node.branches || []).find(function(b){return b.condition==="HAS_TODO";});
+                            currentNodeId = pNext ? pNext.next_node_id : (node.next_node_id || null);
+                        } else {
+                            node.output = "ALL_DONE";
+                            fullChainContext += "\n--- 【选取待办】 ---\n无待办项";
+                            if (onLogCallback) onLogCallback("\n🎯 [选取待办] 无待办项 → ALL_DONE\n", "tool");
+                            var pNone = (node.branches || []).find(function(b){return b.condition==="NO_TODO";});
+                            currentNodeId = pNone ? pNone.next_node_id : (node.next_node_id || null);
+                        }
+                        continue;
+                    }
+
                     // 📝 写入节点：程序直接写入
                     if (node.type === "write") {
                         var wContent = fullChainContext.replace(/<\/?ROUTE>/g, "").trim();
