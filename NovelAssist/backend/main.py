@@ -2010,6 +2010,7 @@ class ReasoningExecuteRequest(BaseModel):
     context_settings: dict = {}
     write_to: dict | None = None  # {entity, field, sub_field, action}
     chain_id: int | None = None   # 推理链ID（解析 {chain_todos} 时使用）
+    response_format: dict | None = None  # {'type': 'json_object'} 用于 DeepSeek 结构化输出
 
 
 async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str, system_prompt: str) -> str:
@@ -2038,14 +2039,17 @@ async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: s
     return "chat"
 
 
-async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None) -> StreamingResponse:
+async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None) -> StreamingResponse:
     async def gen():
         tool_calls_acc: dict[int, dict[str, str]] = {}
         try:
             client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
-            extra = {}
+            extra: dict = {}
             if tools:
-                extra = {"tools": tools, "tool_choice": "auto"}
+                extra["tools"] = tools
+                extra["tool_choice"] = "auto"
+            if response_format:
+                extra["response_format"] = response_format
             stream = await client.chat.completions.create(
                 model=model, messages=messages, temperature=0.8, stream=True, **extra,
             )
@@ -2196,7 +2200,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         )},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, response_format=req.response_format)
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:

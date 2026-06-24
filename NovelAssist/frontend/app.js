@@ -3103,7 +3103,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
             var premise = rawPremise2.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
             var promptT = node.prompt || "";
             var targetT = compileTarget(node.target);
-            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId }) });
+            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined }) });
             var txt = "";
             var gen = parseSSEStream(res);
             var chunkResult;
@@ -3780,6 +3780,7 @@ const REASONING_FORMATS = {
             "【description】详细 Markdown 描述\n" +
             "【attributes】JSON 对象，如 {\"气候\":\"极寒\",\"特产\":\"寒铁\"}\n" +
             "<ROUTE>DONE</ROUTE>",
+        jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"地点名","scale_level":"国家","parent_name":"父地点名","grid_x":5,"grid_y":3,"description":"简短描述","attributes":{}}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var locs = [];
             var blocks = text.split(/【name】/g).slice(1);
@@ -3824,6 +3825,7 @@ const REASONING_FORMATS = {
             "  字段1: 值1\n" +
             "【description】详细 Markdown 描述\n" +
             "<ROUTE>DONE</ROUTE>",
+        jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":{"基础信息":{"姓名":"xx","年龄":"20"},"外貌特征":{"身高":"180"}},"description":"一句话概述"}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var chars = [];
             var blocks = text.split(/【name】/g).slice(1);
@@ -3876,6 +3878,7 @@ const REASONING_FORMATS = {
             "【order_index】排序序号（整数）\n" +
             "【description】详细 Markdown 描述\n" +
             "<ROUTE>DONE</ROUTE>",
+        jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"title":"条目标题","category":"世界观","parent_name":"无","is_always_context":true,"order_index":1,"description":"简短描述"}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var outlines = [];
             var blocks = text.split(/【title】/g).slice(1);
@@ -3906,7 +3909,10 @@ function buildFormatSelector(node) {
 
 function getFormatPrompt(node) {
     var fmt = REASONING_FORMATS[node.format || ""];
-    return fmt ? fmt.template : "";
+    if (!fmt) return "";
+    var tpl = fmt.template || "";
+    if (fmt.jsonExample) tpl += fmt.jsonExample;
+    return tpl;
 }
 
 /* ═══════════ 校验节点：程序验证结构化输出 ═══════════ */
@@ -4004,7 +4010,7 @@ async function runNode(card, node) {
             var askPrompt = (node.premise || "请根据上下文") + "\n\n请基于以上内容生成一个精准的、需要向用户提问的问题。只输出问题本身，不要任何解释或前缀。";
             var res = await fetch("/api/reasoning/execute", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ novel_id: currentNovelId, premise: askPrompt, prompt: node.prompt || "", target: "", previous_output: prevOutput, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, chain_id: currentChainId || null }),
+                body: JSON.stringify({ novel_id: currentNovelId, premise: askPrompt, prompt: node.prompt || "", target: "", previous_output: prevOutput, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, chain_id: currentChainId || null, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined }),
             });
             var question = "";
             for await (const msg of parseSSEStream(res)) {
@@ -4285,7 +4291,7 @@ async function runNode(card, node) {
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null }),
+            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined }),
         });
         let rawResult = "";
         for await (const msg of parseSSEStream(res)) {
