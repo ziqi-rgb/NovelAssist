@@ -3948,7 +3948,7 @@ function getFormatPrompt(node) {
             if (Object.keys(fields).length === 0) fields = {};
             attrsExample[g.group] = fields;
         });
-        tpl += '\n\n【JSON Output — 请优先输出JSON，attributes 严格只含以下分组】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":' + JSON.stringify(attrsExample) + ',"description":"一句话概述"}
+        tpl += '\n\n【JSON Output — 请优先输出JSON，attributes 严格只含以下分组】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":' + JSON.stringify(attrsExample) + ',"description":"一句话概述"}';
     }
     return tpl;
 }
