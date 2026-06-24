@@ -2487,6 +2487,9 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                 currentNodeId = nodes[0].id;
                 loopCount = 0;
                 fullChainContext = "【初始指令】: " + userInput + "\n";
+                // 清空上次运行残留的待办
+                try { await fetch("/api/reasoning_chains/" + chainId + "/todos/clear", { method: "POST" }); } catch(e) {}
+                rc.todos = [];
             }
 
             // 🔥 预热：首个 LLM 调用前发一个极轻请求，避免 DeepSeek 冷启动空回
