@@ -134,6 +134,11 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .node-section label{display:block;font-size:.73rem;font-weight:700;color:var(--text-muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
 .node-section textarea{width:100%;min-height:50px;padding:6px 8px;font-size:.8rem;line-height:1.5;border:1px solid var(--border);border-radius:4px;outline:none;resize:vertical;font-family:inherit;color:var(--text)}
 .node-section textarea:focus{border-color:var(--accent)}
+.write-to-row{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
+.write-to-row select{flex:1;min-width:60px;padding:3px 4px;font-size:.68rem;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);outline:none}
+.write-to-row select:focus{border-color:var(--accent)}
+.write-to-row .write-sub{padding:3px 5px;font-size:.68rem;border:1px solid var(--border);border-radius:3px;outline:none;background:var(--bg);color:var(--text)}
+.write-to-row .write-sub:focus{border-color:var(--accent)}
 .node-toggles{display:flex;gap:10px;margin-top:4px}
 .node-toggles label{font-size:.7rem;display:flex;align-items:center;gap:3px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0}
 

@@ -1812,6 +1812,7 @@ class ReasoningExecuteRequest(BaseModel):
     base_url: str = ""
     model: str = "gpt-3.5-turbo"
     context_settings: dict = {}
+    write_to: dict | None = None  # {entity, field, sub_field, action}
 
 
 async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str, system_prompt: str) -> str:
@@ -1946,6 +1947,23 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         user_parts.append(f"[推演指令]:\n{final_prompt}")
     if resolved_target:
         user_parts.append(f"[输出要求]:\n{resolved_target}")
+
+    # 🎯 写入目标硬编码注入
+    wt = req.write_to
+    if wt and wt.get("entity"):
+        entity_labels = {"character": "人物", "location": "地点", "outline": "大纲", "faction": "势力", "timeline": "时间线事件"}
+        el = entity_labels.get(wt["entity"], wt["entity"])
+        field_desc = wt.get("field", "")
+        if wt.get("sub_field"):
+            field_desc += f".{wt['sub_field']}"
+        action_desc = {"create": "新建", "update": "更新", "auto": "自动判断新建或更新"}.get(wt.get("action", "auto"), "写入")
+        user_parts.append(
+            f"【🎯 硬编码写入目标 — 强制执行，不得忽略】:\n"
+            f"你必须将本节点的推理结果写入到: {el} → {field_desc or '默认字段'}\n"
+            f"操作类型: {action_desc}\n"
+            f"执行方式: 调用 manage_world_element 工具，将你输出的纯文本内容（不含ROUTE标签）精准写入指定位置。\n"
+            f"如果本节点不产生数据内容（仅做路由判断），则忽略此写入指令。"
+        )
 
     messages = [
         {"role": "system", "content": resolve_placeholders(

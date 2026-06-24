@@ -1857,7 +1857,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
             var premise = rawPremise2.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
             var promptT = node.prompt || "";
             var targetT = compileTarget(node.target);
-            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {} }) });
+            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null }) });
             var txt = "";
             var gen = parseSSEStream(res);
             var chunkResult;
@@ -2030,6 +2030,7 @@ function renderAllNodes() {
                 <div class="node-section"><label>传入内容</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
                 <div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea></div>
                 <div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>
+                <div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>
                 <div class="node-section"><label>分支路由</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>
                 <div class="node-section"><label>顺序路由（默认下一节点）</label><select class="next-node-sel"><option value="">-- 无 --</option></select></div>
                 <button class="node-run-btn">&#9654; 运行本节点</button>
@@ -2058,6 +2059,8 @@ function bindNodeEvents(card, node, idx) {
     nextSel.innerHTML = '<option value="">-- 无 --</option>';
     (currentChain.nodes || []).forEach(n => { if (n.id !== node.id) nextSel.innerHTML += `<option value="${e(n.id)}" ${node.next_node_id===n.id?"selected":""}>${e(n.id)}</option>`; });
     nextSel.addEventListener("change", () => { node.next_node_id = nextSel.value; renderLines(); autoSave(); });
+    // write target events
+    bindWriteToEvents(card, node);
 }
 
 function bindPortEvents() {
@@ -2340,6 +2343,84 @@ function removeTargetBlock(nodeId, index) {
     autoSave();
 }
 
+/* ═══════════ 写入目标 (Write Target) ═══════════ */
+const WRITE_FIELDS = {
+    character: ["name","description","status","is_active","faction_role","attributes"],
+    location: ["name","description","scale_level","attributes"],
+    outline: ["title","description","category"],
+    faction: ["name","description"],
+    timeline: ["time_label","content"],
+};
+
+function buildWriteToHTML(node) {
+    var wt = node.write_to || {};
+    var entity = wt.entity || "";
+    var field = wt.field || "";
+    var sub = wt.sub_field || "";
+    var action = wt.action || "auto";
+    var entityOpts = '<option value="">-- 不写入 --</option>'
+        + '<option value="character"' + (entity==="character"?" selected":"") + '>人物</option>'
+        + '<option value="location"' + (entity==="location"?" selected":"") + '>地点</option>'
+        + '<option value="outline"' + (entity==="outline"?" selected":"") + '>大纲</option>'
+        + '<option value="faction"' + (entity==="faction"?" selected":"") + '>势力</option>'
+        + '<option value="timeline"' + (entity==="timeline"?" selected":"") + '>时间线</option>';
+    var fieldsList = WRITE_FIELDS[entity] || [];
+    var fieldOpts = '<option value="">-- 字段 --</option>';
+    fieldsList.forEach(function(f) {
+        fieldOpts += '<option value="' + f + '"' + (field===f?" selected":"") + '>' + f + '</option>';
+    });
+    var subInput = entity === "character" && field === "attributes" ?
+        '<input class="write-sub" value="' + e(sub) + '" placeholder="如: 能力数据.当前境界" style="width:100px;">' : '';
+    var actOpts = '<option value="auto"' + (action==="auto"?" selected":"") + '>自动</option>'
+        + '<option value="create"' + (action==="create"?" selected":"") + '>新建</option>'
+        + '<option value="update"' + (action==="update"?" selected":"") + '>更新</option>';
+    return '<select class="write-entity">' + entityOpts + '</select>'
+        + '<select class="write-field">' + fieldOpts + '</select>'
+        + subInput
+        + '<select class="write-action">' + actOpts + '</select>';
+}
+
+function bindWriteToEvents(card, node) {
+    var row = card.querySelector(".write-to-row");
+    if (!row) return;
+    var entitySel = row.querySelector(".write-entity");
+    var fieldSel = row.querySelector(".write-field");
+    var actionSel = row.querySelector(".write-action");
+    if (!entitySel || !fieldSel || !actionSel) return;
+
+    function save() {
+        if (!node.write_to) node.write_to = {};
+        node.write_to.entity = entitySel.value || "";
+        node.write_to.field = fieldSel.value || "";
+        var subInput = row.querySelector(".write-sub");
+        node.write_to.sub_field = subInput ? subInput.value : "";
+        node.write_to.action = actionSel.value || "auto";
+        if (!node.write_to.entity) { node.write_to = {}; }
+        autoSave();
+    }
+
+    entitySel.addEventListener("change", function() {
+        node.write_to = node.write_to || {};
+        node.write_to.entity = entitySel.value;
+        node.write_to.field = "";
+        node.write_to.sub_field = "";
+        row.innerHTML = buildWriteToHTML(node);
+        bindWriteToEvents(card, node);
+        save();
+    });
+    fieldSel.addEventListener("change", function() {
+        node.write_to = node.write_to || {};
+        node.write_to.field = fieldSel.value;
+        if (fieldSel.value !== "attributes") node.write_to.sub_field = "";
+        row.innerHTML = buildWriteToHTML(node);
+        bindWriteToEvents(card, node);
+        save();
+    });
+    actionSel.addEventListener("change", save);
+    var subInput = row.querySelector(".write-sub");
+    if (subInput) { subInput.addEventListener("input", function() { node.write_to.sub_field = subInput.value; autoSave(); }); }
+}
+
 function compileTarget(target) {
     if (typeof target === "string") return target;
     if (!Array.isArray(target) || !target.length) return "";
@@ -2386,7 +2467,7 @@ async function runNode(card, node) {
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {} }),
+            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null }),
         });
         let rawResult = "";
         for await (const msg of parseSSEStream(res)) {
