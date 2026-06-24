@@ -2594,10 +2594,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             expected_action = wt.get("action", "auto")
             if expected_action == "create" and action == "update":
                 raise HTTPException(400,
-                    f"⛔ 写入动作不匹配！节点配置为 [新建]，但工具调用了 [更新]。")
+                    "⛔ 写入动作不匹配！节点配置为 [新建]，但工具调用了 [更新]。")
             if expected_action == "update" and action == "add":
                 raise HTTPException(400,
-                    f"⛔ 写入动作不匹配！节点配置为 [更新]，但工具调用了 [新建]。")
+                    "⛔ 写入动作不匹配！节点配置为 [更新]，但工具调用了 [新建]。")
             if wt.get("field") and isinstance(data, dict) and action in ("add", "update"):
                 field = wt["field"]
                 if field != "attributes" and field not in data:
