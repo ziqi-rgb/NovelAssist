@@ -1,0 +1,163 @@
+# 🗺️ 蓝图规划与逐层搭建流
+# 节点类型: reasoning | router | write | ask
+# 推理格式: location | character | outline (仅reasoning可用)
+# write_to节点需填 entity + field + action
+# router节点需填 branches, 每个分支: condition -> target_id
+# 直接后继填 next, 分支后继在 branches 中定义
+
+nodes:
+  - id: m_init_plan
+    type: reasoning
+    premise: "分析用户输入的世界设定，列出本次地图搭建需要完成的所有层级任务清单。"
+    next: m_init_todos
+    prompt: "【创世任务规划】 请根据用户输入和已有设定，列出本次地图搭建的完整任务清单。按层级分组：大千世界→宇宙→星球→大陆→国家→城池→街区。每项一行，格式：- [ ] 任务描述。末尾输出 <ROUTE>DONE</ROUTE>。..."
+
+  - id: m_init_todos
+    type: write
+    premise: "将任务清单写入推理链 Todo 列表。"
+    write_to:
+      entity: chain_todos
+      field: content
+      action: create
+    next: m_world_check
+
+  - id: m_world_check
+    type: router
+    premise: "判定：是否需要创建【大千世界与宇宙】层级的地点？"
+    branches:
+      - condition: YES
+        target: m_world_plan
+      - condition: NO
+        target: m_planet_check
+
+  - id: m_world_plan
+    type: reasoning
+    premise: "规划【大千世界与宇宙】层级的地点嵌套清单。"
+    format: location
+    next: m_world_build
+    prompt: "【大千世界与宇宙 蓝图规划】 层级标尺: 大千世界→宇宙。最顶层从 大千世界 开始，最底层到 宇宙。 请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/gri..."
+
+  - id: m_world_build
+    type: write
+    premise: "将规划好的【大千世界与宇宙】地点写入数据库。"
+    write_to:
+      entity: location
+      field: description
+      action: create
+    next: m_world_verify
+
+  - id: m_world_verify
+    type: reasoning
+    premise: "校验：【大千世界与宇宙】层级的所有地点是否全部创建成功？"
+    branches:
+      - condition: CONTINUE
+        target: m_world_build
+      - condition: DONE
+        target: m_planet_check
+    prompt: "【地点创建校验】 数据库中当前所有地点：{locations_full_detail}  请判断属于【大千世界与宇宙】层级（scale_level 为 大千世界→宇宙 中任一值）的所有计划地点是否已全部创建？ - 还有未创建的 → <ROU..."
+
+  - id: m_planet_check
+    type: router
+    premise: "判定：是否需要创建【星球与大陆】层级的地点？"
+    branches:
+      - condition: YES
+        target: m_planet_plan
+      - condition: NO
+        target: m_nation_check
+
+  - id: m_planet_plan
+    type: reasoning
+    premise: "规划【星球与大陆】层级的地点嵌套清单。"
+    format: location
+    next: m_planet_build
+    prompt: "【星球与大陆 蓝图规划】 层级标尺: 星球→大陆。最顶层从 星球 开始，最底层到 大陆。 请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/grid_y (0..."
+
+  - id: m_planet_build
+    type: write
+    premise: "将规划好的【星球与大陆】地点写入数据库。"
+    write_to:
+      entity: location
+      field: description
+      action: create
+    next: m_planet_verify
+
+  - id: m_planet_verify
+    type: reasoning
+    premise: "校验：【星球与大陆】层级的所有地点是否全部创建成功？"
+    branches:
+      - condition: CONTINUE
+        target: m_planet_build
+      - condition: DONE
+        target: m_nation_check
+    prompt: "【地点创建校验】 数据库中当前所有地点：{locations_full_detail}  请判断属于【星球与大陆】层级（scale_level 为 星球→大陆 中任一值）的所有计划地点是否已全部创建？ - 还有未创建的 → <ROUTE>C..."
+
+  - id: m_nation_check
+    type: router
+    premise: "判定：是否需要创建【国家】层级的地点？"
+    branches:
+      - condition: YES
+        target: m_nation_plan
+      - condition: NO
+        target: m_city_check
+
+  - id: m_nation_plan
+    type: reasoning
+    premise: "规划【国家】层级的地点嵌套清单。"
+    format: location
+    next: m_nation_build
+    prompt: "【国家 蓝图规划】 层级标尺: 国家。最顶层从 国家 开始，最底层到 国家。 请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/grid_y (0-24)。 ..."
+
+  - id: m_nation_build
+    type: write
+    premise: "将规划好的【国家】地点写入数据库。"
+    write_to:
+      entity: location
+      field: description
+      action: create
+    next: m_nation_verify
+
+  - id: m_nation_verify
+    type: reasoning
+    premise: "校验：【国家】层级的所有地点是否全部创建成功？"
+    branches:
+      - condition: CONTINUE
+        target: m_nation_build
+      - condition: DONE
+        target: m_city_check
+    prompt: "【地点创建校验】 数据库中当前所有地点：{locations_full_detail}  请判断属于【国家】层级（scale_level 为 国家 中任一值）的所有计划地点是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINU..."
+
+  - id: m_city_check
+    type: router
+    premise: "判定：是否需要创建【城池与街区】层级的地点？"
+    branches:
+      - condition: YES
+        target: m_city_plan
+      - condition: NO
+        target: 
+
+  - id: m_city_plan
+    type: reasoning
+    premise: "规划【城池与街区】层级的地点嵌套清单。"
+    format: location
+    next: m_city_build
+    prompt: "【城池与街区 蓝图规划】 层级标尺: 城池→街区。最顶层从 城池 开始，最底层到 街区。 请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/grid_y (0..."
+
+  - id: m_city_build
+    type: write
+    premise: "将规划好的【城池与街区】地点写入数据库。"
+    write_to:
+      entity: location
+      field: description
+      action: create
+    next: m_city_verify
+
+  - id: m_city_verify
+    type: reasoning
+    premise: "校验：【城池与街区】层级的所有地点是否全部创建成功？"
+    branches:
+      - condition: CONTINUE
+        target: m_city_build
+      - condition: DONE
+        target: 
+    prompt: "【地点创建校验】 数据库中当前所有地点：{locations_full_detail}  请判断属于【城池与街区】层级（scale_level 为 城池→街区 中任一值）的所有计划地点是否已全部创建？ - 还有未创建的 → <ROUTE>C..."
+

@@ -1,0 +1,233 @@
+# 📖 全维世界观与大纲流水线
+# 节点类型: reasoning | router | write | ask
+# 推理格式: location | character | outline (仅reasoning可用)
+# write_to节点需填 entity + field + action
+# router节点需填 branches, 每个分支: condition -> target_id
+# 直接后继填 next, 分支后继在 branches 中定义
+
+nodes:
+  - id: o_init_plan
+    type: reasoning
+    premise: "分析用户输入，列出本次世界观构建需要完成的所有模块任务清单。"
+    next: o_init_todos
+    prompt: "【大纲任务规划】 根据用户输入，列出需要创建的六大模块任务：世界观设定、世界势力、地理知识、人物设定、能力体系、剧情大纲。每项一行，格式：- [ ] 模块名：任务描述。末尾输出 <ROUTE>DONE</ROUTE>。..."
+
+  - id: o_init_todos
+    type: write
+    premise: "将模块任务清单写入推理链 Todo 列表。"
+    write_to:
+      entity: chain_todos
+      field: content
+      action: create
+    next: o_world_check
+
+  - id: o_world_check
+    type: router
+    premise: "判定：是否需要创建或扩充【世界观设定】？"
+    branches:
+      - condition: YES
+        target: o_world_plan
+      - condition: NO
+        target: o_faction_check
+
+  - id: o_world_plan
+    type: reasoning
+    premise: "规划 世界观设定 的具体条目。"
+    format: outline
+    next: o_world_build
+    prompt: "【分条规划】 【世界观 硬性契约】：阐述世界的底层物理定律、超凡法则、文明起源、历史纪元等最宏观、最基础的世界框架设定。 请对【世界观设定】进行详细规划，拆分为多个条目。 【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：..."
+
+  - id: o_world_build
+    type: write
+    premise: "将规划好的 世界观设定 条目写入数据库。"
+    write_to:
+      entity: outline
+      field: description
+      action: create
+    next: o_world_verify
+
+  - id: o_world_verify
+    type: reasoning
+    premise: "校验：世界观设定 是否全部创建完毕？"
+    branches:
+      - condition: CONTINUE
+        target: o_world_build
+      - condition: DONE
+        target: o_faction_check
+    prompt: "【大纲创建校验】 数据库中当前所有大纲：{outlines_full_detail}  请判断分类为 [世界观] 的所有计划大纲条目是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINUE</ROUTE> - 全部创建完毕 →..."
+
+  - id: o_faction_check
+    type: router
+    premise: "判定：是否需要创建或扩充【世界势力设定】？"
+    branches:
+      - condition: YES
+        target: o_faction_plan
+      - condition: NO
+        target: o_geo_check
+
+  - id: o_faction_plan
+    type: reasoning
+    premise: "规划 世界势力设定 的具体条目。"
+    format: outline
+    next: o_faction_build
+    prompt: "【分条规划】 【世界势力 硬性契约】：定义世界中割据或隐藏的门派、宗族、联邦、商会、地下结社等社会组织。 请对【世界势力设定】进行详细规划，拆分为多个条目。 【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{locati..."
+
+  - id: o_faction_build
+    type: write
+    premise: "将规划好的 世界势力设定 条目写入数据库。"
+    write_to:
+      entity: outline
+      field: description
+      action: create
+    next: o_faction_verify
+
+  - id: o_faction_verify
+    type: reasoning
+    premise: "校验：世界势力设定 是否全部创建完毕？"
+    branches:
+      - condition: CONTINUE
+        target: o_faction_build
+      - condition: DONE
+        target: o_geo_check
+    prompt: "【大纲创建校验】 数据库中当前所有大纲：{outlines_full_detail}  请判断分类为 [世界势力] 的所有计划大纲条目是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINUE</ROUTE> - 全部创建完毕 ..."
+
+  - id: o_geo_check
+    type: router
+    premise: "判定：是否需要创建或扩充【地理知识设定】？"
+    branches:
+      - condition: YES
+        target: o_geo_plan
+      - condition: NO
+        target: o_char_check
+
+  - id: o_geo_plan
+    type: reasoning
+    premise: "规划 地理知识设定 的具体条目。"
+    format: outline
+    next: o_geo_build
+    prompt: "【分条规划】 【地理 硬性契约】：描绘大陆、国度、险恶禁地、奇特天险、城池等地理实体的分布。 请对【地理知识设定】进行详细规划，拆分为多个条目。 【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{locations_fu..."
+
+  - id: o_geo_build
+    type: write
+    premise: "将规划好的 地理知识设定 条目写入数据库。"
+    write_to:
+      entity: outline
+      field: description
+      action: create
+    next: o_geo_verify
+
+  - id: o_geo_verify
+    type: reasoning
+    premise: "校验：地理知识设定 是否全部创建完毕？"
+    branches:
+      - condition: CONTINUE
+        target: o_geo_build
+      - condition: DONE
+        target: o_char_check
+    prompt: "【大纲创建校验】 数据库中当前所有大纲：{outlines_full_detail}  请判断分类为 [地理] 的所有计划大纲条目是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINUE</ROUTE> - 全部创建完毕 → ..."
+
+  - id: o_char_check
+    type: router
+    premise: "判定：是否需要创建或扩充【人物粗略设定】？"
+    branches:
+      - condition: YES
+        target: o_char_plan
+      - condition: NO
+        target: o_power_check
+
+  - id: o_char_plan
+    type: reasoning
+    premise: "规划 人物粗略设定 的具体条目。"
+    format: outline
+    next: o_char_build
+    prompt: "【分条规划】 【人物设定 硬性契约】：列出非剧情主线的核心人物人设简述。 请对【人物粗略设定】进行详细规划，拆分为多个条目。 纯文本输出清单！末尾输出 <ROUTE>DONE</ROUTE>。..."
+
+  - id: o_char_build
+    type: write
+    premise: "将规划好的 人物粗略设定 条目写入数据库。"
+    write_to:
+      entity: outline
+      field: description
+      action: create
+    next: o_char_verify
+
+  - id: o_char_verify
+    type: reasoning
+    premise: "校验：人物粗略设定 是否全部创建完毕？"
+    branches:
+      - condition: CONTINUE
+        target: o_char_build
+      - condition: DONE
+        target: o_power_check
+    prompt: "【大纲创建校验】 数据库中当前所有大纲：{outlines_full_detail}  请判断分类为 [人物设定] 的所有计划大纲条目是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINUE</ROUTE> - 全部创建完毕 ..."
+
+  - id: o_power_check
+    type: router
+    premise: "判定：是否需要创建或扩充【能力体系设定】？"
+    branches:
+      - condition: YES
+        target: o_power_plan
+      - condition: NO
+        target: o_story_check
+
+  - id: o_power_plan
+    type: reasoning
+    premise: "规划 能力体系设定 的具体条目。"
+    format: outline
+    next: o_power_build
+    prompt: "【分条规划】 【能力体系设定 硬性契约】：系统化拆解该世界的修行体系、超凡境界划分、等级晋升要求。 请对【能力体系设定】进行详细规划，拆分为多个条目。 【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{locations..."
+
+  - id: o_power_build
+    type: write
+    premise: "将规划好的 能力体系设定 条目写入数据库。"
+    write_to:
+      entity: outline
+      field: description
+      action: create
+    next: o_power_verify
+
+  - id: o_power_verify
+    type: reasoning
+    premise: "校验：能力体系设定 是否全部创建完毕？"
+    branches:
+      - condition: CONTINUE
+        target: o_power_build
+      - condition: DONE
+        target: o_story_check
+    prompt: "【大纲创建校验】 数据库中当前所有大纲：{outlines_full_detail}  请判断分类为 [能力体系设定] 的所有计划大纲条目是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINUE</ROUTE> - 全部创建完..."
+
+  - id: o_story_check
+    type: router
+    premise: "判定：是否需要创建或扩充【剧情大纲推演】？"
+    branches:
+      - condition: YES
+        target: o_story_plan
+      - condition: NO
+        target: 
+
+  - id: o_story_plan
+    type: reasoning
+    premise: "规划 剧情大纲推演 的具体条目。"
+    format: outline
+    next: o_story_build
+    prompt: "【分条规划】 【剧情大纲 硬性契约】：推演小说的核心主线脉络，严格按照 [卷]->[章]->[幕] 递归向下细化。 请对【剧情大纲推演】进行详细规划，拆分为多个条目。 【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{l..."
+
+  - id: o_story_build
+    type: write
+    premise: "将规划好的 剧情大纲推演 条目写入数据库。"
+    write_to:
+      entity: outline
+      field: description
+      action: create
+    next: o_story_verify
+
+  - id: o_story_verify
+    type: reasoning
+    premise: "校验：剧情大纲推演 是否全部创建完毕？"
+    branches:
+      - condition: CONTINUE
+        target: o_story_build
+      - condition: DONE
+        target: 
+    prompt: "【大纲创建校验】 数据库中当前所有大纲：{outlines_full_detail}  请判断分类为 [剧情大纲] 的所有计划大纲条目是否已全部创建？ - 还有未创建的 → <ROUTE>CONTINUE</ROUTE> - 全部创建完毕 ..."
+
