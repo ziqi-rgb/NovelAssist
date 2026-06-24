@@ -1295,14 +1295,14 @@ async function loadCharacters() {
         var appearance = attrs["外貌特征"] || {};
         // 精选六要素：姓名、年龄、性别、性格、身高、一句话描述
         var lines = [];
-        if (basic["年龄"]) lines.push('<span><b>年龄</b>: ' + e(String(basic["年龄"])) + '</span>');
-        if (basic["性别"]) lines.push('<span><b>性别</b>: ' + e(String(basic["性别"])) + '</span>');
-        if (basic["性格"]) lines.push('<span><b>性格</b>: ' + e(String(basic["性格"])) + '</span>');
-        if (appearance["身高"]) lines.push('<span><b>身高</b>: ' + e(String(appearance["身高"])) + '</span>');
-        var summary = lines.length ? lines.join(" · ") : "";
+        if (basic["年龄"]) lines.push('<b>年龄</b>: ' + e(String(basic["年龄"])));
+        if (basic["性别"]) lines.push('<b>性别</b>: ' + e(String(basic["性别"])));
+        if (basic["性格"]) lines.push('<b>性格</b>: ' + e(String(basic["性格"])));
+        if (appearance["身高"]) lines.push('<b>身高</b>: ' + e(String(appearance["身高"])));
+        var summary = lines.length ? lines.map(function(l){ return '<div>' + l + '</div>'; }).join("") : "";
         d.innerHTML = '<div class="char-name">' + e(ch.name||"(未)") + getStatusBadge(ch) + '</div>'
-            + (summary ? '<div class="char-desc" style="font-size:0.72rem;color:var(--text-muted);">' + summary + '</div>' : '')
-            + (ch.description ? '<div class="char-desc" style="font-size:0.75rem;line-height:1.4;">' + e(ch.description) + '</div>' : '')
+            + (summary ? '<div style="font-size:0.78rem;line-height:1.5;margin:4px 0;">' + summary + '</div>' : '')
+            + (ch.description ? '<div style="font-size:0.7rem;color:var(--text-muted);line-height:1.3;">' + e(ch.description) + '</div>' : '')
             + '<label class="char-activate"><input type="checkbox" data-cid="' + ch.id + '" ' + (ch.is_always_context?"checked":"") + '> 启动</label>';
         d.addEventListener("click", (e) => { if (e.target.tagName === "INPUT") return; switchToCharactersModule(ch.id); });
         c.appendChild(d);
