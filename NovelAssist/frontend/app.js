@@ -2560,17 +2560,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             } catch(e) {
                                 rc._template_snapshot = [];
                             }
-                            // 快照为空时回退到系统默认模板
-                            if (!rc._template_snapshot || !rc._template_snapshot.length) {
-                                rc._template_snapshot = [
-                                    {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
-                                    {"group":"外貌特征","fields":["身高","发色","瞳色"]},
-                                    {"group":"背景故事","fields":["出身","经历"]},
-                                    {"group":"人物关系","fields":[]}
-                                ];
-                                if (onLogCallback) onLogCallback("\n📸 [模板快照] 数据库无模板，已加载默认 4 分组\n", "tool");
-                            } else if (onLogCallback) {
-                                onLogCallback("\n📸 [模板快照] 已冻结 " + (rc._template_snapshot.length || 0) + " 个分组\n", "tool");
+                            if (onLogCallback) onLogCallback("\n📸 [模板快照] 已冻结 " + (rc._template_snapshot.length || 0) + " 个分组\n", "tool");
                             }
                         }
                         node.output = "✅ 程序执行完毕";
@@ -2629,15 +2619,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                     var snapNovel = await (await fetch("/api/novels/" + currentNovelId)).json();
                                     rc._template_snapshot = snapNovel.character_template || [];
                                 } catch(e) { rc._template_snapshot = []; }
-                                // 数据库也无模板时回退默认
-                                if (!rc._template_snapshot || !rc._template_snapshot.length) {
-                                    rc._template_snapshot = [
-                                        {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
-                                        {"group":"外貌特征","fields":["身高","发色","瞳色"]},
-                                        {"group":"背景故事","fields":["出身","经历"]},
-                                        {"group":"人物关系","fields":[]}
-                                    ];
-                                }
                             }
                             // 直接解析 LLM 原始输出，不经过 parser
                             var vCleaned = (txt || "").replace(/<ROUTE>[\s\S]*?<\/ROUTE>/g, "").trim();
