@@ -2144,8 +2144,8 @@ function renderAllNodes() {
             ${outPorts}`;
         canvas.appendChild(card);
         bindNodeEvents(card, node, idx);
-        initTargetBuilder(card, node);
-        renderBranches(card, node);
+        if (!isAsk && !isRouter && !isWrite) initTargetBuilder(card, node);
+        if (!isAsk) renderBranches(card, node);
     });
     bindPortEvents();
 }
@@ -2157,8 +2157,10 @@ function bindNodeEvents(card, node, idx) {
     var typeSel = card.querySelector(".node-type-sel");
     if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value; renderAllNodes(); renderLines(); autoSave(); }); }
     card.querySelector(".premise-ta").addEventListener("input", e => { node.premise = e.target.value; autoSave(); });
-    card.querySelector(".prompt-ta").addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
-    card.querySelector(".branch-add-btn").addEventListener("click", () => { node.branches.push({ condition: "", next_node_id: "" }); renderBranches(card, node); autoSave(); });
+    var promptTa = card.querySelector(".prompt-ta");
+    if (promptTa) promptTa.addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
+    var branchAddBtn = card.querySelector(".branch-add-btn");
+    if (branchAddBtn) branchAddBtn.addEventListener("click", () => { node.branches.push({ condition: "", next_node_id: "" }); renderBranches(card, node); autoSave(); });
     card.querySelector(".node-run-btn").addEventListener("click", () => runNode(card, node));
     // sequential route
     const nextSel = card.querySelector(".next-node-sel");
