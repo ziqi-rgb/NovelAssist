@@ -1,0 +1,100 @@
+# 三条系统链 — 流程大纲（改完告诉我，我填细节）
+# 格式: node_id [类型:格式] → 后继
+# 类型: 🧠推理 🔀路由 📝写入 ❓提问
+# 缩进表示层级/循环
+
+═══════════════════════════════════════
+🗺️ 地图链
+═══════════════════════════════════════
+m_init_plan         [🧠] → m_init_todos
+m_init_todos        [📝→chain_todos] → m_world_check
+
+  world 大千世界与宇宙:
+    m_world_check   [🔀] → YES→m_world_plan | NO→m_planet_check
+    m_world_plan    [🧠:location] → m_world_build
+    m_world_build   [📝→location] → m_world_verify
+    m_world_verify  [🧠] → CONTINUE→m_world_build | DONE→m_planet_check
+
+  planet 星球与大陆:
+    m_planet_check  [🔀] → YES→m_planet_plan | NO→m_nation_check
+    m_planet_plan   [🧠:location] → m_planet_build
+    m_planet_build  [📝→location] → m_planet_verify
+    m_planet_verify [🧠] → CONTINUE→m_planet_build | DONE→m_nation_check
+
+  nation 国家:
+    m_nation_check  [🔀] → YES→m_nation_plan | NO→m_city_check
+    m_nation_plan   [🧠:location] → m_nation_build
+    m_nation_build  [📝→location] → m_nation_verify
+    m_nation_verify [🧠] → CONTINUE→m_nation_build | DONE→m_city_check
+
+  city 城池与街区:
+    m_city_check    [🔀] → YES→m_city_plan | NO→结束
+    m_city_plan     [🧠:location] → m_city_build
+    m_city_build    [📝→location] → m_city_verify
+    m_city_verify   [🧠] → CONTINUE→m_city_build | DONE→结束
+
+═══════════════════════════════════════
+👤 人设链
+═══════════════════════════════════════
+c_nm1_ask_template  [❓] → c_n0_init_plan         # 展示模板，询问修改
+c_n0_init_plan      [🧠] → c_n0_init_todos         # 人物任务清单
+c_n0_init_todos     [📝→chain_todos] → c_n1_prepare
+
+c_n1_prepare        [🧠] → c_n2_check_faction      # 初步整理人设
+c_n2_check_faction  [🔀] → YES→c_n3_build_faction | NO→c_n4_number
+
+  # 势力循环
+  c_n3_build_faction [📝→faction] → c_n2_check_faction  # 写完后回到判定
+
+c_n4_number         [🧠] → c_n5a_gen_char           # 确定人数+名单
+
+  # 角色循环
+  c_n5a_gen_char    [🧠:character] → c_n5_build_char  # 生成属性
+  c_n5_build_char   [📝→character] → c_n6_verify_template
+
+  c_n6_verify_template [🧠] → PERFECT→c_n8 | NEEDS_FIX→c_n7_fix
+  c_n7_fix          [📝→character:update] → c_n6_verify_template  # 补齐→重检
+
+  c_n8_verify_quantity [🧠] → NEEDS_MORE→c_n5a | DONE→结束
+
+═══════════════════════════════════════
+📖 大纲链
+═══════════════════════════════════════
+o_init_plan         [🧠] → o_init_todos
+o_init_todos        [📝→chain_todos] → o_world_check
+
+  world 世界观设定:
+    o_world_check   [🔀] → YES→o_world_plan | NO→o_faction_check
+    o_world_plan    [🧠:outline] → o_world_build
+    o_world_build   [📝→outline] → o_world_verify
+    o_world_verify  [🧠] → CONTINUE→o_world_build | DONE→o_faction_check
+
+  faction 世界势力:
+    o_faction_check [🔀] → YES→o_faction_plan | NO→o_geo_check
+    o_faction_plan  [🧠:outline] → o_faction_build
+    o_faction_build [📝→outline] → o_faction_verify
+    o_faction_verify[🧠] → CONTINUE→o_faction_build | DONE→o_geo_check
+
+  geo 地理知识:
+    o_geo_check     [🔀] → YES→o_geo_plan | NO→o_char_check
+    o_geo_plan      [🧠:outline] → o_geo_build
+    o_geo_build     [📝→outline] → o_geo_verify
+    o_geo_verify    [🧠] → CONTINUE→o_geo_build | DONE→o_char_check
+
+  char 人物设定:
+    o_char_check    [🔀] → YES→o_char_plan | NO→o_power_check
+    o_char_plan     [🧠:outline] → o_char_build
+    o_char_build    [📝→outline] → o_char_verify
+    o_char_verify   [🧠] → CONTINUE→o_char_build | DONE→o_power_check
+
+  power 能力体系:
+    o_power_check   [🔀] → YES→o_power_plan | NO→o_story_check
+    o_power_plan    [🧠:outline] → o_power_build
+    o_power_build   [📝→outline] → o_power_verify
+    o_power_verify  [🧠] → CONTINUE→o_power_build | DONE→o_story_check
+
+  story 剧情大纲:
+    o_story_check   [🔀] → YES→o_story_plan | NO→结束
+    o_story_plan    [🧠:outline] → o_story_build
+    o_story_build   [📝→outline] → o_story_verify
+    o_story_verify  [🧠] → CONTINUE→o_story_build | DONE→结束
