@@ -1769,19 +1769,19 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             // 非恢复：从头开始
             if (startPhase === 1 && !initialState.fullChainContext) {
                 state.phase = 1;
-                state.currentChainId = chainOutline.id;
+                state.currentChainId = chainMap.id;
                 state.currentNodeId = null;
                 state.executedNodeCount = 0;
                 saveGenesisState(state);
             }
-            logToConsole("[System] \n===== 🚀 阶段 1: 全维世界大纲推演启动 =====\n", "step");
-            document.getElementById("step-outline").className = "step-active";
-            var resumeData1 = (state.currentChainId === chainOutline.id && state.currentNodeId) ? {
+            logToConsole("[System] \n===== 🚀 阶段 1: 空间地理蓝图搭建启动 =====\n", "step");
+            document.getElementById("step-map").className = "step-active";
+            var resumeData1 = (state.currentChainId === chainMap.id && state.currentNodeId) ? {
                 currentNodeId: state.currentNodeId,
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) {
+            var res1 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) {
                 genesisFullLog += "[" + typ + "] " + txt + "\n";
                 if (typ !== "chunk") logToConsole(txt, typ);
             }, incCtx, resumeData1);
@@ -1793,8 +1793,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
-            if (!res1.success) throw new Error("阶段 1 大纲推演失败: " + (res1.reason || "未知错误"));
-            await saveGenesisLog(genesisFullLog, chainOutline.title);
+            if (!res1.success) throw new Error("阶段 1 蓝图搭建失败: " + (res1.reason || "未知错误"));
+            await saveGenesisLog(genesisFullLog, chainMap.title);
             genesisFullLog = "";
             state.completedPhases[0] = true;
             state.phase = 2;
@@ -1802,33 +1802,40 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             state.currentNodeId = null;
             state.fullChainContext = "";
             state.executedNodeCount = 0;
-            document.getElementById("step-outline").className = "step-completed";
+            document.getElementById("step-map").className = "step-completed";
             saveGenesisState(state);
         } else if (state.completedPhases[0]) {
-            document.getElementById("step-outline").className = "step-completed";
+            document.getElementById("step-map").className = "step-completed";
         }
+
+        // 🌍 获取地图数据注入到阶段2大纲上下文
+        var outlineCtx = incCtx ? Object.assign({}, incCtx) : {};
+        try {
+            var locs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
+            outlineCtx.locations_full_detail = JSON.stringify(locs);
+        } catch(e) { /* 获取失败不阻塞 */ }
 
         // 阶段 2
         if (startPhase <= 2 && !state.completedPhases[1]) {
-            if (!state.currentChainId || state.currentChainId !== chainMap.id) {
+            if (!state.currentChainId || state.currentChainId !== chainOutline.id) {
                 state.phase = 2;
-                state.currentChainId = chainMap.id;
+                state.currentChainId = chainOutline.id;
                 state.currentNodeId = null;
                 state.executedNodeCount = 0;
                 state.fullChainContext = "";
                 saveGenesisState(state);
             }
-            logToConsole("[System] \n===== 🗺️ 阶段 2: 空间地理蓝图搭建启动 =====\n", "step");
-            document.getElementById("step-map").className = "step-active";
-            var resumeData2 = (state.currentChainId === chainMap.id && state.currentNodeId) ? {
+            logToConsole("[System] \n===== 📖 阶段 2: 全维世界大纲推演启动 =====\n", "step");
+            document.getElementById("step-outline").className = "step-active";
+            var resumeData2 = (state.currentChainId === chainOutline.id && state.currentNodeId) ? {
                 currentNodeId: state.currentNodeId,
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) {
+            var res2 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) {
                 genesisFullLog += "[" + typ + "] " + txt + "\n";
                 if (typ !== "chunk") logToConsole(txt, typ);
-            }, incCtx, resumeData2);
+            }, outlineCtx, resumeData2);
             if (genesisPaused) {
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
@@ -1837,8 +1844,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
-            if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
-            await saveGenesisLog(genesisFullLog, chainMap.title);
+            if (!res2.success) throw new Error("阶段 2 全维世界大纲推演失败: " + (res2.reason || "未知错误"));
+            await saveGenesisLog(genesisFullLog, chainOutline.title);
             genesisFullLog = "";
             state.completedPhases[1] = true;
             state.phase = 3;
@@ -1846,10 +1853,10 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             state.currentNodeId = null;
             state.fullChainContext = "";
             state.executedNodeCount = 0;
-            document.getElementById("step-map").className = "step-completed";
+            document.getElementById("step-outline").className = "step-completed";
             saveGenesisState(state);
         } else if (state.completedPhases[1]) {
-            document.getElementById("step-map").className = "step-completed";
+            document.getElementById("step-outline").className = "step-completed";
         }
 
         // 阶段 3

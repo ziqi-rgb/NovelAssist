@@ -409,12 +409,12 @@ async def lifespan(app: FastAPI):
                         continue
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 20:
+                    if ver is None or ver < 21:
                         print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→19，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         t_chain.todos = []  # 清空旧待办，防止残留 pending 干扰 verify
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 20
+                        cs["_version"] = 21
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "todos")
@@ -447,7 +447,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 20},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 21},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1605,14 +1605,14 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 20:
+            if ver < 21:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→19")
                 chain.nodes = _get_system_chain_nodes(name)
                 chain.todos = []
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 20
+                    chain.context_settings["_version"] = 21
                 else:
-                    chain.context_settings = {"_version": 20}
+                    chain.context_settings = {"_version": 21}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "todos")
                 flag_modified(chain, "context_settings")
@@ -1630,7 +1630,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 20},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 21},
                 nodes=nodes,
             ))
     db.commit()
