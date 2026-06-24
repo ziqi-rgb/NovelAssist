@@ -2651,6 +2651,10 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 break;
                             }
                         }
+                        // 无匹配时默认走第一个分支（通常是 CONTINUE），避免链意外终止
+                        if (!nextId) {
+                            nextId = node.branches[0].next_node_id;
+                        }
                     }
                     if (!nextId) nextId = node.next_node_id || null;
                     currentNodeId = nextId;
