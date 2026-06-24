@@ -216,7 +216,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
             next_check = f"m_{next_s_id}_check" if next_s_id != "end" else ""
             nodes.append({"id":f"m_{s_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建【{s_name}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{s_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
-            nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
+            nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
             nodes.append({"id":f"m_{s_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":"从清单中找出最高级未建地点，写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":""})
             nodes.append({"id":f"m_{s_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：【{s_name}】层级是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
@@ -2696,6 +2696,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     category=data.get("category", "剧情"),
                     parent_id=parent_id,
                     order_index=data.get("order_index", 0),
+                    is_always_context=bool(data.get("is_always_context", False)),
                 ))
             elif action == "update" and eid:
                 item = db.get(Outline, eid)
@@ -2710,6 +2711,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.parent_id = parent_id
                     if "order_index" in data:
                         item.order_index = int(data["order_index"])
+                    if "is_always_context" in data:
+                        item.is_always_context = bool(data["is_always_context"])
             elif action == "delete" and eid:
                 db.query(Outline).filter(Outline.id == eid).delete()
 
@@ -2765,16 +2768,21 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             if action == "add":
                 final_x = data.get("grid_x") if data.get("grid_x") is not None else data.get("map_x")
                 final_y = data.get("grid_y") if data.get("grid_y") is not None else data.get("map_y")
+                map_x_val = data.get("map_x") if data.get("map_x") is not None else final_x
+                map_y_val = data.get("map_y") if data.get("map_y") is not None else final_y
+                db.add(Location(
                 db.add(Location(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     description=data.get("description", ""),
                     parent_id=parent_id,
-                    scale_level=data.get("scale", ""),
+                    scale_level=data.get("scale_level") or data.get("scale", ""),
+                    scale=data.get("scale_enum", "REGION"),
                     grid_x=final_x,
                     grid_y=final_y,
-                    map_x=final_x,
-                    map_y=final_y,
+                    map_x=map_x_val,
+                    map_y=map_y_val,
+                    attributes=data.get("attributes", {}),
                 ))
             elif action == "update" and eid:
                 item = db.get(Location, eid)
@@ -2783,8 +2791,12 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.name = data["name"]
                     if "description" in data:
                         item.description = data["description"]
-                    if "scale" in data:
+                    if "scale_level" in data:
+                        item.scale_level = data["scale_level"]
+                    elif "scale" in data:
                         item.scale_level = data["scale"]
+                    if "scale_enum" in data:
+                        item.scale = data["scale_enum"]
                     if parent_id is not None:
                         item.parent_id = parent_id
                     if "grid_x" in data or "map_x" in data:
@@ -2795,6 +2807,12 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         val = data.get("grid_y") if data.get("grid_y") is not None else data.get("map_y")
                         item.grid_y = int(val) if val is not None else None
                         item.map_y = item.grid_y
+                    if "map_x" in data:
+                        item.map_x = int(data["map_x"])
+                    if "map_y" in data:
+                        item.map_y = int(data["map_y"])
+                    if "attributes" in data and isinstance(data["attributes"], dict):
+                        item.attributes = {**item.attributes, **data["attributes"]}
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 
@@ -2995,9 +3013,11 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.add(Character(
                     novel_id=novel_id,
                     name=data.get("name", ""),
+                    aliases=data.get("aliases", ""),
                     description=data.get("description", ""),
                     status=data.get("status", "正常"),
                     is_active=data.get("is_active", True),
+                    is_always_context=bool(data.get("is_always_context", False)),
                     faction_id=faction_id,
                     faction_role=data.get("faction_role", ""),
                     attributes=normalized_attrs,
@@ -3017,6 +3037,10 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
                     if "name" in data:
                         char.name = data["name"]
+                    if "aliases" in data:
+                        char.aliases = data["aliases"]
+                    if "description" in data:
+                        char.description = data["description"]
                     if "status" in data:
                         char.status = data["status"]
                     if "is_active" in data:
@@ -3025,6 +3049,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         char.faction_id = faction_id
                     if "faction_role" in data:
                         char.faction_role = data["faction_role"]
+                    if "is_always_context" in data:
+                        char.is_always_context = bool(data["is_always_context"])
                     if raw_attrs:
                         current_attrs: dict = dict(char.attributes) if char.attributes else {}
                         for g_name, fields_dict in normalized_attrs.items():

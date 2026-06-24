@@ -2575,17 +2575,36 @@ const REASONING_FORMATS = {
     "": { label: "通用", desc: "" },
     "location": {
         label: "🗺️ 地点",
-        template: "\n\n【结构化输出格式 — 必须严格遵循】\n请用以下格式输出地点数据（每条地点一个完整块）：\n" +
-            "【名称】地点名\n【scale】大千世界/宇宙/星球/大陆/国家/城池/街区\n【parent】父地点名（无则写'顶级'）\n【grid_x】0-24\n【grid_y】0-24\n【描述】详细描述...\n<ROUTE>DONE</ROUTE>",
+        template: "\n\n【结构化输出格式 — 必须严格遵循，字段名必须与下方完全一致】\n" +
+            "每条地点一个完整块，格式如下：\n\n" +
+            "【name】地点名（必填）\n" +
+            "【scale_level】大千世界/宇宙/星球/大陆/国家/城池/街区\n" +
+            "【parent_name】父地点全名（如'东大陆/青云国'，无父级则写'顶级'）\n" +
+            "【scale】REGION 或 GRID_25\n" +
+            "【grid_x】0-24 整数\n" +
+            "【grid_y】0-24 整数\n" +
+            "【map_x】0-24 整数（可选）\n" +
+            "【map_y】0-24 整数（可选）\n" +
+            "【description】详细 Markdown 描述\n" +
+            "【attributes】JSON 对象，如 {\"气候\":\"极寒\",\"特产\":\"寒铁\"}\n" +
+            "<ROUTE>DONE</ROUTE>",
         parser: function(text) {
-            var locs = []; var blocks = text.split(/【名称】/g).slice(1);
+            var locs = [];
+            var blocks = text.split(/【name】/g).slice(1);
             blocks.forEach(function(b) {
-                var m = {}; m.name = (b.match(/^(.+)/) || ["",""])[0].trim();
-                var s = b.match(/【scale】(.+)/); if (s) m.scale = s[1].trim();
-                var p = b.match(/【parent】(.+)/); if (p) m.parent = p[1].trim();
-                var gx = b.match(/【grid_x】(.+)/); if (gx) m.grid_x = parseInt(gx[1]) || 0;
-                var gy = b.match(/【grid_y】(.+)/); if (gy) m.grid_y = parseInt(gy[1]) || 0;
-                var d = b.match(/【描述】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                var m = {};
+                m.name = (b.match(/^(.+)/) || ["",""])[0].trim();
+                var sl = b.match(/【scale_level】(.+)/); if (sl) m.scale_level = sl[1].trim();
+                var pn = b.match(/【parent_name】(.+)/); if (pn) m.parent_name = pn[1].trim();
+                var sc = b.match(/【scale】(.+)/); if (sc) m.scale_enum = sc[1].trim();
+                var gx = b.match(/【grid_x】(\d+)/); if (gx) m.grid_x = parseInt(gx[1]);
+                var gy = b.match(/【grid_y】(\d+)/); if (gy) m.grid_y = parseInt(gy[1]);
+                var mx = b.match(/【map_x】(\d+)/); if (mx) m.map_x = parseInt(mx[1]);
+                var my = b.match(/【map_y】(\d+)/); if (my) m.map_y = parseInt(my[1]);
+                var d = b.match(/【description】([\s\S]+?)(?=【attributes】|<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                var a = b.match(/【attributes】([\s\S]+?)(?=<ROUTE>|$)/); if (a) {
+                    try { m.attributes = JSON.parse(a[1].trim()); } catch(e) { m.attributes = {}; }
+                }
                 locs.push(m);
             });
             return locs;
@@ -2593,39 +2612,59 @@ const REASONING_FORMATS = {
     },
     "character": {
         label: "👤 人设",
-        template: "\n\n【结构化输出格式 — 必须严格遵循】\n请用以下格式输出角色数据（每个角色一个完整块）：\n" +
-            "【姓名】角色名\n【status】存活/阵亡/飞升/失踪\n【faction】势力名（无则写'散修'）\n【faction_role】职位\n【属性】\n分组名: key1: value1, key2: value2\n分组名2: key1: value1\n【描述】详细描述...\n<ROUTE>DONE</ROUTE>",
+        template: "\n\n【结构化输出格式 — 必须严格遵循，字段名必须与下方完全一致】\n" +
+            "每个角色一个完整块，格式如下：\n\n" +
+            "【name】角色名（必填）\n" +
+            "【aliases】别名，逗号分隔\n" +
+            "【status】存活/阵亡/飞升/失踪\n" +
+            "【is_active】true 或 false\n" +
+            "【faction_name】所属势力全名（无则写'散修'）\n" +
+            "【faction_role】在势力中的职位\n" +
+            "【is_always_context】true 或 false\n" +
+            "【attributes】\n" +
+            "分组名:\n" +
+            "  字段1: 值1\n" +
+            "  字段2: 值2\n" +
+            "分组名2:\n" +
+            "  字段1: 值1\n" +
+            "【description】详细 Markdown 描述\n" +
+            "<ROUTE>DONE</ROUTE>",
         parser: function(text) {
-            var chars = []; var blocks = text.split(/【姓名】/g).slice(1);
+            var chars = [];
+            var blocks = text.split(/【name】/g).slice(1);
             blocks.forEach(function(b) {
-                var m = {}; m.name = (b.match(/^(.+)/) || ["",""])[0].trim();
-                var s = b.match(/【status】(.+)/); if (s) m.status = s[1].trim();
-                var f = b.match(/【faction】(.+)/); if (f) m.faction = f[1].trim();
+                var m = {};
+                m.name = (b.match(/^(.+)/) || ["",""])[0].trim();
+                var al = b.match(/【aliases】(.+)/); if (al) m.aliases = al[1].trim();
+                var st = b.match(/【status】(.+)/); if (st) m.status = st[1].trim();
+                var ia = b.match(/【is_active】(true|false)/i); if (ia) m.is_active = ia[1].toLowerCase() === "true";
+                var fn = b.match(/【faction_name】(.+)/); if (fn) m.faction_name = fn[1].trim();
                 var fr = b.match(/【faction_role】(.+)/); if (fr) m.faction_role = fr[1].trim();
-                var attrs = {}; var attrSec = b.match(/【属性】([\s\S]+?)(?=【描述】|<ROUTE>|$)/);
+                var iac = b.match(/【is_always_context】(true|false)/i); if (iac) m.is_always_context = iac[1].toLowerCase() === "true";
+                var attrs = {};
+                var attrSec = b.match(/【attributes】([\s\S]+?)(?=【description】|<ROUTE>|$)/);
                 if (attrSec) {
                     var lines = attrSec[1].trim().split('\n');
                     var curGroup = "";
                     lines.forEach(function(l) {
-                        var gMatch = l.match(/^(.+?):\s*(.+)/);
-                        if (gMatch && !l.includes(": ") && l.indexOf(":") === l.lastIndexOf(":")) {
-                            // single colon = group name
-                            curGroup = gMatch[1].trim();
+                        var trimmed = l.trim();
+                        if (!trimmed) return;
+                        // 分组名：结尾是冒号且不是键值对格式
+                        if (/^[^:]+:$/.test(trimmed) && !/:/.test(trimmed.slice(0, -1))) {
+                            curGroup = trimmed.slice(0, -1).trim();
                             attrs[curGroup] = {};
                         } else if (curGroup) {
-                            var pairs = l.split(/,\s*/);
-                            pairs.forEach(function(p) {
-                                var kv = p.split(":");
-                                if (kv.length >= 2) {
-                                    if (!attrs[curGroup]) attrs[curGroup] = {};
-                                    attrs[curGroup][kv[0].trim()] = kv.slice(1).join(":").trim();
-                                }
-                            });
+                            var colonIdx = trimmed.indexOf(':');
+                            if (colonIdx > 0) {
+                                var key = trimmed.substring(0, colonIdx).trim();
+                                var val = trimmed.substring(colonIdx + 1).trim();
+                                if (key && val) attrs[curGroup][key] = val;
+                            }
                         }
                     });
                 }
                 m.attributes = attrs;
-                var d = b.match(/【描述】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                var d = b.match(/【description】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
                 chars.push(m);
             });
             return chars;
@@ -2633,15 +2672,26 @@ const REASONING_FORMATS = {
     },
     "outline": {
         label: "📖 大纲",
-        template: "\n\n【结构化输出格式 — 必须严格遵循】\n请用以下格式输出大纲数据（每条大纲一个完整块）：\n" +
-            "【标题】条目标题\n【分类】世界观/世界势力/地理/人物设定/能力体系设定/剧情大纲\n【父节点】父大纲标题（顶级则写'无'）\n【描述】详细 Markdown 描述...\n<ROUTE>DONE</ROUTE>",
+        template: "\n\n【结构化输出格式 — 必须严格遵循，字段名必须与下方完全一致】\n" +
+            "每条大纲一个完整块，格式如下：\n\n" +
+            "【title】条目标题（必填）\n" +
+            "【category】世界观/世界势力/地理/人物设定/能力体系设定/剧情大纲\n" +
+            "【parent_name】父大纲标题（顶级写'无'）\n" +
+            "【is_always_context】true 或 false\n" +
+            "【order_index】排序序号（整数）\n" +
+            "【description】详细 Markdown 描述\n" +
+            "<ROUTE>DONE</ROUTE>",
         parser: function(text) {
-            var outlines = []; var blocks = text.split(/【标题】/g).slice(1);
+            var outlines = [];
+            var blocks = text.split(/【title】/g).slice(1);
             blocks.forEach(function(b) {
-                var m = {}; m.title = (b.match(/^(.+)/) || ["",""])[0].trim();
-                var c = b.match(/【分类】(.+)/); if (c) m.category = c[1].trim();
-                var p = b.match(/【父节点】(.+)/); if (p) m.parent = p[1].trim();
-                var d = b.match(/【描述】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
+                var m = {};
+                m.title = (b.match(/^(.+)/) || ["",""])[0].trim();
+                var c = b.match(/【category】(.+)/); if (c) m.category = c[1].trim();
+                var pn = b.match(/【parent_name】(.+)/); if (pn) m.parent_name = pn[1].trim();
+                var iac = b.match(/【is_always_context】(true|false)/i); if (iac) m.is_always_context = iac[1].toLowerCase() === "true";
+                var oi = b.match(/【order_index】(\d+)/); if (oi) m.order_index = parseInt(oi[1]);
+                var d = b.match(/【description】([\s\S]+?)(?=<ROUTE>|$)/); if (d) m.description = d[1].trim();
                 outlines.push(m);
             });
             return outlines;
@@ -2809,22 +2859,31 @@ async function runNode(card, node) {
                 var item = (parsedItems && parsedItems.length > 0) ? parsedItems[0] : null;
                 if (item && upstreamFormat === "location") {
                     dataObj["name"] = item.name || "";
-                    dataObj["scale_level"] = item.scale || "";
-                    if (item.parent) dataObj["parent_name"] = item.parent;
+                    dataObj["scale_level"] = item.scale_level || "";
+                    if (item.parent_name) dataObj["parent_name"] = item.parent_name;
+                    if (item.scale) dataObj["scale_enum"] = item.scale;
                     if (item.grid_x !== undefined) dataObj["grid_x"] = item.grid_x;
                     if (item.grid_y !== undefined) dataObj["grid_y"] = item.grid_y;
+                    if (item.map_x !== undefined) dataObj["map_x"] = item.map_x;
+                    if (item.map_y !== undefined) dataObj["map_y"] = item.map_y;
+                    if (item.attributes) dataObj["attributes"] = item.attributes;
                     dataObj["description"] = item.description || content;
                 } else if (item && upstreamFormat === "character") {
                     dataObj["name"] = item.name || "";
-                    dataObj["status"] = item.status || "存活";
-                    dataObj["faction_name"] = item.faction || "";
-                    dataObj["faction_role"] = item.faction_role || "";
+                    if (item.aliases) dataObj["aliases"] = item.aliases;
+                    if (item.status) dataObj["status"] = item.status;
+                    if (item.is_active !== undefined) dataObj["is_active"] = item.is_active;
+                    if (item.faction_name) dataObj["faction_name"] = item.faction_name;
+                    if (item.faction_role) dataObj["faction_role"] = item.faction_role;
+                    if (item.is_always_context !== undefined) dataObj["is_always_context"] = item.is_always_context;
                     dataObj["attributes"] = item.attributes || {};
                     dataObj["description"] = item.description || "";
                 } else if (item && upstreamFormat === "outline") {
                     dataObj["title"] = item.title || "";
                     dataObj["category"] = item.category || "";
-                    if (item.parent && item.parent !== "无") dataObj["parent_name"] = item.parent;
+                    if (item.parent_name && item.parent_name !== "无") dataObj["parent_name"] = item.parent_name;
+                    if (item.is_always_context !== undefined) dataObj["is_always_context"] = item.is_always_context;
+                    if (item.order_index !== undefined) dataObj["order_index"] = item.order_index;
                     dataObj["description"] = item.description || content;
                 } else if (wt.field === "attributes") {
                     // 尝试解析 content 为 JSON，否则存入嵌套字段
