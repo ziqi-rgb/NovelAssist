@@ -1651,15 +1651,21 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 var toolTitle = (msg.arguments?.data?.title || msg.arguments?.data?.name || "");
                                 onLogCallback("\n⚙️ 自动录入实体: [" + toolName + "] -> " + toolTitle + "\n", "tool");
                             }
-                            await fetch("/api/agent/execute/" + currentNovelId, {
+                            var execRes = await fetch("/api/agent/execute/" + currentNovelId, {
                                 method: "POST", headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
+                                body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null }),
                             });
-                            if (bubbleEl) {
-                                card.classList.add("tp-executed");
-                                card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
+                            if (!execRes.ok) {
+                                var errBody = await execRes.json().catch(function() { return {detail: "未知错误"}; });
+                                if (onLogCallback) onLogCallback("\n⛔ 写入校验拦截: " + (errBody.detail || "") + "\n", "error");
+                                nodeToolCalls += "\n[⛔ 校验拦截: " + (errBody.detail || "") + "]";
+                            } else {
+                                if (bubbleEl) {
+                                    card.classList.add("tp-executed");
+                                    card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
+                                }
+                                nodeToolCalls += "\n[✅ 系统已记录：成功调用 '" + msg.tool_name + "' 归档数据: " + toolTitle + "]";
                             }
-                            nodeToolCalls += "\n[✅ 系统已记录：成功调用 '" + msg.tool_name + "' 归档数据: " + toolTitle + "]";
                         }
                     }
                     var routeKey = null;
@@ -1869,7 +1875,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
                 else if (msg.type === "tool_proposal") {
                     await fetch("/api/agent/execute/" + currentNovelId, {
                         method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments }),
+                        body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null }),
                     });
                     txt += "\n[🛠 工具已自动执行: " + msg.tool_name + "]";
                 }

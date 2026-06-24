@@ -2556,6 +2556,7 @@ def get_relations(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session =
 class ToolExecuteReq(BaseModel):
     tool_name: str
     arguments: dict
+    write_to: dict | None = None  # {entity, field, sub_field, action}
 
 
 @app.post("/api/agent/execute/{novel_id}")
@@ -2579,6 +2580,30 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         action = req.arguments.get("action")
         eid = req.arguments.get("element_id")
         data = req.arguments.get("data", {})
+
+        # 🛡️ 写入目标硬校验
+        wt = req.write_to
+        if wt and wt.get("entity"):
+            entity_map = {"character": "character", "location": "location", "outline": "outline",
+                          "faction": "faction", "timeline": "timeline"}
+            expected_etype = entity_map.get(wt["entity"])
+            if expected_etype and etype != expected_etype:
+                raise HTTPException(400,
+                    f"⛔ 写入目标不匹配！节点配置为写入 [{wt['entity']}]，但工具调用了 [{etype}]。"
+                    f"请检查推理链节点的写入目标设置。")
+            expected_action = wt.get("action", "auto")
+            if expected_action == "create" and action == "update":
+                raise HTTPException(400,
+                    f"⛔ 写入动作不匹配！节点配置为 [新建]，但工具调用了 [更新]。")
+            if expected_action == "update" and action == "add":
+                raise HTTPException(400,
+                    f"⛔ 写入动作不匹配！节点配置为 [更新]，但工具调用了 [新建]。")
+            if wt.get("field") and isinstance(data, dict) and action in ("add", "update"):
+                field = wt["field"]
+                if field != "attributes" and field not in data:
+                    raise HTTPException(400,
+                        f"⛔ 写入字段不匹配！节点配置为写入 [{field}] 字段，但工具数据中未包含此字段。"
+                        f"当前 data 字段: {list(data.keys())}")
         if isinstance(data, str):
             data_str = data.strip()
             if data_str.startswith('"') and data_str.endswith('"') and len(data_str) > 1:
