@@ -2492,8 +2492,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
             while (currentNodeId) {
                 loopCount++;
-                if (loopCount > 100) {
-                    if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过100个循环)。\n", "warning");
+                if (loopCount > 200) {
+                    if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过200个循环)。\n", "warning");
                     break;
                 }
                 // 🛑 暂停检查：优雅停止，保存进度
@@ -2549,10 +2549,10 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             // 快照为空时回退到系统默认模板
                             if (!rc._template_snapshot || !rc._template_snapshot.length) {
                                 rc._template_snapshot = [
-                                    {"group":"基础信息","fields":["姓名","年龄","性别","性格","身高"]},
+                                    {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
                                     {"group":"外貌特征","fields":["身高","发色","瞳色"]},
                                     {"group":"背景故事","fields":["出身","经历"]},
-                                    {"group":"人物关系","fields":["女友","李若馨","季长安","安莉","安可","范洁"]}
+                                    {"group":"人物关系","fields":[]}
                                 ];
                                 if (onLogCallback) onLogCallback("\n📸 [模板快照] 数据库无模板，已加载默认 4 分组\n", "tool");
                             } else if (onLogCallback) {
@@ -3918,6 +3918,10 @@ const REASONING_FORMATS = {
             var cleaned = text.replace(/<ROUTE>.*?<\/ROUTE>/g, "").replace(/<ROUTE>\w+<\/ROUTE>/g, "").trim();
             try {
                 var parsed = JSON.parse(cleaned);
+                // 处理 {characters: [...]} 包裹格式
+                if (!Array.isArray(parsed) && parsed && parsed.characters && Array.isArray(parsed.characters)) {
+                    parsed = parsed.characters;
+                }
                 if (!Array.isArray(parsed)) parsed = [parsed];
                 parsed.forEach(function(obj) { chars.push(obj); });
                 if (chars.length) return chars;
