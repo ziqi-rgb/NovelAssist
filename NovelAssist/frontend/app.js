@@ -3783,6 +3783,15 @@ const REASONING_FORMATS = {
         jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"地点名","scale_level":"国家","parent_name":"父地点名","grid_x":5,"grid_y":3,"description":"简短描述","attributes":{}}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var locs = [];
+            // 优先 JSON 解析
+            var cleaned = text.replace(/<ROUTE>.*?<\/ROUTE>/g, "").replace(/<ROUTE>\w+<\/ROUTE>/g, "").trim();
+            try {
+                var parsed = JSON.parse(cleaned);
+                if (!Array.isArray(parsed)) parsed = [parsed];
+                parsed.forEach(function(obj) { locs.push(obj); });
+                if (locs.length) return locs;
+            } catch(e) {}
+            // 回退 【】 格式
             var blocks = text.split(/【name】/g).slice(1);
             blocks.forEach(function(b) {
                 var m = {};
@@ -3828,6 +3837,15 @@ const REASONING_FORMATS = {
         jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":{"基础信息":{"姓名":"xx","年龄":"20"},"外貌特征":{"身高":"180"}},"description":"一句话概述"}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var chars = [];
+            // 优先 JSON 解析
+            var cleaned = text.replace(/<ROUTE>.*?<\/ROUTE>/g, "").replace(/<ROUTE>\w+<\/ROUTE>/g, "").trim();
+            try {
+                var parsed = JSON.parse(cleaned);
+                if (!Array.isArray(parsed)) parsed = [parsed];
+                parsed.forEach(function(obj) { chars.push(obj); });
+                if (chars.length) return chars;
+            } catch(e) {}
+            // 回退 【】 格式
             var blocks = text.split(/【name】/g).slice(1);
             blocks.forEach(function(b) {
                 var m = {};
@@ -3846,7 +3864,6 @@ const REASONING_FORMATS = {
                     lines.forEach(function(l) {
                         var trimmed = l.trim();
                         if (!trimmed) return;
-                        // 分组名：结尾是冒号且不是键值对格式
                         if (/^[^:]+:$/.test(trimmed) && !/:/.test(trimmed.slice(0, -1))) {
                             curGroup = trimmed.slice(0, -1).trim();
                             attrs[curGroup] = {};
@@ -3881,6 +3898,15 @@ const REASONING_FORMATS = {
         jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"title":"条目标题","category":"世界观","parent_name":"无","is_always_context":true,"order_index":1,"description":"简短描述"}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var outlines = [];
+            // 优先 JSON 解析
+            var cleaned = text.replace(/<ROUTE>.*?<\/ROUTE>/g, "").replace(/<ROUTE>\w+<\/ROUTE>/g, "").trim();
+            try {
+                var parsed = JSON.parse(cleaned);
+                if (!Array.isArray(parsed)) parsed = [parsed];
+                parsed.forEach(function(obj) { outlines.push(obj); });
+                if (outlines.length) return outlines;
+            } catch(e) {}
+            // 回退 【】 格式
             var blocks = text.split(/【title】/g).slice(1);
             blocks.forEach(function(b) {
                 var m = {};
