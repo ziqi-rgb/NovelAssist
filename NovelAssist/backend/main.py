@@ -211,7 +211,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         RY = [-450] + [i * 500 for i in range(5)]  # y: -450, 0, 500, 1000, 1500, 2000
         nodes: list[dict] = []
         # Row -450: init
-        nodes.append({"id":"m_plan","x":CX[0],"y":RY[0],"premise":"明确需要建立的所有地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出所有需要创建的地点名称清单。\n\n仅输出地点清单，每行一个，标明层级和父级。格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n⚠️ 层级必须严格从高到低，父级只能比自身高一个层级：\n  大千世界→宇宙→星球→大陆→国家→城池→街区\n  例：国家只能以大陆为父级，大陆只能以星球为父级，不能跨级或逆级\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
+        nodes.append({"id":"m_plan","x":CX[0],"y":RY[0],"premise":"明确需要建立的核心地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出需要创建的核心地点名称清单。不要无节制地列出一百个地点——只列与用户故事直接相关的关键地点，控制在 20 个以内。\n\n格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n⚠️ 层级必须严格从高到低，父级只能比自身高一个层级：\n  大千世界→宇宙→星球→大陆→国家→城池→街区\n  例：国家只能以大陆为父级，大陆只能以星球为父级，不能跨级或逆级\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
         nodes.append({"id":"m_todos","type":"write","x":CX[2],"y":RY[0],"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_create","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (s_id, s_label, s_scales, s_top, s_bottom) in enumerate(stages):
             y = RY[i+1]
@@ -221,7 +221,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             # 🎯 程序选取待办
             nodes.append({"id":f"m_{s_id}_pick","type":"pick_todo","x":CX[0]-50,"y":y+30,"premise":f"选取【{s_label}】层级第一个未完成待办","pick_filter":v_filter,"branches":[{"condition":"HAS_TODO","next_node_id":f"m_{s_id}_create"},{"condition":"NO_TODO","next_node_id":f"m_{s_id}_verify"}],"next_node_id":"","output":""})
             # 创建节点（不再负责选取待办）
-            nodes.append({"id":f"m_{s_id}_create","x":CX[0],"y":y,"premise":"为选取的待办项生成完整属性。","prompt":f"【{s_label} 地点创建】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n已有地点: {{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成完整的属性字典。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_write","output":""})
+            nodes.append({"id":f"m_{s_id}_create","x":CX[0],"y":y,"premise":"为选取的待办项生成精炼属性。","prompt":f"【{s_label} 地点创建】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n已有地点: {{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成精炼的属性字典。description 不超过 300 字，其他字段值不超过 100 字。只写核心设定，不要叙事展开。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_write","output":""})
             nodes.append({"id":f"m_{s_id}_write","type":"write","x":CX[1],"y":y,"premise":f"将生成的【{s_label}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_validate","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
             nodes.append({"id":f"m_{s_id}_validate","type":"validate","x":CX[2],"y":y,"premise":f"校验【{s_label}】生成的地点数据是否合法。","prompt":"","format":"location","target":[],"branches":[{"condition":"VALID","next_node_id":f"m_{s_id}_todos"},{"condition":"INVALID","next_node_id":f"m_{s_id}_pick"}],"next_node_id":"","output":""})
             nodes.append({"id":f"m_{s_id}_todos","type":"write","x":CX[3],"y":y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
@@ -239,7 +239,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_plan", "x": X1, "y": 60,
                 "premise": "确认需要创建哪些角色，列出完整名单。",
-                "prompt": "【角色名单确认】\n根据用户输入，列出需要创建的所有角色姓名。每个角色注明所属势力（无则写'散修'）。格式：\n- [ ] 角色名 (所属势力)\n末尾输出 <ROUTE>DONE</ROUTE>。",
+                "prompt": "【角色名单确认】\n根据用户输入，列出需要创建的核心角色姓名。控制在 15 个以内，只列与故事直接相关的角色。每个角色注明所属势力（无则写'散修'）。格式：\n- [ ] 角色名 (所属势力)\n末尾输出 <ROUTE>DONE</ROUTE>。",
                 "target": [], "branches": [], "next_node_id": "c_todos", "output": ""
             },
             {
@@ -279,7 +279,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_create", "x": X1, "y": 1400,
                 "premise": "为选取的待办项生成完整角色属性。",
-                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成完整饱满的属性字典。\n\n⚠️ 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容：\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】所属势力\n- 【faction_role】职位\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请根据上方「选取待办」传入的角色名称，为其生成精炼的属性字典。\n\n⚠️ 输出规范：\n- 只能输出以下结构化格式，绝对不要输出任何叙事文本、场景描写、对话或续写内容\n- 每个字段值不超过 200 字，description 不超过 500 字\n- 只写核心设定，不要填充无信息量的套话\n- 【name】角色名\n- 【aliases】别名\n- 【status】存活/阵亡/飞升/失踪\n- 【is_active】true/false\n- 【faction_name】所属势力\n- 【faction_role】职位\n- 【is_always_context】true/false\n- 【attributes】按模板逐个分组填写\n- 【description】简短的纯设定描述（非叙事）\n末尾输出 <ROUTE>DONE</ROUTE>",
                 "format": "character", "target": [], "branches": [], "next_node_id": "c_write", "output": ""
             },
             {
@@ -334,7 +334,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
         RY = [-450] + [i * 500 for i in range(5)]  # y: -450, 0, 500, 1000, 1500, 2000
         nodes: list[dict] = []
         # Row -450: init
-        nodes.append({"id":"o_plan","x":CX[0],"y":RY[0],"premise":"规划所有模块的大纲条目清单。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，列出所有需要创建的大纲条目名称清单。\n\n仅输出条目清单，每行一个条目名，标明所属分类。格式：\n- [ ] 条目名 (分类: 世界观设定/世界势力/地理知识/人物设定/能力体系设定)\n不要输出详细描述——详细内容将由后续节点逐个生成。\n\n模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：100% 参照已有数据：{locations_full_detail} {characters_list}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"o_todos","output":""})
+        nodes.append({"id":"o_plan","x":CX[0],"y":RY[0],"premise":"规划核心大纲条目清单。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，列出需要创建的核心大纲条目名称清单。控制在 30 个以内，只列与故事直接相关的关键条目。\n\n格式：\n- [ ] 条目名 (分类: 世界观设定/世界势力/地理知识/人物设定/能力体系设定)\n不要输出详细描述——详细内容将由后续节点逐个生成。\n\n模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：100% 参照已有数据：{locations_full_detail} {characters_list}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"o_todos","output":""})
         nodes.append({"id":"o_todos","type":"write","x":CX[2],"y":RY[0],"premise":"将所有大纲条目写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_pick","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (m_id, m_name, cat, use_format) in enumerate(modules):
             y = RY[i+1]
@@ -344,7 +344,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             # 🎯 程序选取待办
             nodes.append({"id":f"o_{m_id}_pick","type":"pick_todo","x":CX[0]-50,"y":y+30,"premise":f"选取【{m_name}】分类第一个未完成待办","pick_filter":cat,"branches":[{"condition":"HAS_TODO","next_node_id":f"o_{m_id}_create"},{"condition":"NO_TODO","next_node_id":f"o_{m_id}_verify"}],"next_node_id":"","output":""})
             # 创建节点（不再负责选取待办）
-            nodes.append({"id":f"o_{m_id}_create","x":CX[0],"y":y,"premise":"为选取的待办项生成完整内容。","prompt":f"【{m_name} 条目创建】\n硬性契约：{contract}\n已有大纲：{{outlines_full_detail}}\n已有地理：{{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成完整的 title、category、description（Markdown 格式）。条目可以存在父子嵌套关系——通过 parent_name 字段指定父级（如'修真体系'的子条目'筑基期'写 parent_name: 修真体系）。顶级条目 parent_name 写'无'。","format":fmt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_write","output":""})
+            nodes.append({"id":f"o_{m_id}_create","x":CX[0],"y":y,"premise":"为选取的待办项生成精炼内容。","prompt":f"【{m_name} 条目创建】\n硬性契约：{contract}\n已有大纲：{{outlines_full_detail}}\n已有地理：{{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成精炼的 title、category、description（Markdown 格式）。description 不超过 500 字，只写核心设定，不要叙事展开。条目可以存在父子嵌套关系——通过 parent_name 字段指定父级（如'修真体系'的子条目'筑基期'写 parent_name: 修真体系）。顶级条目 parent_name 写'无'。","format":fmt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_write","output":""})
             nodes.append({"id":f"o_{m_id}_write","type":"write","x":CX[1],"y":y,"premise":f"将生成的【{m_name}】条目写入 {cat} 分类。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_validate","output":"","write_to":{"entity":"outline","field":"category","sub_field":cat,"action":"create"}})
             nodes.append({"id":f"o_{m_id}_validate","type":"validate","x":CX[2],"y":y,"premise":f"校验【{m_name}】生成的大纲数据是否合法。","prompt":"","format":fmt,"target":[],"branches":[{"condition":"VALID","next_node_id":f"o_{m_id}_todos"},{"condition":"INVALID","next_node_id":f"o_{m_id}_pick"}],"next_node_id":"","output":""})
             nodes.append({"id":f"o_{m_id}_todos","type":"write","x":CX[3],"y":y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
@@ -409,12 +409,12 @@ async def lifespan(app: FastAPI):
                         continue
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 21:
+                    if ver is None or ver < 22:
                         print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→19，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         t_chain.todos = []  # 清空旧待办，防止残留 pending 干扰 verify
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 21
+                        cs["_version"] = 22
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "todos")
@@ -447,7 +447,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 21},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 22},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1605,14 +1605,14 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 21:
+            if ver < 22:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→19")
                 chain.nodes = _get_system_chain_nodes(name)
                 chain.todos = []
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 21
+                    chain.context_settings["_version"] = 22
                 else:
-                    chain.context_settings = {"_version": 21}
+                    chain.context_settings = {"_version": 22}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "todos")
                 flag_modified(chain, "context_settings")
@@ -1630,7 +1630,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 21},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 22},
                 nodes=nodes,
             ))
     db.commit()
