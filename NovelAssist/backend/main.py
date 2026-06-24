@@ -387,12 +387,14 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db_hf:
             # 版本标记检测：缺少 _version 或旧版本的链全部迁移
             for chain_title in SYSTEM_CHAIN_NAMES:
-                t_chain = db_hf.query(ReasoningChain).filter(ReasoningChain.title == chain_title).first()
-                if t_chain and isinstance(t_chain.nodes, list):
+                chains_to_migrate = db_hf.query(ReasoningChain).filter(ReasoningChain.title == chain_title).all()
+                for t_chain in chains_to_migrate:
+                    if not isinstance(t_chain.nodes, list):
+                        continue
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
                     if ver is None or ver < 17:
-                        print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→7，执行迁移...")
+                        print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→17，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
                         cs["_version"] = 17
@@ -1566,7 +1568,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
             if ver < 17:
-                print(f"[Runtime Migration] 链「{name}」版本 {ver}→7")
+                print(f"[Runtime Migration] 链「{name}」版本 {ver}→17")
                 chain.nodes = _get_system_chain_nodes(name)
                 if isinstance(chain.context_settings, dict):
                     chain.context_settings["_version"] = 17
