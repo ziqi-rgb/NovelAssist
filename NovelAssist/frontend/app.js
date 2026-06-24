@@ -128,8 +128,6 @@ document.querySelectorAll("#outline-category-nav li").forEach(li => {
         li.classList.add("active"); currentOutlineCat = li.dataset.cat;
         currentNoteId = null; outlineTitle.value = ""; outlineContent.value = ""; outlineCtxToggle.checked = false;
         document.getElementById("outline-pane-title").textContent = currentOutlineCat;
-        const childBtn = document.getElementById("new-outline-child-btn");
-        childBtn.classList.toggle("hidden", currentOutlineCat !== "剧情大纲");
         loadOutlineNotes();
     });
 });
