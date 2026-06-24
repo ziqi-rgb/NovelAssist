@@ -266,8 +266,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             nodes.append({"id":f"m_{s_id}_pick","type":"pick_todo","x":_C[f"m_{s_id}_pick"][0],"y":_C[f"m_{s_id}_pick"][1],"premise":f"选取【{s_label}】层级第一个未完成待办","pick_filter":v_filter,"branches":[{"condition":"HAS_TODO","next_node_id":f"m_{s_id}_create"},{"condition":"NO_TODO","next_node_id":f"m_{s_id}_verify"}],"next_node_id":"","output":""})
             # 创建节点（不再负责选取待办）
             nodes.append({"id":f"m_{s_id}_create","x":_C[f"m_{s_id}_create"][0],"y":_C[f"m_{s_id}_create"][1],"premise":"为选取的待办项生成精炼属性。","prompt":f"【{s_label} 地点创建】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n已有地点: {{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成精炼的属性字典。description 不超过 300 字，其他字段值不超过 100 字。只写核心设定，不要叙事展开。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_write","output":""})
-            nodes.append({"id":f"m_{s_id}_write","type":"write","x":_C[f"m_{s_id}_write"][0],"y":_C[f"m_{s_id}_write"][1],"premise":f"将生成的【{s_label}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_validate","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
-            nodes.append({"id":f"m_{s_id}_validate","type":"validate","x":_C[f"m_{s_id}_validate"][0],"y":_C[f"m_{s_id}_validate"][1],"premise":f"校验【{s_label}】生成的地点数据是否合法。","prompt":"","format":"location","target":[],"branches":[{"condition":"VALID","next_node_id":f"m_{s_id}_todos"},{"condition":"INVALID","next_node_id":f"m_{s_id}_pick"}],"next_node_id":"","output":""})
+            nodes.append({"id":f"m_{s_id}_write","type":"write","x":_C[f"m_{s_id}_write"][0],"y":_C[f"m_{s_id}_write"][1],"premise":f"将生成的【{s_label}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_todos","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
             nodes.append({"id":f"m_{s_id}_todos","type":"write","x":_C[f"m_{s_id}_todos"][0],"y":_C[f"m_{s_id}_todos"][1],"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
             nodes.append({"id":f"m_{s_id}_verify","type":"verify","x":_C[f"m_{s_id}_verify"][0],"y":_C[f"m_{s_id}_verify"][1],"premise":f"校验：【{s_label}】层级是否全部完成？","verify_filter":v_filter,"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_pick"},{"condition":"NEXT","next_node_id":f"m_{s_id}_total"}],"next_node_id":"","output":""})
             # 总 verify
@@ -329,18 +328,8 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_write", "type": "write", "x": X2, "y": 1400,
                 "premise": "将生成的完整角色属性写入数据库（势力自动关联）。",
-                "prompt": "", "target": [], "branches": [], "next_node_id": "c_validate", "output": "",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_todos_update", "output": "",
                 "write_to": {"entity": "character", "field": "attributes", "action": "create"}
-            },
-            {
-                "id": "c_validate", "type": "validate", "x": X1, "y": 1850,
-                "premise": "校验写入的角色数据——检查模板字段是否全部填满。",
-                "prompt": "", "format": "character", "target": [],
-                "branches": [
-                    {"condition": "VALID", "next_node_id": "c_todos_update"},
-                    {"condition": "INVALID", "next_node_id": "c_pick"}
-                ],
-                "next_node_id": "", "output": ""
             },
             {
                 "id": "c_todos_update", "type": "write", "x": X2, "y": 1850,
@@ -425,8 +414,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             nodes.append({"id":f"o_{m_id}_pick","type":"pick_todo","x":_C[f"o_{m_id}_pick"][0],"y":_C[f"o_{m_id}_pick"][1],"premise":f"选取【{m_name}】分类第一个未完成待办","pick_filter":cat,"branches":[{"condition":"HAS_TODO","next_node_id":f"o_{m_id}_create"},{"condition":"NO_TODO","next_node_id":f"o_{m_id}_verify"}],"next_node_id":"","output":""})
             # 创建节点（不再负责选取待办）
             nodes.append({"id":f"o_{m_id}_create","x":_C[f"o_{m_id}_create"][0],"y":_C[f"o_{m_id}_create"][1],"premise":"为选取的待办项生成精炼内容。","prompt":f"【{m_name} 条目创建】\n硬性契约：{contract}\n已有大纲：{{outlines_full_detail}}\n已有地理：{{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成精炼的 title、category、description（Markdown 格式）。description 不超过 500 字，只写核心设定，不要叙事展开。条目可以存在父子嵌套关系——通过 parent_name 字段指定父级（如'修真体系'的子条目'筑基期'写 parent_name: 修真体系）。顶级条目 parent_name 写'无'。","format":fmt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_write","output":""})
-            nodes.append({"id":f"o_{m_id}_write","type":"write","x":_C[f"o_{m_id}_write"][0],"y":_C[f"o_{m_id}_write"][1],"premise":f"将生成的【{m_name}】条目写入 {cat} 分类。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_validate","output":"","write_to":{"entity":"outline","field":"category","sub_field":cat,"action":"create"}})
-            nodes.append({"id":f"o_{m_id}_validate","type":"validate","x":_C[f"o_{m_id}_validate"][0],"y":_C[f"o_{m_id}_validate"][1],"premise":f"校验【{m_name}】生成的大纲数据是否合法。","prompt":"","format":fmt,"target":[],"branches":[{"condition":"VALID","next_node_id":f"o_{m_id}_todos"},{"condition":"INVALID","next_node_id":f"o_{m_id}_pick"}],"next_node_id":"","output":""})
+            nodes.append({"id":f"o_{m_id}_write","type":"write","x":_C[f"o_{m_id}_write"][0],"y":_C[f"o_{m_id}_write"][1],"premise":f"将生成的【{m_name}】条目写入 {cat} 分类。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_todos","output":"","write_to":{"entity":"outline","field":"category","sub_field":cat,"action":"create"}})
             nodes.append({"id":f"o_{m_id}_todos","type":"write","x":_C[f"o_{m_id}_todos"][0],"y":_C[f"o_{m_id}_todos"][1],"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
             nodes.append({"id":f"o_{m_id}_verify","type":"verify","x":_C[f"o_{m_id}_verify"][0],"y":_C[f"o_{m_id}_verify"][1],"premise":f"校验：【{m_name}】是否全部完成？","verify_filter":cat,"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_pick"},{"condition":"NEXT","next_node_id":f"o_{m_id}_total"}],"next_node_id":"","output":""})
             # 总 verify
@@ -489,12 +477,12 @@ async def lifespan(app: FastAPI):
                         continue
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver != 1:
+                    if ver is None or ver != 2:
                         print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→19，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         t_chain.todos = []  # 清空旧待办，防止残留 pending 干扰 verify
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 1
+                        cs["_version"] = 2
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "todos")
@@ -527,7 +515,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 1},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 2},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1702,14 +1690,14 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver != 1:
+            if ver != 2:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→19")
                 chain.nodes = _get_system_chain_nodes(name)
                 chain.todos = []
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 1
+                    chain.context_settings["_version"] = 2
                 else:
-                    chain.context_settings = {"_version": 1}
+                    chain.context_settings = {"_version": 2}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "todos")
                 flag_modified(chain, "context_settings")
@@ -1727,7 +1715,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 1},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 2},
                 nodes=nodes,
             ))
     db.commit()
