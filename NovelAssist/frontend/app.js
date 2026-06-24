@@ -2672,7 +2672,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 matchedAny = true; break;
                             }
                         }
-                        if (!matchedAny && onLogCallback) {
+                        if (!matchedAny && onLogCallback && routeKey !== "DONE") {
                             onLogCallback("\n⚠️ 校验警告：ROUTE 标签值 '" + routeKey + "' 未匹配任何分支条件，将回退到默认顺序执行\n", "warning");
                         }
                     }
@@ -2693,10 +2693,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 nextId = br.next_node_id;
                                 break;
                             }
-                        }
-                        // 无匹配时默认走第一个分支（通常是 CONTINUE），避免链意外终止
-                        if (!nextId) {
-                            nextId = node.branches[0].next_node_id;
                         }
                     }
                     if (!nextId) nextId = node.next_node_id || null;
