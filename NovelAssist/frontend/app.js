@@ -1624,9 +1624,14 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
                     // 🔀 路由节点
                     if (node.type === "router") {
+                        // 取 fullChainContext 中最后一次出现的 ROUTE 值
                         var rv = "";
-                        var rvm = fullChainContext.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
-                        if (rvm) rv = rvm[1].trim();
+                        var allRoutes = fullChainContext.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/g);
+                        if (allRoutes && allRoutes.length) {
+                            var lastRoute = allRoutes[allRoutes.length - 1];
+                            var rvm2 = lastRoute.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+                            if (rvm2) rv = rvm2[1].trim();
+                        }
                         var rNextId = null;
                         if (node.branches && node.branches.length && rv) {
                             for (var rbi = 0; rbi < node.branches.length; rbi++) {
@@ -1648,20 +1653,27 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         var wContent = fullChainContext.replace(/<\/?ROUTE>/g, "").trim();
                         // 取最后一段推理输出作为写入内容
                         var lastReasoning = wContent.split("--- 【节点输出】 ---").pop() || "";
-                        lastReasoning = lastReasoning.replace(/--- 【路由判定】 ---[\s\S]*/, "").trim();
+                        lastReasoning = lastReasoning.replace(/--- 【路由判定】 ---[\s\S]*/, "").replace(/--- 【写入结果】 ---[\s\S]*/, "").replace(/--- 【写入失败】 ---[\s\S]*/, "").trim();
                         if (!lastReasoning) lastReasoning = (node.premise || "");
                         var wt = node.write_to || {};
                         if (wt.entity && lastReasoning) {
-                            var wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
-                            if (wt.field === "attributes" && wt.sub_field) {
-                                wArgs.data["attributes"] = {}; wArgs.data["attributes"][wt.sub_field] = lastReasoning;
-                            } else if (wt.field) {
-                                wArgs.data[wt.field] = lastReasoning;
+                            var wToolName = "manage_world_element";
+                            var wArgs = {};
+                            if (wt.entity === "chain_todos") {
+                                wToolName = "manage_chain_todos";
+                                wArgs = { action: "add", content: lastReasoning };
                             } else {
-                                wArgs.data["description"] = lastReasoning;
+                                wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
+                                if (wt.field === "attributes" && wt.sub_field) {
+                                    wArgs.data["attributes"] = {}; wArgs.data["attributes"][wt.sub_field] = lastReasoning;
+                                } else if (wt.field) {
+                                    wArgs.data[wt.field] = lastReasoning;
+                                } else {
+                                    wArgs.data["description"] = lastReasoning;
+                                }
                             }
                             try {
-                                var wRes = await fetch("/api/agent/execute/" + currentNovelId, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ tool_name: "manage_world_element", arguments: wArgs, write_to: wt, chain_id: chainId }) });
+                                var wRes = await fetch("/api/agent/execute/" + currentNovelId, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ tool_name: wToolName, arguments: wArgs, write_to: wt.entity === "chain_todos" ? null : wt, chain_id: chainId }) });
                                 if (wRes.ok) {
                                     var wJson = await wRes.json();
                                     node.output = "✅ 写入成功：" + wJson.msg;
@@ -2578,13 +2590,22 @@ async function runNode(card, node) {
     outDiv.style.display = "block";
     const btn = card.querySelector(".node-run-btn"); btn.disabled = true;
 
-    // find previous output from incoming connections
-    let prevOutput = "";
+    // 按上游节点类型分离传递数据
+    let prevOutput = "";    // 全文（传给推理/交互节点）
+    let prevContent = "";   // 纯内容（传给写入节点）
+    let prevRoute = "";     // 路由值（传给路由节点）
     (currentChain.nodes || []).forEach(n => {
-        if (n.next_node_id === node.id && n.output) prevOutput += (prevOutput ? "\n" : "") + n.output;
-        (n.branches || []).forEach(br => {
-            if (br.next_node_id === node.id && n.output) prevOutput += (prevOutput ? "\n" : "") + n.output;
-        });
+        var passesToThis = n.next_node_id === node.id;
+        (n.branches || []).forEach(br => { if (br.next_node_id === node.id) passesToThis = true; });
+        if (passesToThis && n.output) {
+            var nRoute = "";
+            var rm3 = (n.output || "").match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
+            if (rm3) nRoute = rm3[1].trim();
+            var nContent = (n.output || "").replace(/<\/?ROUTE>/g, "").trim();
+            prevOutput += (prevOutput ? "\n" : "") + n.output;
+            if (nContent) prevContent += (prevContent ? "\n" : "") + nContent;
+            if (nRoute) prevRoute = nRoute;
+        }
     });
 
     if (node.type === "ask") {
@@ -2617,12 +2638,10 @@ async function runNode(card, node) {
     }
 
     if (node.type === "router") {
-        // 🔀 路由节点：读取上游路由值，匹配分支，不调用 AI
+        // 🔀 路由节点：使用上游的结构化路由值
         btn.textContent = "判定中...";
         try {
-            var routeVal = "";
-            var rm2 = prevOutput.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
-            if (rm2) routeVal = rm2[1].trim();
+            var routeVal = prevRoute;
             var matchedBranch = null;
             if (node.branches && node.branches.length && routeVal) {
                 for (var ri = 0; ri < node.branches.length; ri++) {
@@ -2649,10 +2668,10 @@ async function runNode(card, node) {
     }
 
     if (node.type === "write") {
-        // 📝 写入节点：纯程序执行，读取上游内容→硬编码写入数据库
+        // 📝 写入节点：使用上游的纯内容（无ROUTE标签）
         btn.textContent = "写入中...";
         try {
-            var content = prevOutput.replace(/<\/?ROUTE>/g, "").trim();
+            var content = prevContent;
             if (!content) {
                 node.output = "⛔ 写入失败：上游节点无有效内容";
                 outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 写入失败：上游无内容</span>';
