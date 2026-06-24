@@ -2151,7 +2151,10 @@ async function loadGraph() {
 function renderAllNodes() {
     const canvas = document.getElementById("chain-canvas");
     canvas.querySelectorAll(".node-card").forEach(n => n.remove());
-    (currentChain.nodes || []).forEach((node, idx) => {
+    var nodes = currentChain.nodes || [];
+    for (var idx = 0; idx < nodes.length; idx++) {
+        var node = nodes[idx];
+        try {
         if (!node.id) node.id = "n" + (idx + 1);
         if (!node.branches) node.branches = [];
         var ntype = node.type || "reasoning";
@@ -2202,7 +2205,14 @@ function renderAllNodes() {
         bindNodeEvents(card, node, idx);
         if (!isAsk && !isRouter && !isWrite) initTargetBuilder(card, node);
         if (!isAsk) renderBranches(card, node);
-    });
+        } catch(e) {
+            var errCard = document.createElement("div");
+            errCard.className = "node-card node-type-write";
+            errCard.style.cssText = "position:absolute;left:" + (node.x||30) + "px;top:" + (node.y||0) + "px;width:320px;";
+            errCard.innerHTML = '<div class="node-hdr" style="background:#7f1d1d;color:#fca5a5;">⚠ ' + (node.id||'?') + '</div><div class="node-body"><pre style="font-size:.65rem;color:#fca5a5;">' + e.message + '</pre></div>';
+            canvas.appendChild(errCard);
+        }
+    }
     bindPortEvents();
 }
 
