@@ -1888,6 +1888,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         function stopLogFlusher() {
             if (genesisLogTimer) { clearInterval(genesisLogTimer); genesisLogTimer = null; }
         }
+        window.__genStopFlusher = stopLogFlusher;
+        window.__genFlushLog = flushGenesisLog;
 
         logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
         var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
@@ -2036,6 +2038,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
 
         // 全部完成
         stopLogFlusher();
+        window.__genStopFlusher = null;
+        window.__genFlushLog = null;
         clearGenesisState();
         logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 世界大纲推演、地理蓝图落地、群像角色繁衍全部圆满成功！\n", "tool");
         statusBadge.textContent = "创世圆满成功";
@@ -2246,8 +2250,8 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
 function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop) {
     state.status = "interrupted";
     saveGenesisState(state);
-    stopLogFlusher();
-    flushGenesisLog(true);  // 保存剩余日志
+    if (window.__genStopFlusher) { window.__genStopFlusher(); }
+    if (window.__genFlushLog) { window.__genFlushLog(true); }
     statusBadge.textContent = "已暂停 · 可恢复";
     statusBadge.style.color = "#f59e0b";
     var consoleEl = document.getElementById("genesis-console");
@@ -2276,8 +2280,8 @@ function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, 
 }
 
 function handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop) {
-    stopLogFlusher();
-    flushGenesisLog(true);  // 保存中断前的日志
+    if (window.__genStopFlusher) { window.__genStopFlusher(); }
+    if (window.__genFlushLog) { window.__genFlushLog(true); }
     clearGenesisState();
     statusBadge.textContent = "已中断 · 不可恢复";
     statusBadge.style.color = "#ef4444";
@@ -3169,7 +3173,7 @@ chainGenBtn.addEventListener("click", async () => {
 });
 
 /* ═══════════ AI Settings ═══════════ */
-function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo" }; }
+function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false" }; }
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
 continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
@@ -4397,10 +4401,10 @@ document.getElementById("chain-restore-btn")?.addEventListener("click", async fu
 
 /* ═══════════ Settings ═══════════ */
 const sm = document.getElementById("settings-modal");
-document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; sm.classList.remove("hidden"); });
+document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; sm.classList.remove("hidden"); });
 document.getElementById("settings-cancel").addEventListener("click", () => sm.classList.add("hidden"));
 sm.querySelector(".modal-backdrop").addEventListener("click", () => sm.classList.add("hidden"));
-document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); sm.classList.add("hidden"); });
+document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); sm.classList.add("hidden"); });
 
 /* ═══════════ Cheat Sheet ═══════════ */
 function showCheatSheet() { document.getElementById("cheat-sheet-modal").classList.remove("hidden"); }

@@ -76,6 +76,10 @@
             <input type="text" id="settings-baseurl" placeholder="https://api.openai.com/v1">
             <label>模型</label>
             <input type="text" id="settings-model" placeholder="gpt-3.5-turbo">
+            <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                <input type="checkbox" id="settings-stream">
+                <span>流式传输（逐字显示 AI 输出）</span>
+            </label>
             <div class="modal-actions"><button id="settings-save" class="btn-primary">保存</button><button id="settings-cancel">取消</button></div>
         </div>
     </div>
