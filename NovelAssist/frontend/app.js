@@ -2606,12 +2606,24 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     // 🔍 校验节点：程序验证（含熔断：最多 3 次修正循环）
                     if (node.type === "validate") {
                         var vFmt = node.format || "";
-                        var vParser = REASONING_FORMATS[vFmt] && REASONING_FORMATS[vFmt].parser;
                         var vResult = { valid: true };
                         var vItems = [];
-                        if (vParser) {
-                            vItems = vParser(txt || "");
-                            vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null, rc._template_snapshot || null);
+                        if (vFmt) {
+                            // 直接解析 LLM 原始输出，不经过 parser
+                            var vCleaned = (txt || "").replace(/<ROUTE>[\s\S]*?<\/ROUTE>/g, "").trim();
+                            try {
+                                var vParsed = JSON.parse(vCleaned);
+                                if (!Array.isArray(vParsed)) {
+                                    if (vParsed && vParsed.characters && Array.isArray(vParsed.characters)) vParsed = vParsed.characters;
+                                    else vParsed = [vParsed];
+                                }
+                                vItems = vParsed;
+                            } catch(e) {
+                                vResult = { valid: false, errors: ["JSON 解析失败: " + (e.message || "").substring(0, 80)] };
+                            }
+                            if (vResult.valid) {
+                                vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null, rc._template_snapshot || null);
+                            }
                         }
                         if (vResult.valid) {
                             rc._validate_retries = 0;  // 重置计数
