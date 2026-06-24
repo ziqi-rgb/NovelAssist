@@ -217,8 +217,8 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             next_check = f"m_{next_s_id}_check" if next_s_id != "end" else ""
             nodes.append({"id":f"m_{s_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建【{s_name}】层级的地点？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"m_{s_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
             nodes.append({"id":f"m_{s_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划【{s_name}】层级的地点嵌套清单。","prompt":f"【{s_name} 蓝图规划】\n层级标尺: {s_scales}。最顶层从 {s_top} 开始，最底层到 {s_bottom}。\n请根据已有设定和地图数据规划此层级需要创建的所有地点，明确每个地点的 scale_level、parent_name、grid_x/grid_y (0-24)。\n【全景对齐】：必须 100% 参照已有高精度物理地图：{{locations_full_detail}}。","format":"location","target":[],"branches":[],"next_node_id":f"m_{s_id}_build","output":""})
-            nodes.append({"id":f"m_{s_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":"从清单中找出最高级未建地点，写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":""})
-            nodes.append({"id":f"m_{s_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：【{s_name}】层级是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"m_{s_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的【{s_name}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
+            nodes.append({"id":f"m_{s_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验：【{s_name}】层级的所有地点是否全部创建成功？","prompt":f"【地点创建校验】\n数据库中当前所有地点：{{locations_full_detail}}\n\n请判断属于【{s_name}】层级（scale_level 为 {s_scales} 中任一值）的所有计划地点是否已全部创建？\n- 还有未创建的 → <ROUTE>CONTINUE</ROUTE>\n- 全部创建完毕 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
     if title == "👤 严谨人设与模板质检流":
         return [
@@ -237,8 +237,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n0_init_todos", "type": "write", "x": 750, "y": -500,
                 "premise": "将人物任务清单写入推理链 Todo 列表。",
-                "prompt": "",
-                "target": [], "branches": [], "next_node_id": "c_n1_prepare", "output": "",
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n1_prepare", "output": "",
                 "write_to": {"entity": "chain_todos", "field": "content", "action": "create"}
             },
             {
@@ -250,8 +249,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n2_check_faction", "type": "router", "x": 400, "y": 550,
                 "premise": "判定：初步人设中涉及的势力是否已存在？不存在则需要新建。",
-                "prompt": "",
-                "target": [],
+                "prompt": "", "target": [],
                 "branches": [
                     {"condition": "YES", "next_node_id": "c_n3_build_faction"},
                     {"condition": "NO", "next_node_id": "c_n4_number"}
@@ -261,8 +259,8 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n3_build_faction", "type": "write", "x": 900, "y": 550,
                 "premise": "将上游确定的势力信息写入数据库。",
-                "prompt": "",
-                "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": "",
+                "write_to": {"entity": "faction", "field": "description", "action": "create"}
             },
             {
                 "id": "c_n4_number", "x": 400, "y": 1040,
@@ -274,20 +272,19 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "id": "c_n5a_gen_char", "x": 400, "y": 1530,
                 "premise": "从计划名单中选出下一个待创建的角色，生成完整的 attributes 属性字典。",
                 "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n【执行契约】：\n1. 继承前文的【创世计划人设总名单】\n2. 比对已有角色，找出第一个尚未创建的角色\n3. 为该角色生成完整饱满的属性字典，严格对齐模板的每个分组和字段",
-                "format": "character",
-                "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
+                "format": "character", "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
             },
             {
                 "id": "c_n5_build_char", "type": "write", "x": 400, "y": 2020,
                 "premise": "将上游生成的完整角色属性写入数据库。",
-                "prompt": "",
-                "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": "",
+                "write_to": {"entity": "character", "field": "attributes", "action": "create"}
             },
             {
-                "id": "c_n6_verify_template", "type": "router", "x": 400, "y": 2510,
+                "id": "c_n6_verify_template", "x": 400, "y": 2510,
                 "premise": "第一漏斗：质检刚创建的角色属性是否完整对齐模板。",
-                "prompt": "",
-                "target": [],
+                "prompt": "【属性模板质检】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n请找出在 c_n5_build_char 中刚刚被创建/修改的那个特定角色的 attributes 字典。\n1. 核对其 attributes 是否包含模板中的所有分组和所有字段\n2. 输出审查结果：\n   【当前审查角色】：[角色姓名]\n   【审查结果】：通过 / 未通过(列出缺失字段)\n3. 末尾输出路由：\n   - 所有字段齐全 → <ROUTE>PERFECT</ROUTE>\n   - 有缺失字段 → <ROUTE>NEEDS_FIX</ROUTE>",
+                "format": "", "target": [],
                 "branches": [
                     {"condition": "PERFECT", "next_node_id": "c_n8_verify_quantity"},
                     {"condition": "NEEDS_FIX", "next_node_id": "c_n7_fix"}
@@ -297,14 +294,14 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             {
                 "id": "c_n7_fix", "type": "write", "x": 900, "y": 2510,
                 "premise": "将上游质检指出的缺失字段补齐写入数据库。",
-                "prompt": "",
-                "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
+                "prompt": "", "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": "",
+                "write_to": {"entity": "character", "field": "attributes", "action": "update"}
             },
             {
-                "id": "c_n8_verify_quantity", "type": "router", "x": 400, "y": 3000,
+                "id": "c_n8_verify_quantity", "x": 400, "y": 3000,
                 "premise": "第二漏斗：核对已创建角色数量是否达标。",
-                "prompt": "",
-                "target": [],
+                "prompt": "【数量大盘点】\n已有角色：{characters_full_detail}\n\n1. 汇总创世进度\n2. 比对上文【创世计划人设总名单】与已创建角色\n3. 末尾输出路由：\n   - 全部角色已创建完毕 → <ROUTE>DONE</ROUTE>\n   - 还有角色未创建 → <ROUTE>NEEDS_MORE</ROUTE>",
+                "format": "", "target": [],
                 "branches": [
                     {"condition": "NEEDS_MORE", "next_node_id": "c_n5a_gen_char"},
                     {"condition": "DONE", "next_node_id": ""}
@@ -348,8 +345,8 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 plan += "必须遵循【卷→章→幕】三级嵌套，指明 parent_name。\n"
             plan += "纯文本输出清单！末尾输出 <ROUTE>DONE</ROUTE>。"
             nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name} 的具体条目。","prompt":plan,"format":"outline","target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
-            nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的 {m_name} 条目写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
-            nodes.append({"id":f"o_{m_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：{m_name} 是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的 {m_name} 条目写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"outline","field":"description","action":"create"}})
+            nodes.append({"id":f"o_{m_id}_verify","x":col_x[3],"y":base_y,"premise":f"校验：{m_name} 是否全部创建完毕？","prompt":f"【大纲创建校验】\n数据库中当前所有大纲：{{outlines_full_detail}}\n\n请判断分类为 [{cat}] 的所有计划大纲条目是否已全部创建？\n- 还有未创建的 → <ROUTE>CONTINUE</ROUTE>\n- 全部创建完毕 → <ROUTE>DONE</ROUTE>","format":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
     return []
 
@@ -2025,6 +2022,13 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
+    def find_outline_title(outlines: list[Outline], oid: int | None) -> str:
+        if oid is None:
+            return "?"
+        for o in outlines:
+            if o.id == oid:
+                return o.title
+        return "?"
     """Replace all {placeholder} patterns with database content."""
     novel = db.get(Novel, novel_id)
     current_tick = novel.current_tick if novel else 0
@@ -2197,6 +2201,26 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     parts.extend(render_loc_tree(lc.id, depth + 1))
                 return parts
             return "\n".join(render_loc_tree(None, 0)) or "【当前系统暂无地点数据】"
+
+        if ph == "outlines_full_detail":
+            outlines = db.scalars(select(Outline).where(
+                Outline.novel_id == novel_id,
+            ).order_by(Outline.order_index)).all()
+            if not outlines:
+                return "【当前系统暂无大纲数据】"
+            lines = ["## 全维大纲目录"]
+            by_cat: dict[str, list] = {}
+            for o in outlines:
+                by_cat.setdefault(o.category or "未分类", []).append(o)
+            for cat, items in by_cat.items():
+                lines.append(f"\n### {cat}")
+                for o in items:
+                    ctx_tag = " 📌常驻" if o.is_always_context else ""
+                    parent_tag = f" (父: {find_outline_title(outlines, o.parent_id)})" if o.parent_id else ""
+                    lines.append(f"- [{o.order_index}] **{o.title}**{ctx_tag}{parent_tag}")
+                    if o.description:
+                        lines.append(f"  {o.description[:150].replace(chr(10), ' ')}")
+            return "\n".join(lines)
 
         if ph == "timeline_history":
             events = db.scalars(select(TimelineEvent).where(
