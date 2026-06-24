@@ -96,7 +96,7 @@
     <div id="cheat-sheet-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
         <div class="modal-box" style="width:780px;max-height:85vh;overflow-y:auto;">
-            <h3 style="margin:0 0 12px;">💡 创世系统占位符百科全书</h3>
+            <h3 style="margin:0 0 12px;">💡 占位符速查表</h3>
             <div style="overflow-x:auto;">
                 <table style="width:100%;font-size:.72rem;border-collapse:collapse;white-space:nowrap;">
                     <thead>
@@ -140,7 +140,7 @@
             <button class="nav-btn" data-module="outline"><span class="nav-icon">&#128196;</span><span class="nav-label">设定大纲</span></button>
             <button class="nav-btn" data-module="characters"><span class="nav-icon">&#127917;</span><span class="nav-label">人物档案</span></button>
             <button class="nav-btn" data-module="map"><span class="nav-icon">&#128506;</span><span class="nav-label">地图编辑</span></button>
-            <button class="nav-btn" data-module="sandbox"><span class="nav-icon">&#9876;</span><span class="nav-label">战斗推理</span></button>
+            <button class="nav-btn" data-module="sandbox"><span class="nav-icon">&#9876;</span><span class="nav-label">战斗沙盘</span></button>
             <button class="nav-btn" data-module="reasoning"><span class="nav-icon">&#129504;</span><span class="nav-label">推理链编辑</span></button>
             <button class="nav-btn" data-module="relations"><span class="nav-icon">🌐</span><span class="nav-label">势力关系</span></button>
             <div class="nav-spacer"></div>
@@ -162,7 +162,7 @@
                 <div id="module-outline" class="module-panel hidden">
                     <div class="sidebar-header"><h2>大纲分类</h2>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <button id="outline-genesis-btn" class="sys-btn sys-btn-primary" style="font-size: 0.75rem; background: linear-gradient(135deg, #4f46e5, #9333ea); font-weight: 700;">🌌 智能创世重构</button>
+                            <button id="outline-genesis-btn" class="sys-btn sys-btn-primary" style="font-size: 0.75rem; background: linear-gradient(135deg, #4f46e5, #9333ea); font-weight: 700;">🌌智能建纲</button>
                             <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;">📤 导出 MD</button>
                         </div>
                     </div>
@@ -290,7 +290,7 @@
                 <div id="ws-map" class="ws-panel hidden">
                     <div class="map-toolbar">
                         <button id="map-list-btn" class="map-mode-btn sys-btn sys-btn-secondary active">📄 列表模式</button>
-                        <button id="map-grid-btn" class="map-mode-btn sys-btn sys-btn-secondary">🗺️ 25x25 简易地图</button>
+                        <button id="map-grid-btn" class="map-mode-btn sys-btn sys-btn-secondary">🗺️ 25x25 简易地图（新增地点在这里）</button>
                         <button id="loc-tmpl-btn" class="map-mode-btn sys-btn sys-btn-secondary" style="margin-left:auto;">⚙️ 地点模板设置</button>
                     </div>
                     <div id="map-list-mode" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
@@ -476,7 +476,7 @@
                 <input type="text" id="cs-title" style="width:100%;">
             </div>
             <fieldset style="border:1px solid var(--border);padding:10px;border-radius:6px;">
-                <legend style="font-size:0.8rem;font-weight:700;">世界上下文注入 (推演时可见)</legend>
+                <legend style="font-size:0.8rem;font-weight:700;">世界上下文注入 (推理时常驻可见列表)</legend>
                 <label style="display:block;"><input type="checkbox" id="cs-use-outlines"> 注入大纲</label>
                 <label style="display:block;"><input type="checkbox" id="cs-use-characters"> 注入人物档案与实时坐标</label>
                 <label style="display:block;"><input type="checkbox" id="cs-use-timeline"> 注入时间线历史</label>
@@ -494,15 +494,15 @@
         <div class="modal-backdrop" id="genesis-backdrop"></div>
         <div class="modal-box" style="width:720px; max-height:92vh; overflow-y:auto; border: 2px solid #4f46e5; box-shadow: 0 0 25px rgba(79, 70, 229, 0.45);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <h3 id="import-modal-title" style="margin:0; font-size: 1.1rem; color: #9333ea; font-weight: 800;">🌌 智能创世大重构中心</h3>
+                <h3 id="import-modal-title" style="margin:0; font-size: 1.1rem; color: #9333ea; font-weight: 800;">🌌 智能建纲中心</h3>
                 <span id="genesis-status-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--border);">待命中</span>
             </div>
             
             <p style="font-size:.72rem; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">
-                请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。创世引擎将调度三大推理链（大纲流 → 地图流 → 人设流）进行高精度顺序提炼，在沙盘中无缝落子！
+                请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。引擎将按顺序调用推理链（大纲流 → 地图流 → 人设流）进行高精度顺序提炼，并在每一步都将结果回填到对应模块中，帮助您快速搭建起完整的世界观框架和丰富的角色设定！
             </p>
             
-            <textarea id="import-textarea" placeholder="在这里贴入您的设定或正文章节...&#10;&#10;- 如果是设定：AI将为您搭建好全书的大纲框架并生成基础设定。&#10;- 如果是小说正文：AI将自动提炼正文里的门派总部、新人物卡、功法境界并回填落子！" style="width:100%; height:150px; padding:8px; border:1px solid var(--border); border-radius:4px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; box-sizing:border-box; background:var(--bg); margin-bottom: 12px;"></textarea>
+            <textarea id="import-textarea" placeholder="在这里贴入您的设定或正文章节...&#10;&#10;- 如果是设定：AI将为您搭建好全书的大纲框架并生成基础设定。&#10;- 如果是小说正文：AI将自动提炼正文里的门派总部、新人物卡、功法境界并回填！（其实没差）" style="width:100%; height:150px; padding:8px; border:1px solid var(--border); border-radius:4px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; box-sizing:border-box; background:var(--bg); margin-bottom: 12px;"></textarea>
             
             <!-- 🌟 三步骤高亮进度条 -->
             <div class="genesis-progress-bar" style="display: flex; gap: 8px; margin-bottom: 12px; font-size: 0.7rem; font-weight: 700;">
@@ -519,9 +519,9 @@
             
             <!-- 🖥️ 赛博朋克深海控制台 -->
             <div id="genesis-console-box" style="margin-bottom: 12px;">
-                <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; color: var(--text-muted);">🖥️ 创世控制台实时执行流:</div>
+                <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; color: var(--text-muted);">🖥️ 建纲控制台实时执行流:</div>
                 <div id="genesis-console" style="height: 220px; background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; font-family: 'Courier New', Courier, monospace; font-size: 0.7rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; box-shadow: inset 0 0 15px rgba(0,0,0,0.95); scroll-behavior: smooth;">
-[System] 创世核心就绪。等待输入指令...</div>
+[System] 核心就绪。等待指令...</div>
             </div>
             
             <div class="modal-actions" style="margin-top:16px; display: flex; justify-content: flex-end; gap: 8px;">
