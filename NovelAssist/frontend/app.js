@@ -9,8 +9,10 @@ let currentModule = "writing";
 let currentOutlineCat = "世界观";
 let mdViewing = false;
 let isGenesisRunning = false;
-let genesisInterrupted = false;          // 中断标志：true 时 runHeadlessChain 在下一节点循环前停止
-let genesisResumeState = null;           // 恢复状态快照（从 localStorage 加载）
+let genesisPaused = false;              // 暂停标志：优雅停止，保存进度
+let genesisAborted = false;             // 中断标志：立即停止，不保存
+let genesisAbortController = null;      // AbortController 用于中断 fetch
+let genesisResumeState = null;          // 恢复状态快照（从 localStorage 加载）
 
 /* ═══════════ Genesis State Persistence ═══════════ */
 const GENESIS_STATE_KEY = "genesis_state";
@@ -1388,21 +1390,42 @@ document.addEventListener("keydown", function(e) {
     if (e.key === "Escape" && isGenesisRunning) {
         e.preventDefault();
         e.stopPropagation();
-        triggerGenesisInterrupt();
+        triggerGenesisPause();  // ESC 触发暂停（安全行为）
     }
 });
 
-/* ═══════════ 中断逻辑 ═══════════ */
-function triggerGenesisInterrupt() {
-    if (!isGenesisRunning) return;
-    genesisInterrupted = true;
-    showToast("⏹ 已发出中断信号，当前节点执行完毕后将保存进度...");
-    var stopBtn = document.getElementById("genesis-stop-btn");
-    if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = "⏳ 中断中..."; }
+/* ═══════════ 暂停 / 中断逻辑 ═══════════ */
+function triggerGenesisPause() {
+    if (!isGenesisRunning || genesisPaused) return;
+    genesisPaused = true;
+    showToast("⏸ 已发出暂停信号，当前节点执行完毕后将保存进度...");
+    var pauseBtn = document.getElementById("genesis-pause-btn");
+    if (pauseBtn) { pauseBtn.disabled = true; pauseBtn.textContent = "⏳ 暂停中..."; }
+    var abortBtn = document.getElementById("genesis-abort-btn");
+    if (abortBtn) abortBtn.disabled = true;
 }
 
-document.getElementById("genesis-stop-btn")?.addEventListener("click", function() {
-    triggerGenesisInterrupt();
+function triggerGenesisAbort() {
+    if (!isGenesisRunning || genesisAborted) return;
+    genesisAborted = true;
+    // 中止所有进行中的 fetch 请求
+    if (genesisAbortController) {
+        try { genesisAbortController.abort(); } catch(e) {}
+    }
+    showToast("⏹ 已发出中断信号，正在强制停止...");
+    var pauseBtn = document.getElementById("genesis-pause-btn");
+    if (pauseBtn) { pauseBtn.disabled = true; pauseBtn.textContent = "⏳ 中断中..."; }
+    var abortBtn = document.getElementById("genesis-abort-btn");
+    if (abortBtn) { abortBtn.disabled = true; abortBtn.textContent = "⏳ 中断中..."; }
+}
+
+document.getElementById("genesis-pause-btn")?.addEventListener("click", function() {
+    triggerGenesisPause();
+});
+
+document.getElementById("genesis-abort-btn")?.addEventListener("click", function() {
+    if (!confirm("⚠️ 中断建纲将丢弃当前进度且不可恢复，确定中断？")) return;
+    triggerGenesisAbort();
 });
 
 /* ═══════════ 模式选择器交互 ═══════════ */
@@ -1549,7 +1572,8 @@ document.getElementById("outline-genesis-btn")?.addEventListener("click", functi
     document.getElementById("import-textarea").disabled = false;
     document.getElementById("genesis-submit-btn").disabled = false;
     document.getElementById("import-close-btn").disabled = false;
-    document.getElementById("genesis-stop-btn").style.display = "none";
+    document.getElementById("genesis-pause-btn").style.display = "none";
+    document.getElementById("genesis-abort-btn").style.display = "none";
     updateGenesisSubmitLabel();
     // 重置模式选择为完整建纲
     document.querySelectorAll(".genesis-mode-btn").forEach(function(l) { l.classList.remove("active"); });
@@ -1609,7 +1633,9 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
     }
 
     clearGenesisState();
-    genesisInterrupted = false;
+    genesisPaused = false;
+    genesisAborted = false;
+    genesisAbortController = new AbortController();
 
     // 构建初始状态快照
     var initialState = {
@@ -1636,7 +1662,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     var mode = initialState.mode;
     var submitBtn = document.getElementById("genesis-submit-btn");
     var closeBtn = document.getElementById("import-close-btn");
-    var stopBtn = document.getElementById("genesis-stop-btn");
+    var pauseBtn = document.getElementById("genesis-pause-btn");
+    var abortBtn = document.getElementById("genesis-abort-btn");
     var textarea = document.getElementById("import-textarea");
     var backdrop = document.getElementById("genesis-backdrop");
     var consoleEl = document.getElementById("genesis-console");
@@ -1646,9 +1673,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     submitBtn.disabled = true;
     submitBtn.style.display = "none";
     closeBtn.disabled = true;
-    stopBtn.style.display = "inline-block";
-    stopBtn.disabled = false;
-    stopBtn.textContent = "⏹ 中断建纲";
+    pauseBtn.style.display = "inline-block";
+    pauseBtn.disabled = false;
+    pauseBtn.textContent = "⏸ 暂停建纲";
+    abortBtn.style.display = "inline-block";
+    abortBtn.disabled = false;
+    abortBtn.textContent = "⏹ 中断建纲";
     textarea.disabled = true;
     backdrop.classList.add("genesis-running-backdrop");
     document.getElementById("genesis-resume-banner").style.display = "none";
@@ -1697,12 +1727,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     try {
         // ⚡ 并行模式分流
         if (initialState.parallel) {
-            await executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+            await executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
             return;
         }
 
         isGenesisRunning = true;
-        genesisInterrupted = false;
+        genesisPaused = false;
 
         // 增量模式的上下文设置
         var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
@@ -1739,8 +1769,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
             var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData1);
-            if (genesisInterrupted) {
-                handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+            if (genesisPaused) {
+                handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+                return;
+            }
+            if (genesisAborted) {
+                handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
             if (!res1.success) throw new Error("阶段 1 大纲推演失败: " + (res1.reason || "未知错误"));
@@ -1774,8 +1808,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
             var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData2);
-            if (genesisInterrupted) {
-                handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+            if (genesisPaused) {
+                handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+                return;
+            }
+            if (genesisAborted) {
+                handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
             if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
@@ -1809,8 +1847,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
             var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData3);
-            if (genesisInterrupted) {
-                handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+            if (genesisPaused) {
+                handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+                return;
+            }
+            if (genesisAborted) {
+                handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
             if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
@@ -1837,18 +1879,18 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         // 失败时清除状态，不保留恢复点（因为不是用户主动中断）
         clearGenesisState();
     } finally {
-        genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop);
+        genesisFinishedCleanup(submitBtn, closeBtn, pauseBtn, textarea, backdrop);
     }
 }
 
 /* ═══════════ 并行建纲执行引擎 ═══════════ */
-async function executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop) {
+async function executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop) {
     var text = initialState.inputText;
     var mode = initialState.mode;
     var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
 
     isGenesisRunning = true;
-    genesisInterrupted = false;
+    genesisPaused = false;
 
     logToConsole("[System] ⚡ 并行建纲模式启动 — 三条推理链将同时执行...\n", "step");
     logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
@@ -1980,9 +2022,14 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
         }
     }
 
+    // 检查暂停
+    if (genesisPaused) {
+        handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+        return;
+    }
     // 检查中断
-    if (genesisInterrupted) {
-        handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+    if (genesisAborted) {
+        handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
         return;
     }
 
@@ -2004,17 +2051,16 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     }
 }
 
-function handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop) {
+function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop) {
     state.status = "interrupted";
     saveGenesisState(state);
-    statusBadge.textContent = "已中断 · 可恢复";
+    statusBadge.textContent = "已暂停 · 可恢复";
     statusBadge.style.color = "#f59e0b";
-    // 直接写入控制台
     var consoleEl = document.getElementById("genesis-console");
     if (consoleEl) {
         var span = document.createElement("span");
         span.style.color = "#f59e0b";
-        span.textContent = "\n⏹ [已中断] 进度已保存，下次打开智能建纲时可继续执行。\n";
+        span.textContent = "\n⏸ [已暂停] 进度已保存，下次打开智能建纲时可继续执行。\n";
         consoleEl.appendChild(span);
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
@@ -2032,18 +2078,42 @@ function handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopB
     } else if (state.phase >= 1 && state.phase <= 3) {
         document.getElementById(stepIds[state.phase - 1]).className = "step-interrupted";
     }
-    genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop);
+    genesisFinishedCleanup(submitBtn, closeBtn, pauseBtn, textarea, backdrop);
 }
 
-function genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop) {
-    // 幂等保护：防止 handleGenesisInterrupted + finally 双重调用
-    if (!isGenesisRunning && !genesisInterrupted) return;
+function handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop) {
+    clearGenesisState();
+    statusBadge.textContent = "已中断 · 不可恢复";
+    statusBadge.style.color = "#ef4444";
+    var consoleEl = document.getElementById("genesis-console");
+    if (consoleEl) {
+        var span = document.createElement("span");
+        span.style.color = "#ef4444";
+        span.textContent = "\n⏹ [已中断] 建纲已被强制终止，进度未保存。\n";
+        consoleEl.appendChild(span);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+    // 所有步骤标为 interrupted
+    var stepIds = ["step-outline", "step-map", "step-char"];
+    stepIds.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && el.className === "step-active") el.className = "step-interrupted";
+    });
+    genesisFinishedCleanup(submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+}
+
+function genesisFinishedCleanup(submitBtn, closeBtn, pauseBtn, textarea, backdrop) {
+    // 幂等保护：防止双重调用
+    if (!isGenesisRunning && !genesisPaused && !genesisAborted) return;
     isGenesisRunning = false;
-    genesisInterrupted = false;
+    genesisPaused = false;
+    genesisAborted = false;
     submitBtn.disabled = false;
     submitBtn.style.display = "";
     closeBtn.disabled = false;
-    stopBtn.style.display = "none";
+    if (pauseBtn) pauseBtn.style.display = "none";
+    var abortBtn = document.getElementById("genesis-abort-btn");
+    if (abortBtn) abortBtn.style.display = "none";
     textarea.disabled = false;
     backdrop.classList.remove("genesis-running-backdrop");
 
@@ -2073,7 +2143,9 @@ async function executeGenesisFromResume(state) {
     // 恢复时不重复清空操作
 
     clearGenesisState();
-    genesisInterrupted = false;
+    genesisPaused = false;
+    genesisAborted = false;
+    genesisAbortController = new AbortController();
 
     var initialState = {
         phase: startPhase,
@@ -2194,14 +2266,12 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过100个循环)。\n", "warning");
                     break;
                 }
-                // 🛑 中断检查：每节点循环前检查中断标志
-                if (genesisInterrupted && isGenesisRunning) {
-                    if (onLogCallback) onLogCallback("\n⏹ [用户中断] 已收到中断信号，正在保存进度...\n", "warning");
-                    // 保存当前状态
+                // 🛑 暂停检查：优雅停止，保存进度
+                if (genesisPaused && isGenesisRunning) {
+                    if (onLogCallback) onLogCallback("\n⏸ [用户暂停] 已收到暂停信号，正在保存进度...\n", "warning");
                     var gs = loadGenesisState();
                     if (gs) {
                         if (chainKey && gs.chainStates) {
-                            // 并行模式：保存到对应链的槽位
                             gs.chainStates[chainKey] = { currentNodeId: currentNodeId, fullChainContext: fullChainContext, executedNodeCount: loopCount, chainId: chainId };
                         } else {
                             gs.currentNodeId = currentNodeId;
@@ -2213,7 +2283,13 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         gs.inputText = userInput;
                         saveGenesisState(gs);
                     }
-                    resolve({ success: false, reason: "interrupted" });
+                    resolve({ success: false, reason: "paused" });
+                    return;
+                }
+                // 🛑 中断检查：立即停止，不保存
+                if (genesisAborted && isGenesisRunning) {
+                    if (onLogCallback) onLogCallback("\n⏹ [用户中断] 强制终止，进度未保存。\n", "error");
+                    resolve({ success: false, reason: "aborted" });
                     return;
                 }
                 var node = nodes.find(function(n) { return n.id === currentNodeId; });
@@ -2230,10 +2306,15 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
                 var nodeToolCalls = "";
                 try {
-                    // ❓ 交互节点在无人值守模式下：记录提问内容但不暂停
+                    // ❓ 交互节点：建纲模式下自动回应「否」，无人值守模式下跳过
                     if (node.type === "ask") {
-                        if (onLogCallback) onLogCallback("\n❓ 交互节点（无人值守模式）: " + (node.premise || "(无提问内容)") + "\n", "warning");
-                        node.output = "【自动跳过交互】\n" + (node.premise || "");
+                        if (isGenesisRunning) {
+                            if (onLogCallback) onLogCallback("\n❓ 交互节点（自动回应「否」）: " + (node.premise || "(无提问内容)") + "\n", "warning");
+                            node.output = "【自动回应】否\n" + (node.premise || "");
+                        } else {
+                            if (onLogCallback) onLogCallback("\n❓ 交互节点（无人值守模式）: " + (node.premise || "(无提问内容)") + "\n", "warning");
+                            node.output = "【自动跳过交互】\n" + (node.premise || "");
+                        }
                         var askNextId = node.next_node_id || null;
                         currentNodeId = askNextId;
                         continue;
@@ -2394,6 +2475,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
                             context_settings: contextSettings || rc.context_settings || {},
                         }),
+                        signal: genesisAbortController ? genesisAbortController.signal : undefined,
                     });
                     var txt = "";
                     var gen = parseSSEStream(res);
@@ -2492,7 +2574,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     currentNodeId = null;
                 }
                 // 💾 建纲状态持久化：每节点完成后保存
-                if (isGenesisRunning && currentNodeId) {
+                if (isGenesisRunning && !genesisAborted && currentNodeId) {
                     var gsNow = loadGenesisState();
                     if (gsNow) {
                         if (chainKey && gsNow.chainStates) {
