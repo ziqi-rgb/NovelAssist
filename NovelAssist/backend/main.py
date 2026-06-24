@@ -307,7 +307,6 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             contract = contracts.get(cat, "")
             nodes.append({"id":f"o_{m_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建或扩充【{m_name}】？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
             plan = f"【分条规划】\n【{cat} 硬性契约】：{contract}\n请对【{m_name}】进行详细规划，拆分为多个条目。\n"
-            build = ""
             if m_id != "char":
                 plan += "【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{locations_full_detail}。严禁生造冲突内容！\n"
             if m_id == "story":
