@@ -2787,6 +2787,17 @@ async function runNode(card, node) {
                 element_type: wt.entity,
                 action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"),
             };
+            // 🧩 尝试从上游推理节点获取结构化解析
+            var parsedItems = null;
+            var upstreamFormat = "";
+            (currentChain.nodes || []).forEach(function(n) {
+                var passes = n.next_node_id === node.id;
+                (n.branches || []).forEach(function(br) { if (br.next_node_id === node.id) passes = true; });
+                if (passes && n.format && REASONING_FORMATS[n.format] && REASONING_FORMATS[n.format].parser) {
+                    upstreamFormat = n.format;
+                    parsedItems = REASONING_FORMATS[n.format].parser(n.output || "");
+                }
+            });
             // 构建 data 对象
             var dataObj = {};
             var toolName = "manage_world_element";
@@ -2795,7 +2806,27 @@ async function runNode(card, node) {
                 toolName = "manage_chain_todos";
                 toolArgs = { action: "add", content: content };
             } else if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline") {
-                if (wt.field === "attributes") {
+                var item = (parsedItems && parsedItems.length > 0) ? parsedItems[0] : null;
+                if (item && upstreamFormat === "location") {
+                    dataObj["name"] = item.name || "";
+                    dataObj["scale_level"] = item.scale || "";
+                    if (item.parent) dataObj["parent_name"] = item.parent;
+                    if (item.grid_x !== undefined) dataObj["grid_x"] = item.grid_x;
+                    if (item.grid_y !== undefined) dataObj["grid_y"] = item.grid_y;
+                    dataObj["description"] = item.description || content;
+                } else if (item && upstreamFormat === "character") {
+                    dataObj["name"] = item.name || "";
+                    dataObj["status"] = item.status || "存活";
+                    dataObj["faction_name"] = item.faction || "";
+                    dataObj["faction_role"] = item.faction_role || "";
+                    dataObj["attributes"] = item.attributes || {};
+                    dataObj["description"] = item.description || "";
+                } else if (item && upstreamFormat === "outline") {
+                    dataObj["title"] = item.title || "";
+                    dataObj["category"] = item.category || "";
+                    if (item.parent && item.parent !== "无") dataObj["parent_name"] = item.parent;
+                    dataObj["description"] = item.description || content;
+                } else if (wt.field === "attributes") {
                     // 尝试解析 content 为 JSON，否则存入嵌套字段
                     dataObj[wt.field] = {};
                     if (wt.sub_field) {
