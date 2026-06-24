@@ -1954,68 +1954,17 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
             document.getElementById("step-map").className = "step-completed";
         }
 
-        // 🌍 获取地图数据注入到阶段2大纲上下文
-        var outlineCtx = incCtx ? Object.assign({}, incCtx) : {};
+        // 🌍 获取地图数据注入到阶段2人设上下文
+        var charCtx = incCtx ? Object.assign({}, incCtx) : {};
         try {
-            var locs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
-            outlineCtx.locations_full_detail = JSON.stringify(locs);
+            var mapLocs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
+            charCtx.locations_full_detail = JSON.stringify(mapLocs);
         } catch(e) { /* 获取失败不阻塞 */ }
 
-        // 阶段 2
+        // 阶段 2：人设（先于大纲，以便大纲使用角色数据）
         if (startPhase <= 2 && !state.completedPhases[1]) {
-            if (!state.currentChainId || state.currentChainId !== chainOutline.id) {
-                state.phase = 2;
-                state.currentChainId = chainOutline.id;
-                state.currentNodeId = null;
-                state.executedNodeCount = 0;
-                state.fullChainContext = "";
-                saveGenesisState(state);
-            }
-            startLogFlusher(chainOutline.title);
-            logToConsole("[System] \n===== 📖 阶段 2: 全维世界大纲推演启动 =====\n", "step");
-            document.getElementById("step-outline").className = "step-active";
-            var resumeData2 = (state.currentChainId === chainOutline.id && state.currentNodeId) ? {
-                currentNodeId: state.currentNodeId,
-                fullChainContext: state.fullChainContext,
-                executedNodeCount: state.executedNodeCount || 0,
-            } : null;
-            var res2 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) {
-                genesisFullLog += "[" + typ + "] " + txt + "\n";
-                if (typ !== "chunk") logToConsole(txt, typ);
-            }, outlineCtx, resumeData2);
-            if (genesisPaused) {
-                var pausedState = loadGenesisState();
-                if (pausedState) {
-                    state.currentNodeId = pausedState.currentNodeId;
-                    state.currentChainId = pausedState.currentChainId;
-                    state.fullChainContext = pausedState.fullChainContext;
-                    state.executedNodeCount = pausedState.executedNodeCount || 0;
-                }
-                handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
-                return;
-            }
-            if (genesisAborted) {
-                handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
-                return;
-            }
-            if (!res2.success) throw new Error("阶段 2 全维世界大纲推演失败: " + (res2.reason || "未知错误"));
-            await flushGenesisLog(true);
-            state.completedPhases[1] = true;
-            state.phase = 3;
-            state.currentChainId = null;
-            state.currentNodeId = null;
-            state.fullChainContext = "";
-            state.executedNodeCount = 0;
-            document.getElementById("step-outline").className = "step-completed";
-            saveGenesisState(state);
-        } else if (state.completedPhases[1]) {
-            document.getElementById("step-outline").className = "step-completed";
-        }
-
-        // 阶段 3
-        if (startPhase <= 3 && !state.completedPhases[2]) {
             if (!state.currentChainId || state.currentChainId !== chainChar.id) {
-                state.phase = 3;
+                state.phase = 2;
                 state.currentChainId = chainChar.id;
                 state.currentNodeId = null;
                 state.executedNodeCount = 0;
@@ -2023,17 +1972,17 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 saveGenesisState(state);
             }
             startLogFlusher(chainChar.title);
-            logToConsole("[System] \n===== 👤 阶段 3: 群像人设质检与繁衍启动 =====\n", "step");
+            logToConsole("[System] \n===== 👤 阶段 2: 群像人设质检与繁衍启动 =====\n", "step");
             document.getElementById("step-char").className = "step-active";
-            var resumeData3 = (state.currentChainId === chainChar.id && state.currentNodeId) ? {
+            var resumeData2 = (state.currentChainId === chainChar.id && state.currentNodeId) ? {
                 currentNodeId: state.currentNodeId,
                 fullChainContext: state.fullChainContext,
                 executedNodeCount: state.executedNodeCount || 0,
             } : null;
-            var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) {
+            var res2 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) {
                 genesisFullLog += "[" + typ + "] " + txt + "\n";
                 if (typ !== "chunk") logToConsole(txt, typ);
-            }, incCtx, resumeData3);
+            }, charCtx, resumeData2);
             if (genesisPaused) {
                 var pausedState = loadGenesisState();
                 if (pausedState) {
@@ -2049,12 +1998,72 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
                 return;
             }
-            if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
+            if (!res2.success) throw new Error("阶段 2 人设质检失败: " + (res2.reason || "未知错误"));
+            await flushGenesisLog(true);
+            state.completedPhases[1] = true;
+            state.phase = 3;
+            state.currentChainId = null;
+            state.currentNodeId = null;
+            state.fullChainContext = "";
+            state.executedNodeCount = 0;
+            document.getElementById("step-char").className = "step-completed";
+            saveGenesisState(state);
+        } else if (state.completedPhases[1]) {
+            document.getElementById("step-char").className = "step-completed";
+        }
+
+        // 阶段 3：大纲（先注入地图+人设数据）
+        var outlineCtx = incCtx ? Object.assign({}, incCtx) : {};
+        try {
+            var olLocs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
+            outlineCtx.locations_full_detail = JSON.stringify(olLocs);
+        } catch(e) {}
+        try {
+            var olChars = await (await fetch("/api/characters?novel_id=" + currentNovelId)).json();
+            outlineCtx.characters_full_detail = JSON.stringify(olChars);
+        } catch(e) {}
+        if (startPhase <= 3 && !state.completedPhases[2]) {
+            if (!state.currentChainId || state.currentChainId !== chainOutline.id) {
+                state.phase = 3;
+                state.currentChainId = chainOutline.id;
+                state.currentNodeId = null;
+                state.executedNodeCount = 0;
+                state.fullChainContext = "";
+                saveGenesisState(state);
+            }
+            startLogFlusher(chainOutline.title);
+            logToConsole("[System] \n===== 📖 阶段 3: 全维世界大纲推演启动 =====\n", "step");
+            document.getElementById("step-outline").className = "step-active";
+            var resumeData3 = (state.currentChainId === chainOutline.id && state.currentNodeId) ? {
+                currentNodeId: state.currentNodeId,
+                fullChainContext: state.fullChainContext,
+                executedNodeCount: state.executedNodeCount || 0,
+            } : null;
+            var res3 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) {
+                genesisFullLog += "[" + typ + "] " + txt + "\n";
+                if (typ !== "chunk") logToConsole(txt, typ);
+            }, outlineCtx, resumeData3);
+            if (genesisPaused) {
+                var pausedState = loadGenesisState();
+                if (pausedState) {
+                    state.currentNodeId = pausedState.currentNodeId;
+                    state.currentChainId = pausedState.currentChainId;
+                    state.fullChainContext = pausedState.fullChainContext;
+                    state.executedNodeCount = pausedState.executedNodeCount || 0;
+                }
+                handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+                return;
+            }
+            if (genesisAborted) {
+                handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
+                return;
+            }
+            if (!res3.success) throw new Error("阶段 3 全维世界大纲推演失败: " + (res3.reason || "未知错误"));
             await flushGenesisLog(true);
             state.completedPhases[2] = true;
-            document.getElementById("step-char").className = "step-completed";
+            document.getElementById("step-outline").className = "step-completed";
         } else if (state.completedPhases[2]) {
-            document.getElementById("step-char").className = "step-completed";
+            document.getElementById("step-outline").className = "step-completed";
         }
 
         // 全部完成
@@ -2534,9 +2543,20 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             try {
                                 var novelData = await (await fetch("/api/novels/" + currentNovelId)).json();
                                 rc._template_snapshot = novelData.character_template || [];
-                                if (onLogCallback) onLogCallback("\n📸 [模板快照] 已冻结 " + (rc._template_snapshot.length || 0) + " 个分组\n", "tool");
                             } catch(e) {
                                 rc._template_snapshot = [];
+                            }
+                            // 快照为空时回退到系统默认模板
+                            if (!rc._template_snapshot || !rc._template_snapshot.length) {
+                                rc._template_snapshot = [
+                                    {"group":"基础信息","fields":["姓名","年龄","性别","性格","身高"]},
+                                    {"group":"外貌特征","fields":["身高","发色","瞳色"]},
+                                    {"group":"背景故事","fields":["出身","经历"]},
+                                    {"group":"人物关系","fields":["女友","李若馨","季长安","安莉","安可","范洁"]}
+                                ];
+                                if (onLogCallback) onLogCallback("\n📸 [模板快照] 数据库无模板，已加载默认 4 分组\n", "tool");
+                            } else if (onLogCallback) {
+                                onLogCallback("\n📸 [模板快照] 已冻结 " + (rc._template_snapshot.length || 0) + " 个分组\n", "tool");
                             }
                         }
                         node.output = "✅ 程序执行完毕";

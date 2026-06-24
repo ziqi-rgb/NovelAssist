@@ -256,7 +256,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             "m_building_total": (2174, 2526),
         }
         # Row -450: init
-        nodes.append({"id":"m_plan","x":_C["m_plan"][0],"y":_C["m_plan"][1],"premise":"明确需要建立的核心地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出需要创建的核心地点名称清单。不要无节制地列出一百个地点——只列与用户故事直接相关的关键地点，控制在 20 个以内。\n\n格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区/建筑, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n⚠️ 层级必须严格从高到低，父级只能比自身高一个层级：\n  大千世界→宇宙→星球→大陆→国家→城池→街区→建筑\n  例：国家只能以大陆为父级，大陆只能以星球为父级，不能跨级或逆级\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
+        nodes.append({"id":"m_plan","x":_C["m_plan"][0],"y":_C["m_plan"][1],"premise":"明确需要建立的核心地点清单。","prompt":"【全域地点规划】\n请根据用户输入和已有设定，列出需要创建的核心地点名称清单。不要无节制地列出一百个地点——只列与用户故事直接相关的关键地点，控制在 20 个以内。\n\n格式：\n- [ ] 地点名 (层级: 大千世界/星球/大陆/国家/城池/街区/建筑, 父级: xxx)\n不要输出详细属性——详细内容将由后续节点逐个生成。\n\n⚠️ 层级必须严格从高到低，父级只能比自身高一个层级：\n  大千世界→宇宙→星球→大陆→国家→城池→街区→建筑\n  例：国家只能以大陆为父级，大陆只能以星球为父级，不能跨级或逆级\n⚠️ 必须自顶向下覆盖：从最高层级（大千世界）开始，逐级向下顺延到目标建筑。即使只需要一栋建筑，也必须列出其完整层级链（街区→城池→国家→大陆→星球→大千世界）。允许适当编纂中间层级的名称和属性。\n【全景对齐】：100% 参照已有地理数据：{locations_full_detail}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"m_todos","output":""})
         nodes.append({"id":"m_todos","type":"write","x":_C["m_todos"][0],"y":_C["m_todos"][1],"premise":"将所有地点写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"m_world_pick","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (s_id, s_label, s_scales, s_top, s_bottom) in enumerate(stages):
             next_s_id = stages[i + 1][0] if i + 1 < len(stages) else "end"
@@ -364,7 +364,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             "世界势力": "定义世界中割据或隐藏的门派、宗族、联邦、商会等社会组织。",
             "地理": "描绘大陆、国度、禁地、城池等地理实体的分布。",
             "人物设定": "列出非核心主角的简略人设概述，不展开详细属性。",
-            "能力体系设定": "系统化拆解修行体系、超凡境界、等级晋升要求。",
+            "能力体系设定": "系统化拆解科技水平、超凡体系、修行境界、等级晋升要求。包括但不限于：世界观内的科技树（如生物改造技术、契约能量应用）、超凡能力的来源与分级、员工的技能培训与考核体系。",
         }
         nodes: list[dict] = []
         _C = {
@@ -407,7 +407,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             "o_power_total": (2190, 2017),
         }
         # Row -450: init
-        nodes.append({"id":"o_plan","x":_C["o_plan"][0],"y":_C["o_plan"][1],"premise":"规划核心大纲条目清单。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，列出需要创建的核心大纲条目名称清单。控制在 30 个以内，只列与故事直接相关的关键条目。\n\n格式：\n- [ ] 条目名 (分类: 世界观设定/世界势力/地理知识/人物设定/能力体系设定)\n不要输出详细描述——详细内容将由后续节点逐个生成。\n\n模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：100% 参照已有数据：{locations_full_detail} {characters_list}。\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"o_todos","output":""})
+        nodes.append({"id":"o_plan","x":_C["o_plan"][0],"y":_C["o_plan"][1],"premise":"规划核心大纲条目清单。","prompt":"【全域大纲规划】\n请根据用户输入和已有设定，列出需要创建的核心大纲条目名称清单。控制在 30 个以内，只列与故事直接相关的关键条目。\n\n格式：\n- [ ] 条目名 (分类: 世界观设定/世界势力/地理知识/人物设定/能力体系设定)\n不要输出详细描述——详细内容将由后续节点逐个生成。\n\n模块包括：世界观设定、世界势力、地理知识、人物设定（简略）、能力体系设定。\n【全景对齐】：100% 参照已有数据：\n地理位置：{locations_full_detail}\n人物档案：{characters_full_detail}\n末尾输出 <ROUTE>DONE</ROUTE>。","format":"","target":[],"branches":[],"next_node_id":"o_todos","output":""})
         nodes.append({"id":"o_todos","type":"write","x":_C["o_todos"][0],"y":_C["o_todos"][1],"premise":"将所有大纲条目写入推理链待办清单。","prompt":"","target":[],"branches":[],"next_node_id":"o_world_pick","output":"","write_to":{"entity":"chain_todos","field":"content","action":"create"}})
         for i, (m_id, m_name, cat, use_format) in enumerate(modules):
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
@@ -416,7 +416,7 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             # 🎯 程序选取待办
             nodes.append({"id":f"o_{m_id}_pick","type":"pick_todo","x":_C[f"o_{m_id}_pick"][0],"y":_C[f"o_{m_id}_pick"][1],"premise":f"选取【{m_name}】分类第一个未完成待办","pick_filter":cat,"branches":[{"condition":"HAS_TODO","next_node_id":f"o_{m_id}_create"},{"condition":"NO_TODO","next_node_id":f"o_{m_id}_verify"}],"next_node_id":"","output":""})
             # 创建节点（不再负责选取待办）
-            nodes.append({"id":f"o_{m_id}_create","x":_C[f"o_{m_id}_create"][0],"y":_C[f"o_{m_id}_create"][1],"premise":"为选取的待办项生成精炼内容。","prompt":f"【{m_name} 条目创建】\n硬性契约：{contract}\n已有大纲：{{outlines_full_detail}}\n已有地理：{{locations_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成精炼的 title、category、description（Markdown 格式）。description 不超过 500 字，只写核心设定，不要叙事展开。条目可以存在父子嵌套关系——通过 parent_name 字段指定父级（如'修真体系'的子条目'筑基期'写 parent_name: 修真体系）。顶级条目 parent_name 写'无'。","format":fmt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_write","output":""})
+            nodes.append({"id":f"o_{m_id}_create","x":_C[f"o_{m_id}_create"][0],"y":_C[f"o_{m_id}_create"][1],"premise":"为选取的待办项生成精炼内容。","prompt":f"【{m_name} 条目创建】\n硬性契约：{contract}\n已有大纲：{{outlines_full_detail}}\n已有地理：{{locations_full_detail}}\n已有人物：{{characters_full_detail}}\n\n请根据上方「选取待办」传入的条目名称，为其生成精炼的 title、category、description（Markdown 格式）。description 不超过 500 字，只写核心设定，不要叙事展开。条目可以存在父子嵌套关系——通过 parent_name 字段指定父级（如'修真体系'的子条目'筑基期'写 parent_name: 修真体系）。顶级条目 parent_name 写'无'。","format":fmt,"target":[],"branches":[],"next_node_id":f"o_{m_id}_write","output":""})
             nodes.append({"id":f"o_{m_id}_write","type":"write","x":_C[f"o_{m_id}_write"][0],"y":_C[f"o_{m_id}_write"][1],"premise":f"将生成的【{m_name}】条目写入 {cat} 分类。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_todos","output":"","write_to":{"entity":"outline","field":"category","sub_field":cat,"action":"create"}})
             nodes.append({"id":f"o_{m_id}_todos","type":"write","x":_C[f"o_{m_id}_todos"][0],"y":_C[f"o_{m_id}_todos"][1],"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
             nodes.append({"id":f"o_{m_id}_verify","type":"verify","x":_C[f"o_{m_id}_verify"][0],"y":_C[f"o_{m_id}_verify"][1],"premise":f"校验：【{m_name}】是否全部完成？","verify_filter":cat,"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_pick"},{"condition":"NEXT","next_node_id":f"o_{m_id}_total"}],"next_node_id":"","output":""})
