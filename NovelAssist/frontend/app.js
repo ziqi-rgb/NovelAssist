@@ -2603,19 +2603,20 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
-                    // 🔍 校验节点：程序验证
+                    // 🔍 校验节点：程序验证（含熔断：最多 3 次修正循环）
                     if (node.type === "validate") {
                         var vFmt = node.format || "";
                         var vParser = REASONING_FORMATS[vFmt] && REASONING_FORMATS[vFmt].parser;
                         var vResult = { valid: true };
+                        var vItems = [];
                         if (vParser) {
-                            var vItems = vParser(lastReasoning || "");
+                            vItems = vParser(lastReasoning || "");
                             vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null, rc._template_snapshot || null);
                         }
                         if (vResult.valid) {
+                            rc._validate_retries = 0;  // 重置计数
                             fullChainContext += "\n\n--- 【校验通过】 ---\n" + lastReasoning;
                             node.output = "✅ 校验通过";
-                            // 转跳到下一节点
                             var writeTarget = (node.branches || []).find(function(b) { return b.condition === "VALID"; });
                             if (writeTarget && writeTarget.next_node_id) {
                                 currentNodeId = writeTarget.next_node_id;
@@ -2623,12 +2624,29 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 currentNodeId = node.next_node_id || null;
                             }
                         } else {
-                            fullChainContext += "\n\n--- 【校验失败】 ---\n" + vResult.errors.join("; ");
+                            rc._validate_retries = (rc._validate_retries || 0) + 1;
+                            fullChainContext += "\n\n--- 【校验失败 (#" + rc._validate_retries + ")】 ---\n" + vResult.errors.join("; ");
                             node.output = "⛔ 校验失败: " + vResult.errors.join("; ");
-                            // 转跳回创建节点
                             var retryTarget = (node.branches || []).find(function(b) { return b.condition === "INVALID"; });
-                            if (retryTarget && retryTarget.next_node_id) {
-                                fullChainContext += "\n[系统指令] 上一个节点的输出未通过数据校验，请根据以下错误修正后重新输出：\n" + vResult.errors.map(function(e) { return "- " + e; }).join("\n");
+                            // 熔断：超过 3 次强制放行
+                            if (rc._validate_retries >= 3) {
+                                fullChainContext += "\n[系统指令] 已修正 " + rc._validate_retries + " 次仍未通过，熔断放行，保留当前输出。";
+                                if (onLogCallback) onLogCallback("\n⚠️ [校验熔断] 修正 " + rc._validate_retries + " 次未通过，强制放行\n", "warning");
+                                rc._validate_retries = 0;
+                                var writeTarget2 = (node.branches || []).find(function(b) { return b.condition === "VALID"; });
+                                currentNodeId = (writeTarget2 && writeTarget2.next_node_id) ? writeTarget2.next_node_id : (node.next_node_id || null);
+                            } else if (retryTarget && retryTarget.next_node_id) {
+                                // 注入修正指令：空输出时补充角色名称和模板信息
+                                var fixExtra = "";
+                                if (!vItems || !vItems.length) {
+                                    var pickCtx = fullChainContext.match(/--- 【选取待办】 ---\n(.+)/);
+                                    var charName = pickCtx ? pickCtx[1].trim() : "";
+                                    fixExtra = "\n⚠️ 上一次输出完全为空或无法解析。请根据以下信息从头生成：" +
+                                        "\n角色名称: " + (charName || "未知") +
+                                        "\n模板快照: " + JSON.stringify(rc._template_snapshot || []) +
+                                        "\n请严格按模板分组和字段输出完整 JSON，禁止输出「未知」。";
+                                }
+                                fullChainContext += "\n[系统指令] 上一个节点的输出未通过数据校验，请根据以下错误修正后重新输出：\n" + vResult.errors.map(function(e) { return "- " + e; }).join("\n") + fixExtra;
                                 currentNodeId = retryTarget.next_node_id;
                             } else {
                                 currentNodeId = node.next_node_id || null;
