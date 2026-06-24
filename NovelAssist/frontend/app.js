@@ -2337,10 +2337,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 }
                             }
                         }
-                        // verify 节点输出 DONE 后跳转到 router → 前一模块已完成 → 默认走第一个分支（通常是 YES / 继续下一模块）
-                        if (!rNextId && node.branches && node.branches.length > 0 && (rv === "DONE" || !rv)) {
-                            rNextId = node.branches[0].next_node_id;
-                        }
                         if (!rNextId) rNextId = node.next_node_id || null;
                         node.output = "🔀 路由: [" + (rv || "无值") + "] → " + (rNextId || "终止");
                         fullChainContext += "\n--- 【路由判定】 ---\n" + node.output;
