@@ -369,11 +369,11 @@ async def lifespan(app: FastAPI):
                 if t_chain and isinstance(t_chain.nodes, list):
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 2:
-                        print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→2，执行迁移...")
+                    if ver is None or ver < 3:
+                        print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→3，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 2
+                        cs["_version"] = 3
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "context_settings")
@@ -1522,13 +1522,13 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 2:
-                print(f"[Runtime Migration] 链「{name}」版本 {ver}→2")
+            if ver < 3:
+                print(f"[Runtime Migration] 链「{name}」版本 {ver}→3")
                 chain.nodes = _get_system_chain_nodes(name)
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 2
+                    chain.context_settings["_version"] = 3
                 else:
-                    chain.context_settings = {"_version": 2}
+                    chain.context_settings = {"_version": 3}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "context_settings")
                 db.commit()
