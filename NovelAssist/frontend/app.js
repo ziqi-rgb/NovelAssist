@@ -2612,7 +2612,9 @@ const REASONING_FORMATS = {
     },
     "character": {
         label: "👤 人设",
-        template: "\n\n【结构化输出格式 — 必须严格遵循，字段名必须与下方完全一致】\n" +
+        template: "\n\n【结构化输出格式 — 必须严格遵循】\n" +
+            "系统当前人物属性模板如下（你必须严格按照此模板的每个分组和每个字段输出 attributes）：\n" +
+            "{character_template}\n\n" +
             "每个角色一个完整块，格式如下：\n\n" +
             "【name】角色名（必填）\n" +
             "【aliases】别名，逗号分隔\n" +
@@ -2622,6 +2624,7 @@ const REASONING_FORMATS = {
             "【faction_role】在势力中的职位\n" +
             "【is_always_context】true 或 false\n" +
             "【attributes】\n" +
+            "[必须严格按上方模板的每个分组逐个输出，每个字段都填满值]\n" +
             "分组名:\n" +
             "  字段1: 值1\n" +
             "  字段2: 值2\n" +

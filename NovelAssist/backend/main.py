@@ -223,9 +223,15 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
     if title == "👤 严谨人设与模板质检流":
         return [
             {
+                "id": "c_nm1_ask_template", "type": "ask", "x": 400, "y": -1000,
+                "premise": "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段。",
+                "prompt": "【模板校准提问】\n当前小说的人物属性模板为：\n{character_template}\n\n请生成一个问题，询问用户：\n1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？\n2. 是否有现有分组需要增加或删减字段？\n3. 是否需要调整分组的顺序或命名？\n\n用户回复后，将这些修改说明作为后续创建人物时的额外指引（在模板基础上追加用户要求的新分组和字段）。",
+                "target": [], "branches": [], "next_node_id": "c_n0_init_plan", "output": ""
+            },
+            {
                 "id": "c_n0_init_plan", "x": 400, "y": -500,
                 "premise": "分析用户输入，列出本次需要创建和质检的所有人物任务清单。",
-                "prompt": "【人设任务规划】\n根据用户输入，列出需要创建的所有人物及其所属势力。格式：- [ ] 角色名 (所属势力)。末尾输出 <ROUTE>DONE</ROUTE>。",
+                "prompt": "【人设任务规划】\n根据用户输入和模板（如有用户追加的分组/字段要求也一并纳入），列出需要创建的所有人物及其所属势力。格式：- [ ] 角色名 (所属势力)。末尾输出 <ROUTE>DONE</ROUTE>。",
                 "target": [], "branches": [], "next_node_id": "c_n0_init_todos", "output": ""
             },
             {
