@@ -2660,23 +2660,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     var rm = cleanTxt.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/);
                     if (rm) routeKey = rm[1].trim();
                     
-                    // 校验：有分支但没有 ROUTE 标签
-                    if ((!routeKey) && node.branches && node.branches.length > 0) {
-                        if (onLogCallback) onLogCallback("\n⚠️ 校验警告：节点有 " + node.branches.length + " 个分支但 AI 未输出 <ROUTE> 标签，将尝试模糊匹配...\n", "warning");
-                    }
-                    // 校验：有 ROUTE 标签但无法匹配任何分支
-                    if (routeKey && node.branches && node.branches.length > 0) {
-                        var matchedAny = false;
-                        for (var bi2 = 0; bi2 < node.branches.length; bi2++) {
-                            if (node.branches[bi2].condition && (routeKey === node.branches[bi2].condition || routeKey.includes(node.branches[bi2].condition))) {
-                                matchedAny = true; break;
-                            }
-                        }
-                        if (!matchedAny && onLogCallback && routeKey !== "DONE") {
-                            onLogCallback("\n⚠️ 校验警告：ROUTE 标签值 '" + routeKey + "' 未匹配任何分支条件，将回退到默认顺序执行\n", "warning");
-                        }
-                    }
-                    
                     var cleanOutput = cleanTxt.replace(/<\/?ROUTE>/g, "").trim();
                     node.output = cleanOutput;
 
