@@ -483,14 +483,48 @@ async function renderDynamicForm() {
     charTemplate.forEach(grp => {
         const fs = document.createElement("fieldset"); fs.className = "char-fieldset";
         fs.innerHTML = `<legend>${e(grp.group)}</legend>`;
-        grp.fields.forEach(fld => {
-            const row = document.createElement("div"); row.className = "char-field";
-            const val = (attrs[grp.group] && attrs[grp.group][fld]) ? attrs[grp.group][fld] : "";
-            row.innerHTML = `<label>${e(fld)}</label><input type="text" data-group="${e(grp.group)}" data-field="${e(fld)}" value="${e(val)}">`;
-            fs.appendChild(row);
-        });
+        if (grp.fields.length === 0) {
+            // 空字段组：展示已有的属性子键（AI 可自由填充）
+            const existing = attrs[grp.group] || {};
+            const keys = Object.keys(existing);
+            if (keys.length === 0) {
+                const hint = document.createElement("div");
+                hint.style.cssText = "font-size:.7rem;color:var(--text-muted);padding:4px 0;";
+                hint.textContent = "（此分组字段由 AI 自动填充，无需手动编辑）";
+                fs.appendChild(hint);
+            }
+            keys.forEach(k => {
+                const row = document.createElement("div"); row.className = "char-field";
+                row.innerHTML = `<label>${e(k)}</label><input type="text" data-group="${e(grp.group)}" data-field="${e(k)}" value="${e(existing[k] || '')}">`;
+                fs.appendChild(row);
+            });
+        } else {
+            grp.fields.forEach(fld => {
+                const row = document.createElement("div"); row.className = "char-field";
+                const val = (attrs[grp.group] && attrs[grp.group][fld]) ? attrs[grp.group][fld] : "";
+                row.innerHTML = `<label>${e(fld)}</label><input type="text" data-group="${e(grp.group)}" data-field="${e(fld)}" value="${e(val)}">`;
+                fs.appendChild(row);
+            });
+        }
         container.appendChild(fs);
     });
+    // 🏛️ 填充势力下拉
+    try {
+        const factions = await (await fetch("/api/factions?novel_id=" + currentNovelId)).json();
+        const sel = document.getElementById("char-faction-sel");
+        if (sel) {
+            sel.innerHTML = '<option value="">-- 散修 / 无势力 --</option>';
+            factions.forEach(function(f) {
+                sel.innerHTML += '<option value="' + f.id + '">' + e(f.name) + '</option>';
+            });
+            if (currentCharId) {
+                const ch = await (await fetch("/api/characters/" + currentCharId + "?novel_id=" + currentNovelId)).json();
+                if (ch.faction_id) sel.value = ch.faction_id;
+                const roleInp = document.getElementById("char-faction-role-inp");
+                if (roleInp) roleInp.value = ch.faction_role || "";
+            }
+        }
+    } catch(e) { /* 势力列表加载失败不影响编辑 */ }
     renderTimeEditor(container);
 }
 
@@ -663,7 +697,12 @@ document.getElementById("save-char-btn").addEventListener("click", async () => {
         if (!attrs[g]) attrs[g] = {};
         attrs[g][f] = inp.value;
     });
-    await fetch(`/api/characters/${currentCharId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: ch.name, aliases: ch.aliases, description: ch.description, status: ch.status, attributes: attrs, is_always_context: ch.is_always_context }) });
+    await fetch(`/api/characters/${currentCharId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        name: ch.name, aliases: ch.aliases, description: ch.description, status: ch.status,
+        attributes: attrs, is_always_context: ch.is_always_context,
+        faction_id: document.getElementById("char-faction-sel")?.value ? parseInt(document.getElementById("char-faction-sel").value) : null,
+        faction_role: document.getElementById("char-faction-role-inp")?.value || "",
+    }) });
     loadCharactersModule();
     loadCharacters();
 });
@@ -689,7 +728,12 @@ document.getElementById("archive-btn").addEventListener("click", async () => {
         attrs[g][f] = inp.value;
     });
     // save current
-    await fetch(`/api/characters/${currentCharId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: ch.name, aliases: ch.aliases, description: ch.description, status: ch.status, attributes: attrs, is_always_context: ch.is_always_context }) });
+    await fetch(`/api/characters/${currentCharId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        name: ch.name, aliases: ch.aliases, description: ch.description, status: ch.status,
+        attributes: attrs, is_always_context: ch.is_always_context,
+        faction_id: document.getElementById("char-faction-sel")?.value ? parseInt(document.getElementById("char-faction-sel").value) : null,
+        faction_role: document.getElementById("char-faction-role-inp")?.value || "",
+    }) });
     // create snapshot
     await fetch(`/api/characters/${currentCharId}/snapshots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version_name: vname, attributes: attrs }) });
     loadCharactersModule();
