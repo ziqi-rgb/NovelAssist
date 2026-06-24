@@ -1737,8 +1737,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         // 增量模式的上下文设置
         var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
 
-        if (startPhase <= 1) {
-            var genesisFullLog = "";
+        // 📝 日志实时写入
+        var genesisFullLog = "";
         var genesisLogPath = "";
         var genesisLogTimer = null;
         var genesisLogChainTitle = "";
