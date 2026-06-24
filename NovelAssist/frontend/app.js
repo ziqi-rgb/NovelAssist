@@ -2913,7 +2913,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         if (msg.type === "chunk") {
                             txt += msg.content;
                             if (bubbleEl) { bubbleEl.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
-                            if (onLogCallback) onLogCallback(msg.content, "chunk");
                         } else if (msg.type === "tool_proposal") {
                             if (bubbleEl) {
                                 var card = document.createElement("div");
@@ -2946,6 +2945,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             }
                         }
                     }
+                    if (onLogCallback && txt) onLogCallback(txt, "chunk");
                     var routeKey = null;
                     // 🛡️ 输出格式强制校验
                     var cleanTxt = txt;
