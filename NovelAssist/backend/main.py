@@ -2797,6 +2797,49 @@ def delete_faction(faction_id: int, db: Session = Depends(get_db)):
 def get_relations(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
     return db.query(CharacterRelation).filter(CharacterRelation.novel_id == novel_id).all()
 
+
+class RelationCreate(BaseModel):
+    source_id: int
+    target_id: int
+    label: str = ""
+    weight: int = 0
+    description: str = ""
+
+
+@app.post("/api/character_relations", response_model=RelationCreate)
+def create_relation(body: RelationCreate, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    rel = CharacterRelation(
+        novel_id=novel_id, source_id=body.source_id, target_id=body.target_id,
+        label=body.label, weight=body.weight, description=body.description,
+    )
+    db.add(rel)
+    db.commit()
+    return {"ok": True, "id": rel.id}
+
+
+@app.put("/api/character_relations/{rel_id}")
+def update_relation(rel_id: int, body: RelationCreate, db: Session = Depends(get_db)):
+    rel = db.get(CharacterRelation, rel_id)
+    if not rel:
+        raise HTTPException(404, "关系不存在")
+    rel.source_id = body.source_id
+    rel.target_id = body.target_id
+    rel.label = body.label
+    rel.weight = body.weight
+    rel.description = body.description
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/character_relations/{rel_id}")
+def delete_relation(rel_id: int, db: Session = Depends(get_db)):
+    rel = db.get(CharacterRelation, rel_id)
+    if not rel:
+        raise HTTPException(404, "关系不存在")
+    db.delete(rel)
+    db.commit()
+    return {"ok": True}
+
 class ToolExecuteReq(BaseModel):
     tool_name: str
     arguments: dict

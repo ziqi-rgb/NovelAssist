@@ -525,10 +525,58 @@ async function renderDynamicForm() {
             }
         }
     } catch(e) { /* 势力列表加载失败不影响编辑 */ }
+    // 🔗 加载人物关系连线
+    await loadCharRelations();
     renderTimeEditor(container);
 }
 
-function renderTimeEditor(container) {
+async function loadCharRelations() {
+    if (!currentCharId) return;
+    var listEl = document.getElementById("char-relations-list");
+    var countEl = document.getElementById("char-relations-count");
+    var targetSel = document.getElementById("char-rel-target-sel");
+    if (!listEl) return;
+    try {
+        var [rels, chars] = await Promise.all([
+            fetch("/api/character_relations?novel_id=" + currentNovelId).then(function(r){return r.json();}),
+            fetch("/api/characters?novel_id=" + currentNovelId).then(function(r){return r.json();}),
+        ]);
+        // Fill target dropdown
+        if (targetSel) {
+            targetSel.innerHTML = '<option value="">-- 关联角色 --</option>';
+            chars.forEach(function(c) {
+                if (c.id !== currentCharId) targetSel.innerHTML += '<option value="' + c.id + '">' + e(c.name) + '</option>';
+            });
+        }
+        // Filter relations involving this character
+        var myRels = rels.filter(function(r) { return r.source_id === currentCharId || r.target_id === currentCharId; });
+        countEl.textContent = myRels.length ? "(" + myRels.length + ")" : "";
+        listEl.innerHTML = "";
+        myRels.forEach(function(r) {
+            var isSource = r.source_id === currentCharId;
+            var otherId = isSource ? r.target_id : r.source_id;
+            var other = chars.find(function(c) { return c.id === otherId; });
+            var otherName = other ? other.name : "未知#" + otherId;
+            var dir = isSource ? "→" : "←";
+            var color = r.weight < 0 ? "#ef4444" : (r.weight > 50 ? "#22c55e" : "#888");
+            var row = document.createElement("div");
+            row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border);";
+            row.innerHTML = '<span style="color:' + color + ';font-weight:700;">' + dir + '</span>'
+                + '<span style="flex:1;"><b>' + e(r.label || "关联") + '</b> ' + e(r.description || "") + '</span>'
+                + '<span style="font-size:0.65rem;color:' + color + ';">' + (r.weight > 0 ? "+" : "") + r.weight + '</span>'
+                + '<button data-del-rel="' + r.id + '" style="font-size:0.6rem;padding:0 4px;border:none;background:none;cursor:pointer;color:var(--text-muted);">✕</button>';
+            listEl.appendChild(row);
+        });
+        // Delete handlers
+        listEl.querySelectorAll("[data-del-rel]").forEach(function(btn) {
+            btn.addEventListener("click", async function() {
+                var rid = parseInt(btn.dataset.delRel);
+                await fetch("/api/character_relations/" + rid, { method: "DELETE" });
+                await loadCharRelations();
+            });
+        });
+    } catch(e) { /* 加载失败不阻塞 */ }
+}
     var timeFs = document.createElement("fieldset");
     timeFs.className = "char-fieldset";
     timeFs.style.cssText = "margin-top:16px;border-color:#93c5fd;background:#eff6ff;";
@@ -686,6 +734,21 @@ document.querySelectorAll(".mode-tab").forEach(b => b.addEventListener("click", 
 document.getElementById("save-template-btn").addEventListener("click", async () => {
     await fetch(`/api/novels/${currentNovelId}/template`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(charTemplate) });
     loadCharactersModule();
+});
+
+document.getElementById("char-rel-add-btn")?.addEventListener("click", async () => {
+    if (!currentCharId) return;
+    var targetId = parseInt(document.getElementById("char-rel-target-sel")?.value || "0");
+    if (!targetId) { showToast("请选择关联角色"); return; }
+    var label = document.getElementById("char-rel-label-inp")?.value?.trim() || "关联";
+    var weight = parseInt(document.getElementById("char-rel-weight-inp")?.value || "0");
+    await fetch("/api/character_relations?novel_id=" + currentNovelId, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ source_id: currentCharId, target_id: targetId, label: label, weight: weight, description: "" }),
+    });
+    document.getElementById("char-rel-label-inp").value = "";
+    document.getElementById("char-rel-weight-inp").value = "0";
+    await loadCharRelations();
 });
 
 document.getElementById("save-char-btn").addEventListener("click", async () => {

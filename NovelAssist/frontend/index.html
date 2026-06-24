@@ -265,6 +265,23 @@
                             <label style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">职位</label>
                             <input id="char-faction-role-inp" type="text" placeholder="如：宗主、长老、散修" style="flex: 1; padding: 6px 8px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
                         </div>
+                        <!-- 🔗 人物关系连线 -->
+                        <div id="char-relations-section" style="flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg-card);">
+                            <div style="padding: 10px 24px; display: flex; gap: 8px; align-items: center; cursor: pointer;" onclick="var b=document.getElementById('char-relations-body');b.classList.toggle('hidden');this.querySelector('span').textContent=b.classList.contains('hidden')?'▶':'▼';">
+                                <span style="font-size:0.65rem;">▼</span>
+                                <span style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted);">🔗 人物关系连线</span>
+                                <span id="char-relations-count" style="font-size:0.7rem; color: var(--text-muted);"></span>
+                            </div>
+                            <div id="char-relations-body" style="padding: 0 24px 12px;">
+                                <div id="char-relations-list" style="font-size: 0.75rem; max-height: 200px; overflow-y: auto; margin-bottom: 8px;"></div>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                    <select id="char-rel-target-sel" style="flex: 1; min-width: 100px; padding: 4px 6px; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);"><option value="">-- 关联角色 --</option></select>
+                                    <input id="char-rel-label-inp" type="text" placeholder="关系标签（如师徒）" style="flex: 1; min-width: 80px; padding: 4px 6px; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
+                                    <input id="char-rel-weight-inp" type="number" min="-100" max="100" value="0" style="width: 60px; padding: 4px 6px; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);" title="好感度 -100~100">
+                                    <button id="char-rel-add-btn" class="sys-btn sys-btn-ghost" style="font-size:0.7rem; padding:4px 8px;">+ 添加</button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="editor-toolbar" style="flex-shrink: 0; border-top: 1px solid var(--border);">
                             <span></span>
                             <div style="display:flex;gap:8px;">
