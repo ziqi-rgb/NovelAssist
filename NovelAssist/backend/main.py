@@ -254,9 +254,9 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             },
             {
                 "id": "c_update_template", "type": "write", "x": X2, "y": 950,
-                "premise": "将更新后的人物属性模板写入小说设定（合并模式——只追加新分组/字段）。",
+                "premise": "将新增的属性分组和字段写入小说模板（合并模式——只追加，不覆盖原有）。",
                 "prompt": "", "target": [], "branches": [], "next_node_id": "c_create", "output": "",
-                "write_to": {"entity": "character_template", "field": "attributes", "action": "update"}
+                "write_to": {"entity": "character_template", "field": "attributes", "action": "create"}
             },
             {
                 "id": "c_create", "x": X1, "y": 1400,

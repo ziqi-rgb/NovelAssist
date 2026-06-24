@@ -1705,7 +1705,14 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 }
                             } else {
                                 wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
-                                if (wt.field === "category" && wt.sub_field) {
+                                if (wt.entity === "character_template") {
+                                    var tmplData = null;
+                                    try { tmplData = JSON.parse(lastReasoning); } catch(e) {
+                                        var m2 = lastReasoning.match(/\[[\s\S]*\]/);
+                                        if (m2) try { tmplData = JSON.parse(m2[0]); } catch(e2) {}
+                                    }
+                                    wArgs.data["attributes"] = tmplData || lastReasoning;
+                                } else if (wt.field === "category" && wt.sub_field) {
                                     // 大纲分类由节点配置锁定，解析上游结构化输出取 title/description
                                     var oFmt = (node.format || "").replace("outline","outline") || "outline";
                                     var oParser = REASONING_FORMATS["outline"] && REASONING_FORMATS["outline"].parser;
@@ -3006,9 +3013,21 @@ async function runNode(card, node) {
                     // 新增待办项
                     toolArgs = { action: "add", content: content };
                 }
-            } else if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline") {
+            } else if (wt.entity === "character" || wt.entity === "location" || wt.entity === "outline" || wt.entity === "faction" || wt.entity === "timeline" || wt.entity === "character_template") {
                 var item = (parsedItems && parsedItems.length > 0) ? parsedItems[0] : null;
-                if (item && upstreamFormat === "location") {
+                if (wt.entity === "character_template") {
+                    // 模板写入：尝试从上游内容提取 JSON 数组
+                    var tmplData = null;
+                    try { tmplData = JSON.parse(content); } catch(e) {
+                        var m = content.match(/\[[\s\S]*\]/);
+                        if (m) try { tmplData = JSON.parse(m[0]); } catch(e2) {}
+                    }
+                    if (tmplData && Array.isArray(tmplData)) {
+                        dataObj["attributes"] = tmplData;
+                    } else {
+                        dataObj["attributes"] = content;
+                    }
+                } else if (item && upstreamFormat === "location") {
                     dataObj["name"] = item.name || "";
                     dataObj["scale_level"] = item.scale_level || "";
                     if (item.parent_name) dataObj["parent_name"] = item.parent_name;
