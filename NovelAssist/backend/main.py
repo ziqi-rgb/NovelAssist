@@ -374,26 +374,21 @@ async def lifespan(app: FastAPI):
                 flag_modified(gs, "prompt_templates")
                 db2.commit()
     # 🛡️ 创世系统推理链自愈热修复迁移器 (Chain Auto-Migration Hotfix)
+    # 此迁移仅执行一次：检测并修复旧版节点结构
     try:
         with SessionLocal() as db_hf:
             target_chain = db_hf.query(ReasoningChain).filter(
                 ReasoningChain.title == "👤 严谨人设与模板质检流"
             ).first()
             if target_chain and isinstance(target_chain.nodes, list):
-                has_old = any(n.get("id") == "c_n6_verify" for n in target_chain.nodes if isinstance(n, dict))
-                has_new = any(n.get("id") == "c_n8_verify_quantity" for n in target_chain.nodes if isinstance(n, dict))
-                # 🛡️ 强制热升级判定：若 c_n5_build_char 节点尚未引入 characters_full_detail 高精占位符，执行强制覆盖重灌
-                needs_upgrade = has_old or not has_new
-                if not needs_upgrade:
-                    c5 = next((n for n in target_chain.nodes if isinstance(n, dict) and n.get("id") == "c_n5_build_char"), None)
-                    if c5 and not any(t.get("value") == "{characters_full_detail}" for t in c5.get("target", [])):
-                        needs_upgrade = True
-                if needs_upgrade:
-                    print("[Hotfix Migration] 检测到人设链节点过旧或缺少高精占位符，启动自愈物理擦洗重灌...")
+                has_old_node = any(n.get("id") == "c_n6_verify" for n in target_chain.nodes if isinstance(n, dict))
+                if has_old_node:
+                    # 仅当检测到旧版节点 ID 时才执行一次性迁移
+                    print("[Hotfix Migration] 检测到旧版人设链节点，执行一次性结构迁移...")
                     target_chain.nodes = _get_system_chain_nodes(target_chain.title)
                     flag_modified(target_chain, "nodes")
                     db_hf.commit()
-                    print("[Hotfix Migration] 人设双极质检漏斗节点重灌成功，热升级已热应用！")
+                    print("[Hotfix Migration] 人设链节点结构迁移成功（仅此一次）！")
     except Exception as migration_error:
         print(f"[Hotfix Migration Warning] 启动迁移器报错（已安全拦截）: {str(migration_error)}")
     # Seed official reasoning chains — protected: only create if not exists
@@ -1539,7 +1534,12 @@ def update_reasoning_chain(chain_id: int, body: ReasoningChainCreate, db: Sessio
     rc = db.get(ReasoningChain, chain_id)
     if rc is None:
         raise HTTPException(404, "推演方案不存在")
-    rc.title = body.title
+    # 系统链标题受保护，不可通过 API 修改
+    if rc.title in SYSTEM_CHAIN_NAMES:
+        if body.title != rc.title:
+            raise HTTPException(400, "系统预设链不可重命名！节点和上下文设置仍可自由修改。")
+    else:
+        rc.title = body.title
     rc.nodes = body.nodes
     rc.context_settings = body.context_settings
     db.commit()
