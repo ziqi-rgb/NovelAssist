@@ -1648,6 +1648,37 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         continue;
                     }
 
+                    // 🔍 校验节点：程序验证
+                    if (node.type === "validate") {
+                        var vFmt = node.format || "";
+                        var vParser = REASONING_FORMATS[vFmt] && REASONING_FORMATS[vFmt].parser;
+                        var vResult = { valid: true };
+                        if (vParser) {
+                            var vItems = vParser(lastReasoning || "");
+                            vResult = validateStructuredOutput(vFmt, vItems, currentChain ? currentChain.nodes : null);
+                        }
+                        if (vResult.valid) {
+                            fullChainContext += "\n\n--- 【校验通过】 ---\n" + lastReasoning;
+                            node.output = "✅ 校验通过";
+                            // 转跳到写入节点
+                            var writeTarget = (node.branches || []).find(function(b) { return b.condition === "VALID"; });
+                            if (writeTarget && writeTarget.next_node_id) {
+                                currentIndex = (currentChain.nodes || []).findIndex(function(n) { return n.id === writeTarget.next_node_id; }) - 1;
+                            }
+                        } else {
+                            fullChainContext += "\n\n--- 【校验失败】 ---\n" + vResult.errors.join("; ");
+                            node.output = "⛔ 校验失败: " + vResult.errors.join("; ");
+                            // 转跳回创建节点
+                            var retryTarget = (node.branches || []).find(function(b) { return b.condition === "INVALID"; });
+                            if (retryTarget && retryTarget.next_node_id) {
+                                fullChainContext += "\n[系统指令] 上一个节点的输出未通过数据校验，请根据以下错误修正后重新输出：\n" + vResult.errors.map(function(e) { return "- " + e; }).join("\n");
+                                currentIndex = (currentChain.nodes || []).findIndex(function(n) { return n.id === retryTarget.next_node_id; }) - 1;
+                            }
+                        }
+                        saveHeadlessLog();
+                        continue;
+                    }
+
                     // 📝 写入节点：程序直接写入
                     if (node.type === "write") {
                         var wContent = fullChainContext.replace(/<\/?ROUTE>/g, "").trim();
@@ -2142,12 +2173,14 @@ function renderAllNodes() {
         var isRouter = ntype === "router";
         var isAsk = ntype === "ask";
         var isWrite = ntype === "write";
-        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : (isWrite ? "📝 写入" : "▶ 运行"));
-        var promptHTML = (isRouter || isWrite) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea>${buildFormatSelector(node)}</div>`;
-        var targetHTML = (isRouter || isAsk || isWrite) ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
-        var writeHTML = (isRouter || isAsk) ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
-        var branchHTML = isAsk ? "" : `<div class="node-section"><label>分支路由${isWrite ? "（成功→继续 / 失败→重写）" : ""}</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
+        var isValidate = ntype === "validate";
+        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : (isWrite ? "📝 写入" : (isValidate ? "🔍 校验" : "▶ 运行")));
+        var promptHTML = (isRouter || isWrite || isValidate) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea>${buildFormatSelector(node)}</div>`;
+        var targetHTML = (isRouter || isAsk || isWrite || isValidate) ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
+        var writeHTML = (isRouter || isAsk || isValidate) ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
+        var branchHTML = (isAsk || isWrite) ? "" : `<div class="node-section"><label>分支路由${isValidate ? "（VALID→写入 / INVALID→打回）" : ""}</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
         var typeOpts = '<option value="reasoning" ' + (ntype==="reasoning"?"selected":"") + '>🧠 推理</option>'
+            + '<option value="validate" ' + (ntype==="validate"?"selected":"") + '>🔍 校验</option>'
             + '<option value="write" ' + (ntype==="write"?"selected":"") + '>📝 写入</option>'
             + '<option value="router" ' + (ntype==="router"?"selected":"") + '>🔀 路由</option>'
             + '<option value="ask" ' + (ntype==="ask"?"selected":"") + '>❓ 交互</option>';
@@ -2728,6 +2761,54 @@ function getFormatPrompt(node) {
     return fmt ? fmt.template : "";
 }
 
+/* ═══════════ 校验节点：程序验证结构化输出 ═══════════ */
+function validateStructuredOutput(format, items, chainNodes) {
+    // 返回 { valid: true } 或 { valid: false, errors: [...] }
+    if (!items || !items.length) return { valid: false, errors: ["上游无结构化数据可校验"] };
+    var item = items[0];
+    var errors = [];
+
+    if (format === "location") {
+        if (!item.name || item.name.trim() === "" || item.name === "未知") errors.push("name 为空或无效");
+        var validScales = ["大千世界","宇宙","星球","大陆","国家","城池","街区"];
+        if (item.scale_level && validScales.indexOf(item.scale_level) === -1) errors.push("scale_level 不在有效值中: " + item.scale_level);
+        if (item.grid_x !== undefined && (item.grid_x < 0 || item.grid_x > 24)) errors.push("grid_x 超出 0-24");
+        if (item.grid_y !== undefined && (item.grid_y < 0 || item.grid_y > 24)) errors.push("grid_y 超出 0-24");
+        if (!item.description || item.description.trim().length < 3) errors.push("description 过短或缺失");
+    } else if (format === "character") {
+        if (!item.name || item.name.trim() === "" || item.name === "未知") errors.push("name 为空或无效");
+        if (!item.attributes || Object.keys(item.attributes).length === 0) {
+            errors.push("attributes 为空，未按模板填写");
+        } else {
+            // 获取当前小说的角色模板
+            var tmpl = (currentNovel && currentNovel.character_template) ? currentNovel.character_template : null;
+            if (tmpl && Array.isArray(tmpl)) {
+                tmpl.forEach(function(g) {
+                    var gname = g.group;
+                    var fields = g.fields || [];
+                    var groupData = item.attributes[gname];
+                    if (!groupData || Object.keys(groupData).length === 0) {
+                        errors.push("缺少模板分组: " + gname);
+                    } else {
+                        fields.forEach(function(f) {
+                            if (!groupData[f] || String(groupData[f]).trim() === "") {
+                                errors.push("分组「" + gname + "」缺少字段: " + f);
+                            }
+                        });
+                    }
+                });
+            }
+        }
+    } else if (format === "outline") {
+        if (!item.title || item.title.trim() === "") errors.push("title 为空");
+        var validCats = ["世界观","世界势力","地理","人物设定","能力体系设定","剧情大纲"];
+        if (item.category && validCats.indexOf(item.category) === -1) errors.push("category 不在有效值中: " + item.category);
+        if (!item.description || item.description.trim().length < 3) errors.push("description 过短或缺失");
+    }
+
+    return errors.length ? { valid: false, errors: errors } : { valid: true };
+}
+
 function compileTarget(target) {
     if (typeof target === "string") return target;
     if (!Array.isArray(target) || !target.length) return "";
@@ -2955,6 +3036,32 @@ async function runNode(card, node) {
             autoSave();
         } catch(e) { outDiv.textContent += "\n[错误: " + e.message + "]"; }
         finally { btn.disabled = false; btn.textContent = "📝 写入"; }
+        return;
+    }
+
+    if (node.type === "validate") {
+        // 校验节点：程序验证上游结构化输出
+        btn.textContent = "校验中...";
+        var fmt = node.format || "";
+        var parser = REASONING_FORMATS[fmt] && REASONING_FORMATS[fmt].parser;
+        if (!parser || !prevContent) {
+            node.output = "⛔ 校验失败：无效的上游内容或格式";
+            outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 校验失败</span>';
+            autoSave();
+            btn.disabled = false; btn.textContent = "🔍 校验";
+            return;
+        }
+        var items = parser(prevContent);
+        var result = validateStructuredOutput(fmt, items, currentChain ? currentChain.nodes : null);
+        if (result.valid) {
+            node.output = "✅ 校验通过";
+            outDiv.innerHTML = '<span style="color:#22c55e;">✅ 校验通过 → ' + (node.branches && node.branches[0] ? node.branches[0].next_node_id : '写入') + '</span>';
+        } else {
+            node.output = "⛔ 校验不通过:\n" + result.errors.map(function(e) { return "- " + e; }).join("\n");
+            outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 校验不通过</span><pre style="font-size:.65rem;margin-top:4px;color:var(--text-muted);">' + e(node.output) + '</pre>';
+        }
+        autoSave();
+        btn.disabled = false; btn.textContent = "🔍 校验";
         return;
     }
 
