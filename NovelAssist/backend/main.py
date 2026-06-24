@@ -395,12 +395,14 @@ async def lifespan(app: FastAPI):
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
                     if ver is None or ver < 19:
-                        print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→17，执行迁移...")
+                        print(f"[Hotfix Migration] 链「{chain_title}」(id={t_chain.id}) 版本 {ver}→19，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
+                        t_chain.todos = []  # 清空旧待办，防止残留 pending 干扰 verify
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
                         cs["_version"] = 19
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
+                        flag_modified(t_chain, "todos")
                         flag_modified(t_chain, "context_settings")
             db_hf.commit()
     except Exception as migration_error:
@@ -1571,13 +1573,15 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
             if ver < 19:
-                print(f"[Runtime Migration] 链「{name}」版本 {ver}→17")
+                print(f"[Runtime Migration] 链「{name}」版本 {ver}→19")
                 chain.nodes = _get_system_chain_nodes(name)
+                chain.todos = []
                 if isinstance(chain.context_settings, dict):
                     chain.context_settings["_version"] = 19
                 else:
                     chain.context_settings = {"_version": 19}
                 flag_modified(chain, "nodes")
+                flag_modified(chain, "todos")
                 flag_modified(chain, "context_settings")
                 db.commit()
     # 兜底补种：若当前小说缺少系统链则自动创建
@@ -1661,7 +1665,9 @@ def restore_system_chain(chain_id: int, db: Session = Depends(get_db)):
     if chain.title not in system_chains:
         raise HTTPException(400, "该方案非内置模板，不支持重置恢复！")
     chain.nodes = _get_system_chain_nodes(chain.title)
+    chain.todos = []
     flag_modified(chain, "nodes")
+    flag_modified(chain, "todos")
     db.commit()
     return {"status": "success", "message": f"方案 '{chain.title}' 已恢复至系统初始状态！"}
 
