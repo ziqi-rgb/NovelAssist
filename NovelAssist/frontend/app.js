@@ -1926,6 +1926,13 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 if (typ !== "chunk") logToConsole(txt, typ);
             }, incCtx, resumeData1);
             if (genesisPaused) {
+                var pausedState = loadGenesisState();
+                if (pausedState) {
+                    state.currentNodeId = pausedState.currentNodeId;
+                    state.currentChainId = pausedState.currentChainId;
+                    state.fullChainContext = pausedState.fullChainContext;
+                    state.executedNodeCount = pausedState.executedNodeCount || 0;
+                }
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
             }
@@ -1977,6 +1984,13 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 if (typ !== "chunk") logToConsole(txt, typ);
             }, outlineCtx, resumeData2);
             if (genesisPaused) {
+                var pausedState = loadGenesisState();
+                if (pausedState) {
+                    state.currentNodeId = pausedState.currentNodeId;
+                    state.currentChainId = pausedState.currentChainId;
+                    state.fullChainContext = pausedState.fullChainContext;
+                    state.executedNodeCount = pausedState.executedNodeCount || 0;
+                }
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
             }
@@ -2021,6 +2035,13 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
                 if (typ !== "chunk") logToConsole(txt, typ);
             }, incCtx, resumeData3);
             if (genesisPaused) {
+                var pausedState = loadGenesisState();
+                if (pausedState) {
+                    state.currentNodeId = pausedState.currentNodeId;
+                    state.currentChainId = pausedState.currentChainId;
+                    state.fullChainContext = pausedState.fullChainContext;
+                    state.executedNodeCount = pausedState.executedNodeCount || 0;
+                }
                 handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
                 return;
             }
