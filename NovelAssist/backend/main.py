@@ -3177,6 +3177,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     data["name"] = f"隐世散人_{random.randint(100, 999)}"
 
             raw_attrs = data.get("attributes", {})
+            if not isinstance(raw_attrs, dict):
+                raw_attrs = {}
             normalized_attrs: dict[str, dict[str, str]] = {}
 
             if raw_attrs and isinstance(novel.character_template, list):

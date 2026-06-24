@@ -2667,6 +2667,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         }
                         if (picked) {
                             node.output = picked.content || "";
+                            rc._last_picked_todo_id = picked.id;  // 存储选取的待办ID，供 mark_done 使用
                             fullChainContext += "\n--- 【选取待办】 ---\n" + node.output;
                             if (onLogCallback) onLogCallback("\n🎯 [选取待办] " + (picked.content || "").substring(0, 80) + "\n", "tool");
                             var pNext = (node.branches || []).find(function(b){return b.condition==="HAS_TODO";});
@@ -2701,10 +2702,29 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                         rc.todos = freshRc2.todos || [];
                                     } catch(e) {}
                                     var todos = (rc && rc.todos) ? rc.todos : [];
+                                    // 优先使用 pick_todo 阶段存储的 ID
+                                    var targetId = rc._last_picked_todo_id;
                                     var pending = null;
-                                    for (var ti = 0; ti < todos.length; ti++) {
-                                        if (todos[ti].status === "pending" || todos[ti].status === "in_progress") {
-                                            pending = todos[ti]; break;
+                                    if (targetId) {
+                                        for (var ti = 0; ti < todos.length; ti++) {
+                                            if (todos[ti].id === targetId) { pending = todos[ti]; break; }
+                                        }
+                                    }
+                                    // 回退：按 filter 匹配第一个 pending 项（而非全表第一个）
+                                    if (!pending) {
+                                        var markFilter = node.verify_filter || node.pick_filter || "";
+                                        var mFilters = markFilter ? markFilter.split('|') : [];
+                                        for (var ti = 0; ti < todos.length; ti++) {
+                                            if (todos[ti].status === "pending" || todos[ti].status === "in_progress") {
+                                                if (mFilters.length > 0 && todos[ti].content) {
+                                                    for (var pfi = 0; pfi < mFilters.length; pfi++) {
+                                                        if (todos[ti].content.indexOf(mFilters[pfi]) >= 0) { pending = todos[ti]; break; }
+                                                    }
+                                                } else {
+                                                    pending = todos[ti];
+                                                }
+                                                if (pending) break;
+                                            }
                                         }
                                     }
                                     wArgs = { action: "update_status", todo_id: pending ? pending.id : "none", status: "done" };
@@ -2862,7 +2882,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             previous_output: fullChainContext,
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
                             context_settings: contextSettings || rc.context_settings || {},
-                            response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined,
+                            response_format: (/deepseek/i.test(s.model) && node.format) ? {type: "json_object"} : undefined,
                         }),
                         signal: genesisAbortController ? genesisAbortController.signal : undefined,
                     });
