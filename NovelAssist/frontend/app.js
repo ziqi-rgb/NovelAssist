@@ -2861,23 +2861,25 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                         wArgs.data["description"] = lastReasoning;
                                     }
                                 } else if (wt.entity === "character" && wt.field === "attributes") {
-                                    var cParser = REASONING_FORMATS["character"] && REASONING_FORMATS["character"].parser;
-                                    if (cParser) {
-                                        var cItems = cParser(lastReasoning);
-                                        if (cItems && cItems.length) {
-                                            var ch = cItems[0];
-                                            wArgs.data["name"] = ch.name || "";
-                                            if (ch.aliases) wArgs.data["aliases"] = ch.aliases;
-                                            if (ch.status) wArgs.data["status"] = ch.status;
-                                            if (ch.is_active !== undefined) wArgs.data["is_active"] = ch.is_active;
-                                            if (ch.faction_name) wArgs.data["faction_name"] = ch.faction_name;
-                                            if (ch.faction_role) wArgs.data["faction_role"] = ch.faction_role;
-                                            if (ch.is_always_context !== undefined) wArgs.data["is_always_context"] = ch.is_always_context;
-                                            wArgs.data["description"] = ch.description || "";
-                                            wArgs.data["attributes"] = ch.attributes || {};
-                                        } else {
-                                            wArgs.data["attributes"] = lastReasoning;
-                                        }
+                                    // 直接用 txt 解析，不经过 parser
+                                    var ch = null;
+                                    try {
+                                        var rawTxt = (txt || lastReasoning || "");
+                                        var cleanedTxt = rawTxt.replace(/<ROUTE>[\s\S]*?<\/ROUTE>/g, "").trim();
+                                        var parsedTxt = JSON.parse(cleanedTxt);
+                                        if (parsedTxt && parsedTxt.characters && Array.isArray(parsedTxt.characters)) parsedTxt = parsedTxt.characters[0];
+                                        if (parsedTxt && parsedTxt.name) ch = parsedTxt;
+                                    } catch(e) {}
+                                    if (ch) {
+                                        wArgs.data["name"] = ch.name || "";
+                                        if (ch.aliases) wArgs.data["aliases"] = ch.aliases;
+                                        if (ch.status) wArgs.data["status"] = ch.status;
+                                        if (ch.is_active !== undefined) wArgs.data["is_active"] = ch.is_active;
+                                        if (ch.faction_name) wArgs.data["faction_name"] = ch.faction_name;
+                                        if (ch.faction_role) wArgs.data["faction_role"] = ch.faction_role;
+                                        if (ch.is_always_context !== undefined) wArgs.data["is_always_context"] = ch.is_always_context;
+                                        wArgs.data["description"] = ch.description || "";
+                                        wArgs.data["attributes"] = ch.attributes || {};
                                     } else {
                                         wArgs.data["attributes"] = lastReasoning;
                                     }
