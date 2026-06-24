@@ -529,6 +529,17 @@
                 </label>
             </div>
             
+            <!-- ⚡ 并行执行开关 -->
+            <div id="genesis-parallel-row" style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 0.75rem;">
+                <span style="color: var(--text-muted); font-weight: 600;">⚡ 执行策略:</span>
+                <label class="parallel-switch">
+                    <input type="checkbox" id="genesis-parallel-checkbox">
+                    <span class="parallel-slider"></span>
+                </label>
+                <span id="genesis-parallel-label" style="color: var(--text-muted);">依次执行</span>
+                <span style="font-size:0.65rem; color: var(--text-muted); margin-left: 4px;">（并行可大幅缩短建纲时间）</span>
+            </div>
+            
             <!-- 🔄 断点恢复提示 -->
             <div id="genesis-resume-banner" style="display:none; background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid #6366f1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; align-items: center; gap: 10px;">
                 <span style="font-size:1.2rem;">⚡</span>
@@ -617,6 +628,13 @@
         .genesis-mode-btn:hover { border-color: #6366f1; background: #1e1b4b; }
         .genesis-mode-btn.active { border-color: #818cf8; background: #1e1b4b; color: #a5b4fc; box-shadow: 0 0 10px rgba(99,102,241,0.3); }
         .genesis-mode-desc { font-size:0.62rem; display:block; font-weight:400; color:var(--text-muted); margin-top:2px; }
+        /* ⚡ 并行执行开关 */
+        .parallel-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+        .parallel-switch input { opacity: 0; width: 0; height: 0; }
+        .parallel-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 22px; transition: 0.3s; }
+        .parallel-slider:before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: var(--text-muted); border-radius: 50%; transition: 0.3s; }
+        .parallel-switch input:checked + .parallel-slider { background: #4f46e5; border-color: #6366f1; }
+        .parallel-switch input:checked + .parallel-slider:before { transform: translateX(18px); background: #fff; }
     </style>
 
     <div id="faction-modal" class="modal hidden">

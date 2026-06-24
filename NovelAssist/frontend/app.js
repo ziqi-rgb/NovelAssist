@@ -31,6 +31,22 @@ function clearGenesisState() {
 }
 
 function formatGenesisResumeInfo(state) {
+    if (state.parallel && state.chainStates) {
+        var keys = ["outline", "map", "character"];
+        var labels = { outline: "大纲", map: "地图", character: "人设" };
+        var totalNodes = 0;
+        var completedCount = 0;
+        var statuses = [];
+        keys.forEach(function(k) {
+            var cs = state.chainStates[k];
+            if (cs) {
+                totalNodes += cs.executedNodeCount || 0;
+                if (cs.completed) { completedCount++; }
+                statuses.push((cs.completed ? "✅" : "⏳") + labels[k]);
+            }
+        });
+        return "并行模式 · " + completedCount + "/3 链完成 · 共 " + totalNodes + " 节点 · " + statuses.join(" ");
+    }
     var phaseNames = ["", "📖 世界观与大纲", "🗺️ 地理蓝图落子", "👤 群像人设质检"];
     var phaseLabel = phaseNames[state.phase] || "未知阶段";
     var nodeCount = state.executedNodeCount || 0;
@@ -1419,6 +1435,22 @@ function updateGenesisSubmitLabel() {
     btn.textContent = labels[mode] || "🌌 启动建纲";
 }
 
+/* ⚡ 并行执行开关 */
+function getGenesisParallel() {
+    var cb = document.getElementById("genesis-parallel-checkbox");
+    return cb ? cb.checked : false;
+}
+
+(function setupParallelToggle() {
+    var cb = document.getElementById("genesis-parallel-checkbox");
+    var label = document.getElementById("genesis-parallel-label");
+    if (!cb || !label) return;
+    cb.addEventListener("change", function() {
+        label.textContent = cb.checked ? "并行执行" : "依次执行";
+        label.style.color = cb.checked ? "#a5b4fc" : "var(--text-muted)";
+    });
+})();
+
 /* ═══════════ 断点恢复 ═══════════ */
 function checkAndShowResume() {
     var state = loadGenesisState();
@@ -1448,6 +1480,16 @@ document.getElementById("genesis-resume-btn")?.addEventListener("click", functio
         modeRadio.closest(".genesis-mode-btn").classList.add("active");
         updateGenesisSubmitLabel();
     }
+    // 恢复并行开关状态
+    var parallelCb = document.getElementById("genesis-parallel-checkbox");
+    var parallelLabel = document.getElementById("genesis-parallel-label");
+    if (parallelCb) {
+        parallelCb.checked = state.parallel || false;
+        if (parallelLabel) {
+            parallelLabel.textContent = parallelCb.checked ? "并行执行" : "依次执行";
+            parallelLabel.style.color = parallelCb.checked ? "#a5b4fc" : "var(--text-muted)";
+        }
+    }
     // 重建进度条状态
     restoreProgressFromState(state);
     // 启动恢复执行
@@ -1463,6 +1505,22 @@ document.getElementById("genesis-discard-btn")?.addEventListener("click", functi
 
 function restoreProgressFromState(state) {
     var stepIds = ["step-outline", "step-map", "step-char"];
+    if (state.parallel && state.chainStates) {
+        var keys = ["outline", "map", "character"];
+        keys.forEach(function(key, idx) {
+            var el = document.getElementById(stepIds[idx]);
+            if (!el) return;
+            var cs = state.chainStates[key];
+            if (cs && cs.completed) {
+                el.className = "step-completed";
+            } else if (state.status === "interrupted") {
+                el.className = "step-interrupted";
+            } else {
+                el.className = "";
+            }
+        });
+        return;
+    }
     stepIds.forEach(function(id, idx) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -1563,6 +1621,8 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
         executedNodeCount: 0,
         inputText: text,
         mode: mode,
+        parallel: getGenesisParallel(),
+        chainStates: null,
         status: "running",
         startedAt: Date.now(),
     };
@@ -1635,6 +1695,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     }
 
     try {
+        // ⚡ 并行模式分流
+        if (initialState.parallel) {
+            await executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+            return;
+        }
+
         isGenesisRunning = true;
         genesisInterrupted = false;
 
@@ -1775,6 +1841,169 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     }
 }
 
+/* ═══════════ 并行建纲执行引擎 ═══════════ */
+async function executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop) {
+    var text = initialState.inputText;
+    var mode = initialState.mode;
+    var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
+
+    isGenesisRunning = true;
+    genesisInterrupted = false;
+
+    logToConsole("[System] ⚡ 并行建纲模式启动 — 三条推理链将同时执行...\n", "step");
+    logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
+    var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
+    var chains = await chainsRes.json();
+
+    var chainDefs = [
+        { key: "outline", title: "📖 全维世界观与大纲流水线", stepId: "step-outline", label: "📖 大纲" },
+        { key: "map", title: "🗺️ 蓝图规划与逐层搭建流", stepId: "step-map", label: "🗺️ 地图" },
+        { key: "character", title: "👤 严谨人设与模板质检流", stepId: "step-char", label: "👤 人设" },
+    ];
+
+    // 解析链 ID
+    var chainMap = {};
+    chainDefs.forEach(function(d) {
+        var found = chains.find(function(c) { return c.title === d.title; });
+        if (found) chainMap[d.key] = found;
+    });
+    if (Object.keys(chainMap).length < 3) {
+        throw new Error("系统缺失预设的 3 大创世推理方案！");
+    }
+
+    // 初始化/恢复 chainStates
+    if (!initialState.chainStates) {
+        initialState.chainStates = {};
+        chainDefs.forEach(function(d) {
+            var isCompleted = completedPhases && completedPhases[chainDefs.indexOf(d)];
+            initialState.chainStates[d.key] = {
+                chainId: chainMap[d.key].id,
+                currentNodeId: null,
+                fullChainContext: "",
+                executedNodeCount: 0,
+                completed: isCompleted || false,
+            };
+        });
+    }
+    state.chainStates = initialState.chainStates;
+    state.parallel = true;
+    state.phase = 0; // 并行模式不使用 phase
+    saveGenesisState(state);
+
+    // 启动所有未完成的链的进度指示
+    chainDefs.forEach(function(d) {
+        var el = document.getElementById(d.stepId);
+        if (el && !state.chainStates[d.key].completed) {
+            el.className = "step-active";
+        } else if (el && state.chainStates[d.key].completed) {
+            el.className = "step-completed";
+        }
+    });
+
+    // 为每条链创建带前缀的日志回调
+    function makeLogger(prefix, color) {
+        return function(txt, typ) {
+            var prefixed = "[" + prefix + "] " + txt;
+            // 对于 chunk 类型（流式输出），只在行首加前缀
+            if (typ === "chunk") {
+                // 流式块：检测是否为新行开始
+                if (txt.indexOf("\n") >= 0 && txt.indexOf("\n") < txt.length - 1) {
+                    prefixed = txt.replace(/\n/g, "\n[" + prefix + "] ");
+                } else if (txt.indexOf("\n") === txt.length - 1) {
+                    prefixed = txt.slice(0, -1) + "\n";
+                }
+                // 简单追加块（不加额外前缀）
+                prefixed = txt;
+            }
+            logToConsole(prefixed, typ);
+        };
+    }
+
+    var loggers = {
+        outline: makeLogger("大纲", "#eab308"),
+        map: makeLogger("地图", "#38bdf8"),
+        character: makeLogger("人设", "#22c55e"),
+    };
+
+    // 为每条链准备 resume data
+    function getResumeData(key) {
+        var cs = state.chainStates[key];
+        if (cs && cs.currentNodeId) {
+            return {
+                currentNodeId: cs.currentNodeId,
+                fullChainContext: cs.fullChainContext,
+                executedNodeCount: cs.executedNodeCount || 0,
+            };
+        }
+        return null;
+    }
+
+    // 并行启动所有链
+    var promises = chainDefs.map(function(d) {
+        var cs = state.chainStates[d.key];
+        if (cs.completed) {
+            logToConsole("[System] ⏭ " + d.label + " 链已完成，跳过。\n", "step");
+            return Promise.resolve({ key: d.key, success: true, skipped: true });
+        }
+        logToConsole("[System] 🚀 " + d.label + " 链启动...\n", "step");
+        var resumeData = getResumeData(d.key);
+        return runHeadlessChain(
+            chainMap[d.key].id, text, null,
+            function(txt, typ) { loggers[d.key](txt, typ); },
+            incCtx,
+            resumeData,
+            d.key  // chainKey for state persistence
+        ).then(function(result) {
+            if (result.success) {
+                state.chainStates[d.key].completed = true;
+                saveGenesisState(state);
+                var el = document.getElementById(d.stepId);
+                if (el) el.className = "step-completed";
+                logToConsole("[System] ✅ " + d.label + " 链执行完毕！\n", "tool");
+            }
+            return { key: d.key, success: result.success, reason: result.reason, skipped: false };
+        }).catch(function(err) {
+            logToConsole("[System] ❌ " + d.label + " 链崩溃: " + (err.message || String(err)) + "\n", "error");
+            return { key: d.key, success: false, reason: err.message, skipped: false };
+        });
+    });
+
+    var results = await Promise.allSettled(promises);
+
+    // 提取实际结果（Promise.allSettled 包装了一层）
+    var outcomes = [];
+    for (var i = 0; i < results.length; i++) {
+        if (results[i].status === "fulfilled") {
+            outcomes.push(results[i].value);
+        } else {
+            outcomes.push({ key: chainDefs[i].key, success: false, reason: results[i].reason });
+        }
+    }
+
+    // 检查中断
+    if (genesisInterrupted) {
+        handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+        return;
+    }
+
+    // 检查是否全部成功
+    var allOk = outcomes.every(function(o) { return o.success || o.skipped; });
+    if (allOk) {
+        clearGenesisState();
+        logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 三链并行建纲全部圆满成功！\n", "tool");
+        statusBadge.textContent = "创世圆满成功";
+        statusBadge.style.color = "#22c55e";
+        showToast("🌌 智能创世三链并行大重构圆满成功！");
+        if (typeof refreshAll === "function") await refreshAll();
+        if (typeof loadLocationsCache === "function") loadLocationsCache();
+        if (typeof loadLocationTree === "function") loadLocationTree();
+    } else {
+        var failed = outcomes.filter(function(o) { return !o.success && !o.skipped; });
+        var failedNames = failed.map(function(o) { return o.key; }).join(", ");
+        throw new Error("并行建纲部分失败: " + failedNames);
+    }
+}
+
 function handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop) {
     state.status = "interrupted";
     saveGenesisState(state);
@@ -1791,7 +2020,16 @@ function handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopB
     }
     // 标记当前阶段为 interrupted
     var stepIds = ["step-outline", "step-map", "step-char"];
-    if (state.phase >= 1 && state.phase <= 3) {
+    if (state.parallel && state.chainStates) {
+        // 并行模式：标记所有未完成的链为 interrupted
+        var keys = ["outline", "map", "character"];
+        keys.forEach(function(key, idx) {
+            var cs = state.chainStates[key];
+            if (cs && !cs.completed) {
+                document.getElementById(stepIds[idx]).className = "step-interrupted";
+            }
+        });
+    } else if (state.phase >= 1 && state.phase <= 3) {
         document.getElementById(stepIds[state.phase - 1]).className = "step-interrupted";
     }
     genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop);
@@ -1846,6 +2084,8 @@ async function executeGenesisFromResume(state) {
         executedNodeCount: state.executedNodeCount || 0,
         inputText: text,
         mode: mode,
+        parallel: state.parallel || false,
+        chainStates: state.chainStates || null,
         status: "running",
         startedAt: Date.now(),
     };
@@ -1922,7 +2162,7 @@ async function executeTool(toolName, args, card) {
     }
 }
 
-async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = null, contextSettings = null, resumeState = null) {
+async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = null, contextSettings = null, resumeState = null, chainKey = null) {
     return new Promise(async (resolve) => {
         var s = getSettings();
         try {
@@ -1960,10 +2200,15 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     // 保存当前状态
                     var gs = loadGenesisState();
                     if (gs) {
-                        gs.currentNodeId = currentNodeId;
-                        gs.fullChainContext = fullChainContext;
-                        gs.executedNodeCount = loopCount;
-                        gs.currentChainId = chainId;
+                        if (chainKey && gs.chainStates) {
+                            // 并行模式：保存到对应链的槽位
+                            gs.chainStates[chainKey] = { currentNodeId: currentNodeId, fullChainContext: fullChainContext, executedNodeCount: loopCount, chainId: chainId };
+                        } else {
+                            gs.currentNodeId = currentNodeId;
+                            gs.fullChainContext = fullChainContext;
+                            gs.executedNodeCount = loopCount;
+                            gs.currentChainId = chainId;
+                        }
                         gs.status = "interrupted";
                         gs.inputText = userInput;
                         saveGenesisState(gs);
@@ -2250,10 +2495,14 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                 if (isGenesisRunning && currentNodeId) {
                     var gsNow = loadGenesisState();
                     if (gsNow) {
-                        gsNow.currentNodeId = currentNodeId;
-                        gsNow.fullChainContext = fullChainContext;
-                        gsNow.executedNodeCount = loopCount;
-                        gsNow.currentChainId = chainId;
+                        if (chainKey && gsNow.chainStates) {
+                            gsNow.chainStates[chainKey] = { currentNodeId: currentNodeId, fullChainContext: fullChainContext, executedNodeCount: loopCount, chainId: chainId };
+                        } else {
+                            gsNow.currentNodeId = currentNodeId;
+                            gsNow.fullChainContext = fullChainContext;
+                            gsNow.executedNodeCount = loopCount;
+                            gsNow.currentChainId = chainId;
+                        }
                         gsNow.inputText = userInput;
                         saveGenesisState(gsNow);
                     }
