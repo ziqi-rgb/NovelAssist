@@ -3044,9 +3044,16 @@ async function runNode(card, node) {
         btn.textContent = "校验中...";
         var fmt = node.format || "";
         var parser = REASONING_FORMATS[fmt] && REASONING_FORMATS[fmt].parser;
-        if (!parser || !prevContent) {
-            node.output = "⛔ 校验失败：无效的上游内容或格式";
-            outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 校验失败</span>';
+        if (!parser) {
+            node.output = "✅ 无结构化格式，跳过校验";
+            outDiv.innerHTML = '<span style="color:#22c55e;">✅ 无格式，直接通过</span>';
+            autoSave();
+            btn.disabled = false; btn.textContent = "🔍 校验";
+            return;
+        }
+        if (!prevContent) {
+            node.output = "⛔ 校验失败：上游无内容";
+            outDiv.innerHTML = '<span style="color:#ef4444;">⛔ 上游无内容</span>';
             autoSave();
             btn.disabled = false; btn.textContent = "🔍 校验";
             return;
