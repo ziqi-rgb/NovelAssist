@@ -1800,8 +1800,8 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     var state = {
         phase: startPhase,
         completedPhases: completedPhases.slice(),
-        currentNodeId: null,
-        currentChainId: null,
+        currentNodeId: initialState.currentNodeId || null,
+        currentChainId: initialState.currentChainId || null,
         fullChainContext: initialState.fullChainContext || "",
         executedNodeCount: initialState.executedNodeCount || 0,
         inputText: text,
