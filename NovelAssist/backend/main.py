@@ -744,8 +744,12 @@ def genesis_clear(novel_id: int, db: Session = Depends(get_db)):
     db.execute(text("DELETE FROM outlines WHERE novel_id=:nid"), {"nid": novel_id})
     db.execute(text("DELETE FROM locations WHERE novel_id=:nid"), {"nid": novel_id})
     db.execute(text("DELETE FROM factions WHERE novel_id=:nid"), {"nid": novel_id})
-    # 重置人物模板
-    novel.character_template = []
+    # 重置人物模板为系统默认
+    novel.character_template = [
+        {"group": "基础信息", "fields": ["姓名", "年龄", "性别", "性格"]},
+        {"group": "外貌特征", "fields": ["身高", "发色", "瞳色"]},
+        {"group": "背景故事", "fields": ["出身", "经历"]},
+    ]
     db.commit()
 
     return {"ok": True, "msg": f"已清空小说 {novel_id} 的大纲/地点/人物/势力数据及人物模板"}
