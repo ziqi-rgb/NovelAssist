@@ -2625,8 +2625,10 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             }
                         } else {
                             rc._validate_retries = (rc._validate_retries || 0) + 1;
-                            fullChainContext += "\n\n--- 【校验失败 (#" + rc._validate_retries + ")】 ---\n" + vResult.errors.join("; ");
-                            node.output = "⛔ 校验失败: " + vResult.errors.join("; ");
+                            var errMsg = vResult.errors.join("; ");
+                            fullChainContext += "\n\n--- 【校验失败 (#" + rc._validate_retries + ")】 ---\n" + errMsg;
+                            node.output = "⛔ 校验失败: " + errMsg;
+                            if (onLogCallback) onLogCallback("\n🔍 [校验失败 #" + rc._validate_retries + "] " + errMsg + "\n", "warning");
                             var retryTarget = (node.branches || []).find(function(b) { return b.condition === "INVALID"; });
                             // 熔断：超过 3 次强制放行
                             if (rc._validate_retries >= 3) {
@@ -4066,7 +4068,9 @@ function validateStructuredOutput(format, items, chainNodes, templateSnapshot) {
                 var gname = g.group;
                 var fields = g.fields || [];
                 var groupData = item.attributes[gname];
-                if (!groupData || Object.keys(groupData).length === 0) {
+                // 容错：数组退化为空对象处理
+                if (Array.isArray(groupData)) groupData = {};
+                if (!groupData || typeof groupData !== "object" || Object.keys(groupData).length === 0) {
                     errors.push("缺少模板分组: " + gname);
                 } else {
                     fields.forEach(function(f) {
@@ -4083,7 +4087,9 @@ function validateStructuredOutput(format, items, chainNodes, templateSnapshot) {
                 } else {
                     var tmplFields = tmplGroups[actualGroup];
                     var groupData = item.attributes[actualGroup];
-                    if (groupData && typeof groupData === "object") {
+                    if (Array.isArray(groupData)) groupData = {};
+                    // 模板未限定字段时(如人物关系)跳过字段级别校验
+                    if (tmplFields.size > 0 && groupData && typeof groupData === "object") {
                         Object.keys(groupData).forEach(function(actualField) {
                             if (!tmplFields.has(actualField)) {
                                 errors.push("分组「" + actualGroup + "」多余字段: " + actualField);
