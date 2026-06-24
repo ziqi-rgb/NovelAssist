@@ -3066,26 +3066,30 @@ function renderAllNodes() {
         var isWrite = ntype === "write";
         var isValidate = ntype === "validate";
         var isVerify = ntype === "verify";
-        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : (isWrite ? "📝 写入" : (isValidate ? "🔍 校验" : (isVerify ? "✅ 校验确认" : "▶ 运行"))));
-        var promptHTML = (isRouter || isWrite || isValidate || isVerify) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea>${buildFormatSelector(node)}</div>`;
-        var targetHTML = (isRouter || isAsk || isWrite || isValidate || isVerify) ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
-        var writeHTML = (isRouter || isAsk || isValidate || isVerify) ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
+        var isPickTodo = ntype === "pick_todo";
+        var runLabel = isRouter ? "🔀 判定" : (isAsk ? "❓ 提问" : (isWrite ? "📝 写入" : (isValidate ? "🔍 校验" : (isVerify ? "✅ 校验确认" : (isPickTodo ? "🎯 取待办" : "▶ 运行")))));
+        var promptHTML = (isRouter || isWrite || isValidate || isVerify || isPickTodo) ? "" : `<div class="node-section"><label>推理提示词</label><textarea class="prompt-ta">${e(node.prompt||"")}</textarea>${buildFormatSelector(node)}</div>`;
+        var targetHTML = (isRouter || isAsk || isWrite || isValidate || isVerify || isPickTodo) ? "" : `<div class="node-section"><label>结果指定</label><div class="target-builder" data-node-id="${node.id}"><div class="builder-controls"><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','placeholder')">+ 占位符</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','text')">+ 文本/要求</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','bool')">+ 条件判断</button><button type="button" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" onclick="addTargetBlock('${node.id}','enum')">+ 选项分支</button></div><div class="builder-list" data-node-id="${node.id}"></div></div></div>`;
+        var writeHTML = (isRouter || isAsk || isValidate || isVerify || isPickTodo) ? "" : `<div class="node-section"><label>🎯 写入目标</label><div class="write-to-row" data-node-id="${node.id}">${buildWriteToHTML(node)}</div></div>`;
         var verifyFilterHTML = isVerify ? `<div class="node-section"><label>🔎 待办过滤关键词${isSys?' <span style="color:var(--text-muted);font-size:.65rem;">(系统预设，只读)</span>':''}</label><input class="verify-filter-inp" value="${e(node.verify_filter||'')}" ${isSys?'readonly':''} style="width:100%;font-size:.7rem;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);" placeholder="用 | 分隔多关键词，留空=检查全部待办"></div>` : "";
-        var branchHTML = (isAsk || isWrite) ? "" : `<div class="node-section"><label>分支路由${isValidate ? "（VALID→写入 / INVALID→打回）" : ""}${isVerify ? "（CONTINUE→继续 / NEXT→下一模块 / DONE→结束）" : ""}</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
+        var pickFilterHTML = isPickTodo ? `<div class="node-section"><label>🎯 待办过滤关键词${isSys?' <span style="color:var(--text-muted);font-size:.65rem;">(系统预设，只读)</span>':''}</label><input class="pick-filter-inp" value="${e(node.pick_filter||'')}" ${isSys?'readonly':''} style="width:100%;font-size:.7rem;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);" placeholder="用 | 分隔多关键词"></div>` : "";
+        var branchHTML = (isAsk || isWrite) ? "" : `<div class="node-section"><label>分支路由${isValidate ? "（VALID→写入 / INVALID→打回）" : ""}${isVerify ? "（CONTINUE→继续 / NEXT→总检）" : ""}${isPickTodo ? "（HAS_TODO→创建 / NO_TODO→跳过）" : ""}</label><div class="branch-list"></div><button class="branch-add-btn">+ 新增分支</button></div>`;
         var typeOpts = '<option value="reasoning" ' + (ntype==="reasoning"?"selected":"") + '>🧠 推理</option>'
             + '<option value="validate" ' + (ntype==="validate"?"selected":"") + '>🔍 校验</option>'
             + '<option value="verify" ' + (ntype==="verify"?"selected":"") + '>✅ 校验确认</option>'
+            + '<option value="pick_todo" ' + (ntype==="pick_todo"?"selected":"") + '>🎯 取待办</option>'
             + '<option value="write" ' + (ntype==="write"?"selected":"") + '>📝 写入</option>'
             + '<option value="router" ' + (ntype==="router"?"selected":"") + '>🔀 路由</option>'
             + '<option value="ask" ' + (ntype==="ask"?"selected":"") + '>❓ 交互</option>';
 
         card.innerHTML = `<div class="node-hdr"><span>${e(node.id)}</span><span style="display:flex;gap:4px;align-items:center;"><select class="node-type-sel" style="font-size:.65rem;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);">${typeOpts}</select><button class="node-del">&#128465;</button></span></div>
             <div class="node-body">
-                <div class="node-section"><label>${isRouter ? "判定依据" : (isWrite || isValidate ? "注释" : "传入内容")}</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
+                <div class="node-section"><label>${isRouter ? "判定依据" : (isWrite || isValidate || isPickTodo ? "注释" : "传入内容")}</label><textarea class="premise-ta">${e(node.premise||"")}</textarea></div>
                 ${promptHTML}
                 ${targetHTML}
                 ${writeHTML}
                 ${verifyFilterHTML}
+                ${pickFilterHTML}
                 ${branchHTML}
                 <div class="node-section"><label>顺序路由（默认下一节点）</label><select class="next-node-sel"><option value="">-- 无 --</option></select></div>
                 <button class="node-run-btn">${runLabel}</button>
@@ -3095,7 +3099,7 @@ function renderAllNodes() {
             ${outPorts}`;
         canvas.appendChild(card);
         bindNodeEvents(card, node, idx);
-        if (!isAsk && !isRouter && !isWrite) initTargetBuilder(card, node);
+        if (!isAsk && !isRouter && !isWrite && !isPickTodo) initTargetBuilder(card, node);
         if (!isAsk && !isWrite) renderBranches(card, node);
         } catch(e) {
             var errCard = document.createElement("div");
@@ -3124,6 +3128,8 @@ function bindNodeEvents(card, node, idx) {
     if (formatSel) { formatSel.addEventListener("change", function() { node.format = formatSel.value || ""; autoSave(); }); }
     var verifyFilterInp = card.querySelector(".verify-filter-inp");
     if (verifyFilterInp) verifyFilterInp.addEventListener("input", function(e) { node.verify_filter = e.target.value; autoSave(); });
+    var pickFilterInp = card.querySelector(".pick-filter-inp");
+    if (pickFilterInp) pickFilterInp.addEventListener("input", function(e) { node.pick_filter = e.target.value; autoSave(); });
     card.querySelector(".node-run-btn").addEventListener("click", () => runNode(card, node));
     // sequential route
     const nextSel = card.querySelector(".next-node-sel");
