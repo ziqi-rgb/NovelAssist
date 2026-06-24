@@ -3780,7 +3780,7 @@ const REASONING_FORMATS = {
             "【description】详细 Markdown 描述\n" +
             "【attributes】JSON 对象，如 {\"气候\":\"极寒\",\"特产\":\"寒铁\"}\n" +
             "<ROUTE>DONE</ROUTE>",
-        jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"地点名","scale_level":"国家","parent_name":"父地点名","grid_x":5,"grid_y":3,"description":"简短描述","attributes":{}}\n<ROUTE>DONE</ROUTE>',
+        jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"地点名","scale_level":"国家","parent_name":"父地点名","scale":"REGION","grid_x":5,"grid_y":3,"map_x":5,"map_y":3,"description":"简短描述","attributes":{"气候":"温暖"}}\n<ROUTE>DONE</ROUTE>',
         parser: function(text) {
             var locs = [];
             // 优先 JSON 解析
@@ -3834,7 +3834,7 @@ const REASONING_FORMATS = {
             "  字段1: 值1\n" +
             "【description】详细 Markdown 描述\n" +
             "<ROUTE>DONE</ROUTE>",
-        jsonExample: '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":{"基础信息":{"姓名":"xx","年龄":"20"},"外貌特征":{"身高":"180"}},"description":"一句话概述"}\n<ROUTE>DONE</ROUTE>',
+        jsonExample: null,  // 由 getFormatPrompt 根据当前模板动态生成
         parser: function(text) {
             var chars = [];
             // 优先 JSON 解析
@@ -3937,7 +3937,19 @@ function getFormatPrompt(node) {
     var fmt = REASONING_FORMATS[node.format || ""];
     if (!fmt) return "";
     var tpl = fmt.template || "";
-    if (fmt.jsonExample) tpl += fmt.jsonExample;
+    if (fmt.jsonExample) {
+        tpl += fmt.jsonExample;
+    } else if (node.format === "character" && typeof charTemplate !== "undefined" && Array.isArray(charTemplate) && charTemplate.length) {
+        // 根据当前模板动态生成 JSON 示例
+        var attrsExample = {};
+        charTemplate.forEach(function(g) {
+            var fields = {};
+            (g.fields || []).forEach(function(f) { fields[f] = "值"; });
+            if (Object.keys(fields).length === 0) fields = {};
+            attrsExample[g.group] = fields;
+        });
+        tpl += '\n\n【JSON Output — 也可输出为JSON对象】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":' + JSON.stringify(attrsExample) + ',"description":"一句话概述"}\n<ROUTE>DONE</ROUTE>';
+    }
     return tpl;
 }
 
