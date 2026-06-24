@@ -2407,7 +2407,36 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                     }
                                     wArgs = { action: "update_status", todo_id: pending ? pending.id : "none", status: "done" };
                                 } else {
-                                    wArgs = { action: "add", content: lastReasoning };
+                                    // 按行拆分 planning 输出，每条 `- [ ]` 行创建一个独立任务
+                                    var rawLines = lastReasoning.split('\n');
+                                    var todoLines = [];
+                                    for (var li = 0; li < rawLines.length; li++) {
+                                        var line = rawLines[li].trim();
+                                        if (line && (line.indexOf('- [ ]') >= 0 || line.indexOf('- []') >= 0 || line.indexOf('* [ ]') >= 0)) {
+                                            todoLines.push(line);
+                                        }
+                                    }
+                                    if (todoLines.length > 1) {
+                                        var createdCount = 0;
+                                        for (var tli = 0; tli < todoLines.length; tli++) {
+                                            try {
+                                                var addRes = await fetch("/api/agent/execute/" + currentNovelId, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ tool_name: wToolName, arguments: { action: "add", content: todoLines[tli] }, chain_id: chainId }) });
+                                                if (addRes.ok) createdCount++;
+                                            } catch(e) {}
+                                        }
+                                        try {
+                                            var freshRc3 = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+                                            rc.todos = freshRc3.todos || [];
+                                        } catch(e) {}
+                                        node.output = "✅ 写入成功：已创建 " + createdCount + " 个待办任务";
+                                        fullChainContext += "\n--- 【写入结果】 ---\n" + node.output;
+                                        if (onLogCallback) onLogCallback("\n📝 [写入成功] 已创建 " + createdCount + " 个待办任务\n", "tool");
+                                        var wNextId2 = node.next_node_id || null;
+                                        currentNodeId = wNextId2;
+                                        continue;
+                                    } else {
+                                        wArgs = { action: "add", content: lastReasoning };
+                                    }
                                 }
                             } else {
                                 wArgs = { element_type: wt.entity, action: wt.action === "create" ? "add" : (wt.action === "update" ? "update" : "add"), data: {} };
