@@ -201,25 +201,25 @@ SYSTEM_CHAIN_NAMES = [
 def _get_system_chain_nodes(title: str) -> list[dict]:
     if title == "🗺️ 蓝图规划与逐层搭建流":
         return [
-            {"id":"node_eval","type":"router","x":400,"y":60,"premise":"探明当前世界快照，判断上级是否存在。","prompt":"【现状探明】（⚠️绝对禁止调用工具！）\n查阅地点名录：{locations_list}。\n判断：名录中是否存在可以直接作为目标地点上级的地图区域？\n- 存在上级，只输出 <ROUTE>TRUE</ROUTE>\n- 缺失上级，只输出 <ROUTE>FALSE</ROUTE>\n严禁输出任何废话！","target":[{"id":"blk_1","type":"placeholder","value":"{locations_list}"}],"branches":[{"condition":"TRUE","next_node_id":"node_true_plan"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
-            {"id":"node_true_plan","x":900,"y":60,"premise":"上级已存在，以该上级为锚点规划子层级清单。","prompt":"【局部路径规划】（⚠️绝对禁止调用工具！）\n探测到目标地点的上级地图已存在于数据库中（详见上文环境）。\n请以该已有的上级节点为锚点，自顶向下规划前往目标地点所需的完整子层级嵌套清单，确定每一个子地点的 scale（只能是大陆/国家/城池/街区之一）与具体 grid_x/grid_y 坐标（0-24 之间），并仅以纯文本输出清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度设定，使生成的地点描述与空间结构与之完全对齐：\n【世界观大纲】：\n{outline_cat_world}\n【世界势力大纲】：\n{outline_cat_faction}\n【地理大纲】：\n{outline_cat_geo}\n【能力体系大纲】：\n{outline_cat_power}\n\n请仅输出纯文本规划清单。明确标出谁是谁的 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
-            {"id":"node_plan","x":30,"y":650,"premise":"上级缺失，从零规划完整嵌套链。","prompt":"【蓝图规划】（⚠️绝对禁止调用工具！）\n上级地图缺失，需从零搭建地点嵌套清单。\n【全景对齐天条】：\n你当前正在规划地图的整体结构。除了大纲中的 [人物设定] 外，你必须【100% 仔细阅读并继承】以下由世界大纲所提供的高密度背景设定，使生成的地点名、描述、空间结构与其完美对齐，互为表里：\n【世界观设定】：\n{outline_cat_world}\n【世界势力设定】：\n{outline_cat_faction}\n【地理知识设定】：\n{outline_cat_geo}\n【能力体系设定】：\n{outline_cat_power}\n\n【空间标尺法则】：[大千世界] -> [宇宙] -> [星球] -> [大陆] -> [国家] -> [城池] -> [街区]\n请仅用纯文本罗列清单。明确标出每层的 scale 与 parent_name！严禁调用工具！","target":[],"branches":[],"next_node_id":"node_desc","output":""},
-            {"id":"node_desc","x":450,"y":700,"premise":"填充各层级的详细设定描述。","prompt":"【设定填充】（⚠️绝对禁止调用工具！）\n基于上文你纯文本输出的地点嵌套清单，为这几个层级分别撰写精美的生态、势力与背景设定。\n仅输出纯文本设定，不要执行任何创建动作！","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
-            {"id":"node_build_top","type":"write","x":450,"y":1300,"premise":"进入循环创建，每次只建最高层未建节点。","prompt":"【执行创建】（✅允许调用工具）\n请查阅你制定的地点嵌套清单与上文已建好的地点记录。\n挑出目前最高级且尚未被工具建立的唯一一个地点，调用 manage_world_element 工具建立它！\n【绝对规范】：\n1. 严禁一次建多个，每次只建一个！\n2. 确保 parent_name 严格对齐上一级！\n3. 【强制】必须分配 grid_x 和 grid_y 属性（0-24之间的整数）。\n4. 【强制】scale (取值为上文的 7 大标尺之一)！","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
-            {"id":"node_check_bottom","type":"router","x":450,"y":1900,"premise":"判断是否已到达嵌套链的最底层。","prompt":"【进度判定】（⚠️绝对禁止调用工具！）\n刚刚在上一步建立的地点，是地点嵌套清单中最底层的目标地点吗？\n- 已经是目标地点了，输出 <ROUTE>DONE</ROUTE>\n- 还没到底，输出 <ROUTE>CONTINUE</ROUTE>\n绝不允许调用工具，仅输出标签！","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
+            {"id":"node_eval","type":"router","x":400,"y":60,"premise":"探明：目标地点的上级地图是否已存在于数据库？","prompt":"","target":[],"branches":[{"condition":"TRUE","next_node_id":"node_true_plan"},{"condition":"FALSE","next_node_id":"node_plan"}],"next_node_id":"","output":""},
+            {"id":"node_true_plan","x":900,"y":60,"premise":"上级已存在。以该上级为锚点，规划前往目标地点的完整子层级嵌套清单。","prompt":"【局部路径规划】\n探测到目标地点的上级地图已存在。请自顶向下规划完整子层级嵌套清单，确定每一个子地点的 scale（大千世界/宇宙/星球/大陆/国家/城池/街区）与具体 grid_x/grid_y 坐标（0-24 之间）。\n【全景对齐天条】：必须 100% 参照以下设定使地点描述与空间结构完全对齐：\n【世界观大纲】：\n{outline_cat_world}\n【世界势力大纲】：\n{outline_cat_faction}\n【地理大纲】：\n{outline_cat_geo}\n【能力体系大纲】：\n{outline_cat_power}\n\n纯文本输出规划清单，明确标出每项的 parent_name。仅在末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"node_desc","output":""},
+            {"id":"node_plan","x":30,"y":650,"premise":"上级缺失。从零规划完整嵌套链（大千世界→宇宙→星球→大陆→国家→城池→街区）。","prompt":"【蓝图规划】\n上级地图缺失，需从零搭建完整地点嵌套清单。\n【全景对齐天条】：必须 100% 参照以下高密度背景设定：\n【世界观设定】：\n{outline_cat_world}\n【世界势力设定】：\n{outline_cat_faction}\n【地理知识设定】：\n{outline_cat_geo}\n【能力体系设定】：\n{outline_cat_power}\n\n【空间标尺】：大千世界→宇宙→星球→大陆→国家→城池→街区\n纯文本罗列清单，明确标出每层 scale 与 parent_name。仅在末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"node_desc","output":""},
+            {"id":"node_desc","x":450,"y":700,"premise":"为规划清单中的各层级撰写详细的生态、势力与背景设定描述。","prompt":"【设定填充】\n基于上文的地点嵌套清单，为每个层级撰写精美的生态、势力与背景设定。用生动的描述性语言。\n纯文本输出，不调用任何工具。末尾输出 <ROUTE>DONE</ROUTE>。","target":[],"branches":[],"next_node_id":"node_build_top","output":""},
+            {"id":"node_build_top","type":"write","x":450,"y":1300,"premise":"从清单中找出当前最高级且尚未创建的地点，写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":"node_check_bottom","output":""},
+            {"id":"node_check_bottom","type":"router","x":450,"y":1900,"premise":"判断：刚刚创建的地点是否已是嵌套链最底层？","prompt":"","target":[],"branches":[{"condition":"DONE","next_node_id":""},{"condition":"CONTINUE","next_node_id":"node_build_top"}],"next_node_id":"","output":""},
         ]
     if title == "👤 严谨人设与模板质检流":
         return [
             {
                 "id": "c_n1_prepare", "x": 400, "y": 60,
-                "premise": "整理用户要求，建立初步人设文本。",
-                "prompt": "【初步整理】（⚠️绝对禁止调用工具！）\n整理用户要求，推导出需要创建的人物名称、所属势力、性格特征。建立初步人设文本。纯文本输出！",
+                "premise": "整理用户要求，推导需要创建的人物名称、所属势力、性格特征。",
+                "prompt": "【初步整理】\n整理用户要求，推导出需要创建的人物名称、所属势力、性格特征。建立初步人设文本。在末尾输出 <ROUTE>DONE</ROUTE>。",
                 "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
             },
             {
-                "id": "c_n2_check_faction", "type": "router", "x": 400, "y": 600,
-                "premise": "判定是否需要建立新势力。",
-                "prompt": "【势力存在判定】（⚠️绝对禁止调用工具！）\n对比当前初步人设中的所属势力，并仔细核对已有的势力名录：{locations_list}（地理大纲中已有的势力也视同存在）。\n- 如果该势力在名录中已存在，【绝对禁止重复创建】，直接输出 <ROUTE>NO</ROUTE> 路由至编号节点；\n- 只有在确属全新的空白势力时，才输出 <ROUTE>YES</ROUTE> 前往建立节点。",
+                "id": "c_n2_check_faction", "type": "router", "x": 400, "y": 550,
+                "premise": "判定：初步人设中涉及的势力是否已存在？不存在则需要新建。",
+                "prompt": "",
                 "target": [],
                 "branches": [
                     {"condition": "YES", "next_node_id": "c_n3_build_faction"},
@@ -228,55 +228,33 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_n3_build_faction", "type": "write", "x": 900, "y": 600,
-                "premise": "建立新势力。",
-                "prompt": "【建立势力】（✅允许调用工具）\n调用 manage_world_element (etype: faction) 建立势力。提供 base_location_name 关联驻地。建完即止！",
+                "id": "c_n3_build_faction", "type": "write", "x": 900, "y": 550,
+                "premise": "将上游确定的势力信息写入数据库。",
+                "prompt": "",
                 "target": [], "branches": [], "next_node_id": "c_n2_check_faction", "output": ""
             },
             {
-                "id": "c_n4_number", "x": 400, "y": 1140,
-                "premise": "判定人设数量并编号。",
-                "prompt": "【数量判定】（⚠️绝对禁止调用工具！）\n判断需要创建的人物数量（1-N个），并生成他们名字的编号清单。在输出中清晰标明：\n【创世计划人设总名单】：[在此罗列所有需要创建的角色姓名]",
+                "id": "c_n4_number", "x": 400, "y": 1040,
+                "premise": "判定需要创建的人物总数，生成编号清单。",
+                "prompt": "【数量判定】\n判断需要创建的人物数量（1-N个），生成名字编号清单。\n明确输出：\n【创世计划人设总名单】：[列出所有角色姓名]\n在末尾输出 <ROUTE>DONE</ROUTE>。",
+                "target": [], "branches": [], "next_node_id": "c_n5a_gen_char", "output": ""
+            },
+            {
+                "id": "c_n5a_gen_char", "x": 400, "y": 1530,
+                "premise": "从计划名单中选出下一个待创建的角色，生成完整的 attributes 属性字典。",
+                "prompt": "【角色属性生成】\n系统模板：{character_template}\n已有角色：{characters_full_detail}\n\n【执行契约】：\n1. 继承前文的【创世计划人设总名单】\n2. 比对已有角色，找出第一个尚未创建的角色\n3. 输出：\n   【当前创建计划名单】：[完整名单]\n   【当前落子步骤】：第 X 个角色：[姓名]\n4. 为该角色生成完整饱满的 attributes 字典，严格对齐模板的每个分组和字段\n5. 在末尾输出 <ROUTE>DONE</ROUTE>",
                 "target": [], "branches": [], "next_node_id": "c_n5_build_char", "output": ""
             },
             {
-                "id": "c_n5_build_char", "type": "write", "x": 400, "y": 1680,
-                "premise": "调用工具创建人设。",
-                "prompt": (
-                    "【人物落子】（✅允许调用工具）\n"
-                    "系统当前配置的完整属性模板如下：\n{character_template}\n\n"
-                    "注意填写属性时严格按照模板顺序填写。\n"
-                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
-                    "【执行与上下文状态传递天条】：\n"
-                    "1. 仔细阅读前文 `c_n4_number` 或历史中确定的名单，在你的输出中首先完整打印它：\n"
-                    "   【当前创建计划名单】：[从前文继承并完整列出所有需要创建的角色姓名]\n"
-                    "2. 比对【当前已建立的人物详细档案】与前序节点执行历史。\n"
-                    "3. 找出第一个在计划名单中、但【目前数据库里完全不存在】或者【上轮质检未通过】的角色。\n"
-                    "4. 在你的输出中明确打印：\n"
-                    "   【当前落子步骤】：正在创建计划中第 X 个角色：[该角色姓名]\n"
-                    "5. 调用 `manage_world_element` (etype: character, action: add) 创建它！\n"
-                    "   - 每次只允许调用一次工具创建 1 个角色！所有的属性字典必须严格对齐上面的模板分组，禁止自创残缺属性！"
-                ),
+                "id": "c_n5_build_char", "type": "write", "x": 400, "y": 2020,
+                "premise": "将上游生成的完整角色属性写入数据库。",
+                "prompt": "",
                 "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
-                "id": "c_n6_verify_template", "type": "router", "x": 400, "y": 2220,
-                "premise": "第一漏斗：已建角色属性模板质检。",
-                "prompt": (
-                    "【属性模板质检】（⚠️绝对禁止调用工具！仅限输出路由！）\n"
-                    "系统当前配置的人物属性模板如下：\n{character_template}\n\n"
-                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
-                    "【单兵穿透审查契约】：\n"
-                    "1. 仔细核对前序节点执行历史中的【落子步骤】，找出【刚刚被创建或修改的那个特定角色】。\n"
-                    "2. 在你的输出中，进行绝对清晰的状态传递（写在 `<ROUTE>` 标签的前面，作为文本传递）：\n"
-                    "   【当前创建计划名单】：[完整名单]\n"
-                    "   【当前审查进度】：正在审查第 X 个角色：[当前被审查角色姓名]\n"
-                    "   【当前审查结果】：[通过 / 未通过，若未通过请列出其 attributes 字典中缺失的具体字段(注意严格按照排列顺序填写)]\n"
-                    "3. 仔细核对该角色的 attributes 字典是否完整对齐模板分组（包含性格特征、能力数据等所有分组，无空缺值）。\n"
-                    "4. 最后，独立输出分支路由标记：\n"
-                    "   - 若该被审查角色属性完美合格，输出 `<ROUTE>PERFECT</ROUTE>` 路由流向数量核对节点。\n"
-                    "   - 若该角色属性有残缺，输出 `<ROUTE>NEEDS_FIX</ROUTE>` 路由前往修复节点。"
-                ),
+                "id": "c_n6_verify_template", "type": "router", "x": 400, "y": 2510,
+                "premise": "第一漏斗：质检刚创建的角色属性是否完整对齐模板。",
+                "prompt": "",
                 "target": [],
                 "branches": [
                     {"condition": "PERFECT", "next_node_id": "c_n8_verify_quantity"},
@@ -285,39 +263,18 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
                 "next_node_id": "", "output": ""
             },
             {
-                "id": "c_n7_fix", "type": "write", "x": 900, "y": 2220,
-                "premise": "补齐残缺属性。",
-                "prompt": (
-                    "【补齐修复】（✅允许调用工具）\n"
-                    "属性模板如下：\n{character_template}\n\n"
-                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
-                    "【修复状态传递契约】：\n"
-                    "1. 从前文中提取并传递状态：\n"
-                    "   【当前创建计划名单】：[完整名单]\n"
-                    "   【当前修复目标】：第 X 个角色：[角色姓名]\n"
-                    "2. 根据上一步质检指出该角色 attributes 中缺少的具体分组和字段，调用 `manage_world_element` (etype: character, action: update, name: 对应的姓名) 精准补齐并丰富其 `attributes` 字典。\n"
-                    "3. 修复完成后，在输出中写明已补齐哪些字段，引导流程返回质检节点！"
-                ),
+                "id": "c_n7_fix", "type": "write", "x": 900, "y": 2510,
+                "premise": "将上游质检指出的缺失字段补齐写入数据库。",
+                "prompt": "",
                 "target": [], "branches": [], "next_node_id": "c_n6_verify_template", "output": ""
             },
             {
-                "id": "c_n8_verify_quantity", "type": "router", "x": 400, "y": 2760,
-                "premise": "第二漏斗：已建角色数量核对。",
-                "prompt": (
-                    "【角色数量核对】（⚠️绝对禁止调用工具！仅限输出路由！）\n"
-                    "数据库中【当前已建立的人物详细档案】如下：\n{characters_full_detail}\n\n"
-                    "【数量大盘点契约】：\n"
-                    "1. 你必须在输出中清晰汇总创世进度，列出完整名单及每一个角色的质检状态（作为非路由文本传递）：\n"
-                    "   【总计划创建名单】：[完整名单]\n"
-                    "   【已完成且合格的角色】：[列出已成功创建并质检通过的所有角色姓名]\n"
-                    "   【待创建或待修复的角色】：[列出剩下尚未建立或不合格的角色姓名]\n"
-                    "2. 点算【已完成且合格的角色】总数量，并比对【总计划创建名单】的总人数：\n"
-                    "   - 若数量尚未达到计划总人数（仍有角色未被创建），输出 `<ROUTE>NEEDS_MORE</ROUTE>` 路由返回落子节点，去创建下一个人。\n"
-                    "   - 若所有角色已足额、且全部合格建成，输出 `<ROUTE>DONE</ROUTE>` 结束整个创世工作流。"
-                ),
+                "id": "c_n8_verify_quantity", "type": "router", "x": 400, "y": 3000,
+                "premise": "第二漏斗：核对已创建角色数量是否达标。",
+                "prompt": "",
                 "target": [],
                 "branches": [
-                    {"condition": "NEEDS_MORE", "next_node_id": "c_n5_build_char"},
+                    {"condition": "NEEDS_MORE", "next_node_id": "c_n5a_gen_char"},
                     {"condition": "DONE", "next_node_id": ""}
                 ],
                 "next_node_id": "", "output": ""
@@ -348,18 +305,17 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             next_m_id = modules[i + 1][0] if i + 1 < len(modules) else "end"
             next_check = f"o_{next_m_id}_check" if next_m_id != "end" else ""
             contract = contracts.get(cat, "")
-            nodes.append({"id":f"o_{m_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"进入 {m_name}。","prompt":f"【模块判定】（⚠️绝对禁止调用工具！）\n判断：是否需要创建或扩充【{m_name}】？\n- 需要，输出 <ROUTE>YES</ROUTE>\n- 不需要，输出 <ROUTE>NO</ROUTE>","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
+            nodes.append({"id":f"o_{m_id}_check","type":"router","x":col_x[0],"y":base_y,"premise":f"判定：是否需要创建或扩充【{m_name}】？","prompt":"","target":[],"branches":[{"condition":"YES","next_node_id":f"o_{m_id}_plan"},{"condition":"NO","next_node_id":next_check}],"next_node_id":"","output":""})
             plan = f"【分条规划】\n【{cat} 硬性契约】：{contract}\n请对【{m_name}】进行详细规划，拆分为多个条目。\n"
-            build = f"【执行创建】（✅允许调用工具）\n查阅规划清单。挑出最高级未建节点，调用 manage_world_element (etype: outline) 建立它。\ncategory 必须填入 '{cat}'。\n"
+            build = ""
             if m_id != "char":
-                plan += "【大纲-地图全景互借天条】：必须【100% 参照并继承】已有高精度物理地图：{locations_full_detail}。严禁生造冲突内容！\n"
-                build += "【强制格式规范】：description 必须使用严谨的 Markdown 语法排版！\n"
+                plan += "【大纲-地图全景互借天条】：必须 100% 参照已有高精度物理地图：{locations_full_detail}。严禁生造冲突内容！\n"
             if m_id == "story":
-                plan += "必须遵循【卷->章->幕】三级嵌套，指明 parent_name。\n"
-            plan += "纯文本输出清单！"
-            nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name}。","prompt":plan,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
-            nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"创建 {m_name}。","prompt":build,"target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
-            nodes.append({"id":f"o_{m_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验 {m_name}。","prompt":f"【进度判定】（⚠️绝对禁止调用工具！）\n比对规划清单，【{m_name}】是否全部创建完毕？\n- 未完工，输出 <ROUTE>CONTINUE</ROUTE>\n- 全部完工，输出 <ROUTE>DONE</ROUTE>\n仅输出标签！","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
+                plan += "必须遵循【卷→章→幕】三级嵌套，指明 parent_name。\n"
+            plan += "纯文本输出清单！末尾输出 <ROUTE>DONE</ROUTE>。"
+            nodes.append({"id":f"o_{m_id}_plan","x":col_x[1],"y":base_y,"premise":f"规划 {m_name} 的具体条目。","prompt":plan,"target":[],"branches":[],"next_node_id":f"o_{m_id}_build","output":""})
+            nodes.append({"id":f"o_{m_id}_build","type":"write","x":col_x[2],"y":base_y,"premise":f"将规划好的 {m_name} 条目写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":""})
+            nodes.append({"id":f"o_{m_id}_verify","type":"router","x":col_x[3],"y":base_y,"premise":f"校验：{m_name} 是否全部创建完毕？","prompt":"","target":[],"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_build"},{"condition":"DONE","next_node_id":next_check}],"next_node_id":"","output":""})
         return nodes
     return []
 
