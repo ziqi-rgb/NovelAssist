@@ -2393,6 +2393,11 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             if (wt.entity === "chain_todos") {
                                 wToolName = "manage_chain_todos";
                                 if (wt.action === "update" && wt.field === "status") {
+                                    // 强制刷新 todos，确保拿到最新数据
+                                    try {
+                                        var freshRc2 = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+                                        rc.todos = freshRc2.todos || [];
+                                    } catch(e) {}
                                     var todos = (rc && rc.todos) ? rc.todos : [];
                                     var pending = null;
                                     for (var ti = 0; ti < todos.length; ti++) {
@@ -2434,6 +2439,27 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                         }
                                     } else {
                                         wArgs.data["description"] = lastReasoning;
+                                    }
+                                } else if (wt.entity === "character" && wt.field === "attributes") {
+                                    var cParser = REASONING_FORMATS["character"] && REASONING_FORMATS["character"].parser;
+                                    if (cParser) {
+                                        var cItems = cParser(lastReasoning);
+                                        if (cItems && cItems.length) {
+                                            var ch = cItems[0];
+                                            wArgs.data["name"] = ch.name || "";
+                                            if (ch.aliases) wArgs.data["aliases"] = ch.aliases;
+                                            if (ch.status) wArgs.data["status"] = ch.status;
+                                            if (ch.is_active !== undefined) wArgs.data["is_active"] = ch.is_active;
+                                            if (ch.faction_name) wArgs.data["faction_name"] = ch.faction_name;
+                                            if (ch.faction_role) wArgs.data["faction_role"] = ch.faction_role;
+                                            if (ch.is_always_context !== undefined) wArgs.data["is_always_context"] = ch.is_always_context;
+                                            wArgs.data["description"] = ch.description || "";
+                                            wArgs.data["attributes"] = ch.attributes || {};
+                                        } else {
+                                            wArgs.data["attributes"] = lastReasoning;
+                                        }
+                                    } else {
+                                        wArgs.data["attributes"] = lastReasoning;
                                     }
                                 } else if (wt.field === "category" && wt.sub_field) {
                                     // 大纲分类由节点配置锁定，解析上游结构化输出取 title/description
