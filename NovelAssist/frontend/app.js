@@ -2610,12 +2610,12 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         var vResult = { valid: true };
                         var vItems = [];
                         if (vParser) {
-                            vItems = vParser(lastReasoning || "");
+                            vItems = vParser(txt || "");
                             vResult = validateStructuredOutput(vFmt, vItems, rc.nodes || null, rc._template_snapshot || null);
                         }
                         if (vResult.valid) {
                             rc._validate_retries = 0;  // 重置计数
-                            fullChainContext += "\n\n--- 【校验通过】 ---\n" + lastReasoning;
+                            fullChainContext += "\n\n--- 【校验通过】 ---\n" + txt;
                             node.output = "✅ 校验通过";
                             var writeTarget = (node.branches || []).find(function(b) { return b.condition === "VALID"; });
                             if (writeTarget && writeTarget.next_node_id) {
@@ -2986,7 +2986,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                         }
                     }
                     if (onLogCallback && txt) onLogCallback(txt, "chunk");
-                    lastReasoning = txt;
                     var routeKey = null;
                     // 🛡️ 输出格式强制校验
                     var cleanTxt = txt;
