@@ -2783,7 +2783,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                     // 直接使用 pick_todo 阶段存储的 ID，不解析上下文
                                     var targetId = rc._last_picked_todo_id;
                                     wArgs = { action: "update_status", todo_id: targetId || "none", status: "done" };
-                                } else if (!rc.todos || !rc.todos.length) {
+                                } else if (!rc._todos_initialized) {
+                                    rc._todos_initialized = true;
                                     // 仅首次创建待办，后续只允许 update
                                     // 按行拆分 planning 输出，每条 `- [ ]` 行创建一个独立任务
                                     var rawLines = lastReasoning.split('\n');
@@ -4069,9 +4070,13 @@ function validateStructuredOutput(format, items, chainNodes, templateSnapshot) {
                 var gname = g.group;
                 var fields = g.fields || [];
                 var groupData = item.attributes[gname];
-                // 容错：数组退化为空对象处理
-                if (Array.isArray(groupData)) groupData = {};
-                if (!groupData || typeof groupData !== "object" || Object.keys(groupData).length === 0) {
+                // 容错：数组转对象
+                var wasArray = Array.isArray(groupData);
+                if (wasArray) groupData = {};
+                // 模板字段为空时不检查空值（如人物关系允许空对象/空数组）
+                if (fields.length === 0 && wasArray) {
+                    // 空数组 = 有效空关系，跳过
+                } else if (!groupData || typeof groupData !== "object" || Object.keys(groupData).length === 0) {
                     errors.push("缺少模板分组: " + gname);
                 } else {
                     fields.forEach(function(f) {
