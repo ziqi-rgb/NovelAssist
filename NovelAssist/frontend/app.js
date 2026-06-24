@@ -9,6 +9,33 @@ let currentModule = "writing";
 let currentOutlineCat = "世界观";
 let mdViewing = false;
 let isGenesisRunning = false;
+let genesisInterrupted = false;          // 中断标志：true 时 runHeadlessChain 在下一节点循环前停止
+let genesisResumeState = null;           // 恢复状态快照（从 localStorage 加载）
+
+/* ═══════════ Genesis State Persistence ═══════════ */
+const GENESIS_STATE_KEY = "genesis_state";
+
+function saveGenesisState(state) {
+    state.savedAt = Date.now();
+    localStorage.setItem(GENESIS_STATE_KEY + "_" + currentNovelId, JSON.stringify(state));
+}
+
+function loadGenesisState() {
+    var raw = localStorage.getItem(GENESIS_STATE_KEY + "_" + currentNovelId);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch(e) { return null; }
+}
+
+function clearGenesisState() {
+    localStorage.removeItem(GENESIS_STATE_KEY + "_" + currentNovelId);
+}
+
+function formatGenesisResumeInfo(state) {
+    var phaseNames = ["", "📖 世界观与大纲", "🗺️ 地理蓝图落子", "👤 群像人设质检"];
+    var phaseLabel = phaseNames[state.phase] || "未知阶段";
+    var nodeCount = state.executedNodeCount || 0;
+    return "阶段 " + state.phase + "/3 · " + phaseLabel + " · 已执行 " + nodeCount + " 个节点";
+}
 
 /* ═══════════ Clock Engine ═══════════ */
 window.novelTimeConfig = { months_per_year: 12, days_per_month: 30, hours_per_day: 24 };
@@ -1333,17 +1360,11 @@ document.getElementById("outline-export-btn")?.addEventListener("click", async f
     } catch (e2) { console.error(e2); }
 });
 document.getElementById("import-close-btn")?.addEventListener("click", function() {
-    if (isGenesisRunning) {
-        showToast("⚠️ 创世引擎正在高维度重组宇宙中，请勿关闭视口！");
-        return;
-    }
+    if (isGenesisRunning) return;  // 运行中由中断按钮处理
     document.getElementById("import-modal").classList.add("hidden");
 });
 document.getElementById("genesis-backdrop")?.addEventListener("click", function() {
-    if (isGenesisRunning) {
-        showToast("⚠️ 创世引擎正在高维度重组宇宙中，请勿中途打断神圣法则！");
-        return;
-    }
+    if (isGenesisRunning) return;  // 运行中禁止遮罩关闭
     document.getElementById("import-modal").classList.add("hidden");
 });
 
@@ -1351,9 +1372,110 @@ document.addEventListener("keydown", function(e) {
     if (e.key === "Escape" && isGenesisRunning) {
         e.preventDefault();
         e.stopPropagation();
-        showToast("⚠️ 创世引擎正在高维度重组宇宙中，ESC 键已被物理拦截！");
+        triggerGenesisInterrupt();
     }
 });
+
+/* ═══════════ 中断逻辑 ═══════════ */
+function triggerGenesisInterrupt() {
+    if (!isGenesisRunning) return;
+    genesisInterrupted = true;
+    showToast("⏹ 已发出中断信号，当前节点执行完毕后将保存进度...");
+    var stopBtn = document.getElementById("genesis-stop-btn");
+    if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = "⏳ 中断中..."; }
+}
+
+document.getElementById("genesis-stop-btn")?.addEventListener("click", function() {
+    triggerGenesisInterrupt();
+});
+
+/* ═══════════ 模式选择器交互 ═══════════ */
+(function setupModeSelector() {
+    var labels = document.querySelectorAll(".genesis-mode-btn");
+    if (!labels.length) return;
+    labels.forEach(function(label) {
+        label.addEventListener("click", function() {
+            labels.forEach(function(l) { l.classList.remove("active"); });
+            label.classList.add("active");
+            // 同步选中 radio
+            var radio = label.querySelector("input[type=radio]");
+            if (radio) radio.checked = true;
+            // 更新启动按钮文案
+            updateGenesisSubmitLabel();
+        });
+    });
+})();
+
+function getGenesisMode() {
+    var checked = document.querySelector("input[name='genesis-mode']:checked");
+    return checked ? checked.value : "full";
+}
+
+function updateGenesisSubmitLabel() {
+    var btn = document.getElementById("genesis-submit-btn");
+    if (!btn) return;
+    var mode = getGenesisMode();
+    var labels = { full: "🌌 启动完整建纲", incremental: "📎 启动分段建纲", overwrite: "💥 启动覆写重建" };
+    btn.textContent = labels[mode] || "🌌 启动建纲";
+}
+
+/* ═══════════ 断点恢复 ═══════════ */
+function checkAndShowResume() {
+    var state = loadGenesisState();
+    var banner = document.getElementById("genesis-resume-banner");
+    if (!banner) return;
+    if (state && state.status === "interrupted") {
+        genesisResumeState = state;
+        banner.style.display = "flex";
+        document.getElementById("genesis-resume-info").textContent = formatGenesisResumeInfo(state);
+    } else {
+        genesisResumeState = null;
+        banner.style.display = "none";
+    }
+}
+
+document.getElementById("genesis-resume-btn")?.addEventListener("click", function() {
+    if (!genesisResumeState) return;
+    var state = genesisResumeState;
+    genesisResumeState = null;
+    document.getElementById("genesis-resume-banner").style.display = "none";
+    // 恢复输入文本和模式
+    document.getElementById("import-textarea").value = state.inputText || "";
+    var modeRadio = document.querySelector("input[name='genesis-mode'][value='" + (state.mode || "full") + "']");
+    if (modeRadio) {
+        modeRadio.checked = true;
+        document.querySelectorAll(".genesis-mode-btn").forEach(function(l) { l.classList.remove("active"); });
+        modeRadio.closest(".genesis-mode-btn").classList.add("active");
+        updateGenesisSubmitLabel();
+    }
+    // 重建进度条状态
+    restoreProgressFromState(state);
+    // 启动恢复执行
+    executeGenesisFromResume(state);
+});
+
+document.getElementById("genesis-discard-btn")?.addEventListener("click", function() {
+    clearGenesisState();
+    genesisResumeState = null;
+    document.getElementById("genesis-resume-banner").style.display = "none";
+    showToast("🗑 已放弃中断的建纲任务");
+});
+
+function restoreProgressFromState(state) {
+    var stepIds = ["step-outline", "step-map", "step-char"];
+    stepIds.forEach(function(id, idx) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var phaseIdx = idx + 1;
+        if (state.completedPhases && state.completedPhases[idx]) {
+            el.className = "step-completed";
+        } else if (state.phase === phaseIdx && state.status === "interrupted") {
+            el.className = "step-interrupted";
+        } else {
+            el.className = "";
+        }
+    });
+}
 
 /* ═══════════ 🌌 智能创世大重构引擎 ═══════════ */
 document.getElementById("outline-genesis-btn")?.addEventListener("click", function() {
@@ -1369,6 +1491,15 @@ document.getElementById("outline-genesis-btn")?.addEventListener("click", functi
     document.getElementById("import-textarea").disabled = false;
     document.getElementById("genesis-submit-btn").disabled = false;
     document.getElementById("import-close-btn").disabled = false;
+    document.getElementById("genesis-stop-btn").style.display = "none";
+    updateGenesisSubmitLabel();
+    // 重置模式选择为完整建纲
+    document.querySelectorAll(".genesis-mode-btn").forEach(function(l) { l.classList.remove("active"); });
+    var fullLabel = document.getElementById("mode-full-label");
+    if (fullLabel) { fullLabel.classList.add("active"); fullLabel.querySelector("input[type=radio]").checked = true; }
+    updateGenesisSubmitLabel();
+    // 检查断点恢复
+    checkAndShowResume();
     modal.classList.remove("hidden");
 });
 
@@ -1410,21 +1541,84 @@ document.getElementById("outline-genesis-btn")?.addEventListener("click", functi
 document.getElementById("genesis-submit-btn")?.addEventListener("click", async function() {
     var text = document.getElementById("import-textarea").value.trim();
     if (!text) { alert("请输入需要重构或提炼的文本设定！"); return; }
+    var mode = getGenesisMode();
 
+    // 覆写模式：先清空
+    if (mode === "overwrite") {
+        if (!confirm("⚠️ 覆写模式将清空当前小说的全部大纲/地点/人物/势力数据，确定继续？")) return;
+        var clearRes = await fetch("/api/novels/" + currentNovelId + "/genesis/clear", { method: "POST" });
+        if (!clearRes.ok) { alert("清空数据失败，建纲取消。"); return; }
+    }
+
+    clearGenesisState();
+    genesisInterrupted = false;
+
+    // 构建初始状态快照
+    var initialState = {
+        phase: 1,
+        completedPhases: [false, false, false],
+        currentNodeId: null,
+        currentChainId: null,
+        fullChainContext: "",
+        executedNodeCount: 0,
+        inputText: text,
+        mode: mode,
+        status: "running",
+        startedAt: Date.now(),
+    };
+
+    await executeGenesisCore(initialState, 1, [false, false, false]);
+});
+
+/* ═══════════ 建纲核心执行引擎 ═══════════ */
+async function executeGenesisCore(initialState, startPhase, completedPhases) {
+    var text = initialState.inputText;
+    var mode = initialState.mode;
     var submitBtn = document.getElementById("genesis-submit-btn");
     var closeBtn = document.getElementById("import-close-btn");
+    var stopBtn = document.getElementById("genesis-stop-btn");
     var textarea = document.getElementById("import-textarea");
     var backdrop = document.getElementById("genesis-backdrop");
     var consoleEl = document.getElementById("genesis-console");
     var statusBadge = document.getElementById("genesis-status-badge");
 
+    // UI 锁定
     submitBtn.disabled = true;
+    submitBtn.style.display = "none";
     closeBtn.disabled = true;
+    stopBtn.style.display = "inline-block";
+    stopBtn.disabled = false;
+    stopBtn.textContent = "⏹ 中断建纲";
     textarea.disabled = true;
     backdrop.classList.add("genesis-running-backdrop");
+    document.getElementById("genesis-resume-banner").style.display = "none";
+
+    var state = {
+        phase: startPhase,
+        completedPhases: completedPhases.slice(),
+        currentNodeId: null,
+        currentChainId: null,
+        fullChainContext: initialState.fullChainContext || "",
+        executedNodeCount: initialState.executedNodeCount || 0,
+        inputText: text,
+        mode: mode,
+        status: "running",
+        startedAt: initialState.startedAt || Date.now(),
+    };
+
     statusBadge.textContent = "创世大重构执行中...";
     statusBadge.style.color = "#38bdf8";
-    consoleEl.innerHTML = "";
+
+    // 恢复已完成的阶段进度
+    restoreProgressFromState(state);
+    if (startPhase > 1) {
+        // 恢复模式：不清空控制台；追加说明
+        var existingConsole = consoleEl.innerHTML;
+        consoleEl.innerHTML = existingConsole || "";
+        logToConsole("\n🔄 [断点恢复] 从阶段 " + startPhase + " 继续...\n", "step");
+    } else {
+        consoleEl.innerHTML = "";
+    }
 
     function logToConsole(content, type) {
         var color = "#38bdf8";
@@ -1432,6 +1626,7 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
         if (type === "tool") color = "#22c55e";
         if (type === "error") color = "#ef4444";
         if (type === "warning") color = "#f59e0b";
+        if (type === "interrupted") color = "#f59e0b";
         var span = document.createElement("span");
         span.style.color = color;
         span.textContent = content;
@@ -1441,7 +1636,14 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
 
     try {
         isGenesisRunning = true;
-        logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
+        genesisInterrupted = false;
+
+        // 增量模式的上下文设置
+        var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
+
+        if (startPhase <= 1) {
+            logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
+        }
         var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
         var chains = await chainsRes.json();
 
@@ -1453,24 +1655,107 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
             throw new Error("系统缺失预设的 3 大创世推理方案，请点击顶部的 [恢复默认] 按钮初始化方案！");
         }
 
-        logToConsole("[System] \n===== 🚀 阶段 1: 全维世界大纲推演启动 =====\n", "step");
-        document.getElementById("step-outline").className = "step-active";
-        var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) { logToConsole(txt, typ); });
-        if (!res1.success) throw new Error("阶段 1 大纲推演失败: " + (res1.reason || "未知错误"));
-        document.getElementById("step-outline").className = "step-completed";
+        // 阶段 1
+        if (startPhase <= 1 && !state.completedPhases[0]) {
+            // 非恢复：从头开始
+            if (startPhase === 1 && !initialState.fullChainContext) {
+                state.phase = 1;
+                state.currentChainId = chainOutline.id;
+                state.currentNodeId = null;
+                state.executedNodeCount = 0;
+                saveGenesisState(state);
+            }
+            logToConsole("[System] \n===== 🚀 阶段 1: 全维世界大纲推演启动 =====\n", "step");
+            document.getElementById("step-outline").className = "step-active";
+            var resumeData1 = (state.currentChainId === chainOutline.id && state.currentNodeId) ? {
+                currentNodeId: state.currentNodeId,
+                fullChainContext: state.fullChainContext,
+                executedNodeCount: state.executedNodeCount || 0,
+            } : null;
+            var res1 = await runHeadlessChain(chainOutline.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData1);
+            if (genesisInterrupted) {
+                handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+                return;
+            }
+            if (!res1.success) throw new Error("阶段 1 大纲推演失败: " + (res1.reason || "未知错误"));
+            state.completedPhases[0] = true;
+            state.phase = 2;
+            state.currentChainId = null;
+            state.currentNodeId = null;
+            state.fullChainContext = "";
+            state.executedNodeCount = 0;
+            document.getElementById("step-outline").className = "step-completed";
+            saveGenesisState(state);
+        } else if (state.completedPhases[0]) {
+            document.getElementById("step-outline").className = "step-completed";
+        }
 
-        logToConsole("[System] \n===== 🗺️ 阶段 2: 空间地理蓝图搭建启动 =====\n", "step");
-        document.getElementById("step-map").className = "step-active";
-        var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) { logToConsole(txt, typ); });
-        if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
-        document.getElementById("step-map").className = "step-completed";
+        // 阶段 2
+        if (startPhase <= 2 && !state.completedPhases[1]) {
+            if (!state.currentChainId || state.currentChainId !== chainMap.id) {
+                state.phase = 2;
+                state.currentChainId = chainMap.id;
+                state.currentNodeId = null;
+                state.executedNodeCount = 0;
+                state.fullChainContext = "";
+                saveGenesisState(state);
+            }
+            logToConsole("[System] \n===== 🗺️ 阶段 2: 空间地理蓝图搭建启动 =====\n", "step");
+            document.getElementById("step-map").className = "step-active";
+            var resumeData2 = (state.currentChainId === chainMap.id && state.currentNodeId) ? {
+                currentNodeId: state.currentNodeId,
+                fullChainContext: state.fullChainContext,
+                executedNodeCount: state.executedNodeCount || 0,
+            } : null;
+            var res2 = await runHeadlessChain(chainMap.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData2);
+            if (genesisInterrupted) {
+                handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+                return;
+            }
+            if (!res2.success) throw new Error("阶段 2 蓝图搭建失败: " + (res2.reason || "未知错误"));
+            state.completedPhases[1] = true;
+            state.phase = 3;
+            state.currentChainId = null;
+            state.currentNodeId = null;
+            state.fullChainContext = "";
+            state.executedNodeCount = 0;
+            document.getElementById("step-map").className = "step-completed";
+            saveGenesisState(state);
+        } else if (state.completedPhases[1]) {
+            document.getElementById("step-map").className = "step-completed";
+        }
 
-        logToConsole("[System] \n===== 👤 阶段 3: 群像人设质检与繁衍启动 =====\n", "step");
-        document.getElementById("step-char").className = "step-active";
-        var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) { logToConsole(txt, typ); });
-        if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
-        document.getElementById("step-char").className = "step-completed";
+        // 阶段 3
+        if (startPhase <= 3 && !state.completedPhases[2]) {
+            if (!state.currentChainId || state.currentChainId !== chainChar.id) {
+                state.phase = 3;
+                state.currentChainId = chainChar.id;
+                state.currentNodeId = null;
+                state.executedNodeCount = 0;
+                state.fullChainContext = "";
+                saveGenesisState(state);
+            }
+            logToConsole("[System] \n===== 👤 阶段 3: 群像人设质检与繁衍启动 =====\n", "step");
+            document.getElementById("step-char").className = "step-active";
+            var resumeData3 = (state.currentChainId === chainChar.id && state.currentNodeId) ? {
+                currentNodeId: state.currentNodeId,
+                fullChainContext: state.fullChainContext,
+                executedNodeCount: state.executedNodeCount || 0,
+            } : null;
+            var res3 = await runHeadlessChain(chainChar.id, text, null, function(txt, typ) { logToConsole(txt, typ); }, incCtx, resumeData3);
+            if (genesisInterrupted) {
+                handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop);
+                return;
+            }
+            if (!res3.success) throw new Error("阶段 3 人设质检失败: " + (res3.reason || "未知错误"));
+            state.completedPhases[2] = true;
+            document.getElementById("step-char").className = "step-completed";
+        } else if (state.completedPhases[2]) {
+            document.getElementById("step-char").className = "step-completed";
+        }
 
+        // 全部完成
+        clearGenesisState();
         logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 世界大纲推演、地理蓝图落地、群像角色繁衍全部圆满成功！\n", "tool");
         statusBadge.textContent = "创世圆满成功";
         statusBadge.style.color = "#22c55e";
@@ -1483,28 +1768,90 @@ document.getElementById("genesis-submit-btn")?.addEventListener("click", async f
         logToConsole("[System] \n\n❌ 创世中途流产: " + (err.message || String(err)) + "\n", "error");
         statusBadge.textContent = "执行失败";
         statusBadge.style.color = "#ef4444";
+        // 失败时清除状态，不保留恢复点（因为不是用户主动中断）
+        clearGenesisState();
     } finally {
-        isGenesisRunning = false;
-        submitBtn.disabled = false;
-        closeBtn.disabled = false;
-        textarea.disabled = false;
-        backdrop.classList.remove("genesis-running-backdrop");
-
-        var chatInput = document.getElementById("copilot-input");
-        if (chatInput) {
-            chatInput.removeAttribute("disabled");
-            chatInput.style.pointerEvents = "auto";
-            chatInput.style.opacity = "1";
-        }
-        var copilotSend = document.getElementById("copilot-send");
-        if (copilotSend) {
-            copilotSend.removeAttribute("disabled");
-            copilotSend.style.pointerEvents = "auto";
-            copilotSend.style.opacity = "1";
-        }
-        console.log("[System] 全局创世流结束，AI 助手聊天控制权已完美归还用户。");
+        genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop);
     }
-});
+}
+
+function handleGenesisInterrupted(state, statusBadge, submitBtn, closeBtn, stopBtn, textarea, backdrop) {
+    state.status = "interrupted";
+    saveGenesisState(state);
+    statusBadge.textContent = "已中断 · 可恢复";
+    statusBadge.style.color = "#f59e0b";
+    // 直接写入控制台
+    var consoleEl = document.getElementById("genesis-console");
+    if (consoleEl) {
+        var span = document.createElement("span");
+        span.style.color = "#f59e0b";
+        span.textContent = "\n⏹ [已中断] 进度已保存，下次打开智能建纲时可继续执行。\n";
+        consoleEl.appendChild(span);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+    // 标记当前阶段为 interrupted
+    var stepIds = ["step-outline", "step-map", "step-char"];
+    if (state.phase >= 1 && state.phase <= 3) {
+        document.getElementById(stepIds[state.phase - 1]).className = "step-interrupted";
+    }
+    genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop);
+}
+
+function genesisFinishedCleanup(submitBtn, closeBtn, stopBtn, textarea, backdrop) {
+    // 幂等保护：防止 handleGenesisInterrupted + finally 双重调用
+    if (!isGenesisRunning && !genesisInterrupted) return;
+    isGenesisRunning = false;
+    genesisInterrupted = false;
+    submitBtn.disabled = false;
+    submitBtn.style.display = "";
+    closeBtn.disabled = false;
+    stopBtn.style.display = "none";
+    textarea.disabled = false;
+    backdrop.classList.remove("genesis-running-backdrop");
+
+    var chatInput = document.getElementById("copilot-input");
+    if (chatInput) {
+        chatInput.removeAttribute("disabled");
+        chatInput.style.pointerEvents = "auto";
+        chatInput.style.opacity = "1";
+    }
+    var copilotSend = document.getElementById("copilot-send");
+    if (copilotSend) {
+        copilotSend.removeAttribute("disabled");
+        copilotSend.style.pointerEvents = "auto";
+        copilotSend.style.opacity = "1";
+    }
+    console.log("[System] 全局创世流结束，AI 助手聊天控制权已完美归还用户。");
+}
+
+/* ═══════════ 断点恢复执行 ═══════════ */
+async function executeGenesisFromResume(state) {
+    var text = state.inputText;
+    var mode = state.mode || "full";
+    var startPhase = state.phase || 1;
+    var completedPhases = state.completedPhases || [false, false, false];
+
+    // 如果覆写模式但之前已清空过数据，则不再清空
+    // 恢复时不重复清空操作
+
+    clearGenesisState();
+    genesisInterrupted = false;
+
+    var initialState = {
+        phase: startPhase,
+        completedPhases: completedPhases,
+        currentNodeId: state.currentNodeId || null,
+        currentChainId: state.currentChainId || null,
+        fullChainContext: state.fullChainContext || "",
+        executedNodeCount: state.executedNodeCount || 0,
+        inputText: text,
+        mode: mode,
+        status: "running",
+        startedAt: Date.now(),
+    };
+
+    await executeGenesisCore(initialState, startPhase, completedPhases);
+}
 
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
 document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
@@ -1575,7 +1922,7 @@ async function executeTool(toolName, args, card) {
     }
 }
 
-async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = null) {
+async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = null, contextSettings = null, resumeState = null) {
     return new Promise(async (resolve) => {
         var s = getSettings();
         try {
@@ -1588,15 +1935,41 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
             }
 
             nodes.forEach(function(n) { n.output = ""; });
-            var currentNodeId = nodes[0].id;
-            var loopCount = 0;
-            var fullChainContext = "【初始指令】: " + userInput + "\n";
+            var currentNodeId, loopCount, fullChainContext;
+            if (resumeState) {
+                // 断点恢复：从保存的节点继续，使用已有的上下文
+                currentNodeId = resumeState.currentNodeId || nodes[0].id;
+                loopCount = resumeState.executedNodeCount || 0;
+                fullChainContext = resumeState.fullChainContext || ("【初始指令】: " + userInput + "\n");
+                if (onLogCallback) onLogCallback("\n🔄 [断点恢复] 从节点 " + currentNodeId + " 继续执行（已执行 " + loopCount + " 步）\n", "step");
+            } else {
+                currentNodeId = nodes[0].id;
+                loopCount = 0;
+                fullChainContext = "【初始指令】: " + userInput + "\n";
+            }
 
             while (currentNodeId) {
                 loopCount++;
                 if (loopCount > 100) {
                     if (onLogCallback) onLogCallback("⚠️ 触发安全硬熔断 (超过100个循环)。\n", "warning");
                     break;
+                }
+                // 🛑 中断检查：每节点循环前检查中断标志
+                if (genesisInterrupted && isGenesisRunning) {
+                    if (onLogCallback) onLogCallback("\n⏹ [用户中断] 已收到中断信号，正在保存进度...\n", "warning");
+                    // 保存当前状态
+                    var gs = loadGenesisState();
+                    if (gs) {
+                        gs.currentNodeId = currentNodeId;
+                        gs.fullChainContext = fullChainContext;
+                        gs.executedNodeCount = loopCount;
+                        gs.currentChainId = chainId;
+                        gs.status = "interrupted";
+                        gs.inputText = userInput;
+                        saveGenesisState(gs);
+                    }
+                    resolve({ success: false, reason: "interrupted" });
+                    return;
                 }
                 var node = nodes.find(function(n) { return n.id === currentNodeId; });
                 if (!node) break;
@@ -1774,7 +2147,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             target: targetT,
                             previous_output: fullChainContext,
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
-                            context_settings: rc.context_settings || {},
+                            context_settings: contextSettings || rc.context_settings || {},
                         }),
                     });
                     var txt = "";
@@ -1872,6 +2245,18 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n[节点错误: " + e.message + "]"));
                     if (onLogCallback) onLogCallback("\n❌ 节点执行错误: " + e.message + "\n", "error");
                     currentNodeId = null;
+                }
+                // 💾 建纲状态持久化：每节点完成后保存
+                if (isGenesisRunning && currentNodeId) {
+                    var gsNow = loadGenesisState();
+                    if (gsNow) {
+                        gsNow.currentNodeId = currentNodeId;
+                        gsNow.fullChainContext = fullChainContext;
+                        gsNow.executedNodeCount = loopCount;
+                        gsNow.currentChainId = chainId;
+                        gsNow.inputText = userInput;
+                        saveGenesisState(gsNow);
+                    }
                 }
             }
             if (bubbleEl) bubbleEl.appendChild(document.createTextNode("\n\n✅ 推理链执行完毕。"));

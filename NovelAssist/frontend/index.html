@@ -510,6 +510,36 @@
                 请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。引擎将按顺序调用推理链（大纲流 → 地图流 → 人设流）进行高精度顺序提炼，并在每一步都将结果回填到对应模块中，帮助您快速搭建起完整的世界观框架和丰富的角色设定！
             </p>
             
+            <!-- 🎯 建纲模式选择器 -->
+            <div id="genesis-mode-selector" style="display: flex; gap: 6px; margin-bottom: 12px;">
+                <label class="genesis-mode-btn active" id="mode-full-label">
+                    <input type="radio" name="genesis-mode" value="full" checked style="display:none;">
+                    🌌 完整建纲
+                    <span class="genesis-mode-desc">从零搭建</span>
+                </label>
+                <label class="genesis-mode-btn" id="mode-incremental-label">
+                    <input type="radio" name="genesis-mode" value="incremental" style="display:none;">
+                    📎 分段建纲
+                    <span class="genesis-mode-desc">增量合并</span>
+                </label>
+                <label class="genesis-mode-btn" id="mode-overwrite-label">
+                    <input type="radio" name="genesis-mode" value="overwrite" style="display:none;">
+                    💥 覆写重建
+                    <span class="genesis-mode-desc">清空后重建</span>
+                </label>
+            </div>
+            
+            <!-- 🔄 断点恢复提示 -->
+            <div id="genesis-resume-banner" style="display:none; background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid #6366f1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; align-items: center; gap: 10px;">
+                <span style="font-size:1.2rem;">⚡</span>
+                <div style="flex:1; font-size:0.75rem;">
+                    <strong>检测到未完成的建纲任务</strong><br>
+                    <span id="genesis-resume-info" style="color:#a5b4fc;">可从断点继续执行</span>
+                </div>
+                <button id="genesis-resume-btn" class="sys-btn sys-btn-primary" style="font-size:0.72rem; white-space:nowrap;">▶ 继续</button>
+                <button id="genesis-discard-btn" class="sys-btn sys-btn-ghost" style="font-size:0.72rem; white-space:nowrap; border-color:#ef4444; color:#ef4444;">🗑 放弃</button>
+            </div>
+            
             <!-- 📁 拖拽文件上传区 -->
             <div id="import-drop-zone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center; margin-bottom: 12px; cursor: pointer; background: var(--bg); transition: border-color 0.2s, background 0.2s;">
                 <span style="font-size:1.5rem;">📂</span>
@@ -540,6 +570,7 @@
             </div>
             
             <div class="modal-actions" style="margin-top:16px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button id="genesis-stop-btn" class="sys-btn" style="display:none; background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; font-weight: 700;">⏹ 中断建纲</button>
                 <button id="genesis-submit-btn" class="btn-primary" style="background: linear-gradient(135deg, #4f46e5, #9333ea); border: none; font-weight: 700;">🌌 启动创世大重构</button>
                 <button id="import-close-btn" class="sys-btn sys-btn-ghost" style="border: 1px solid var(--border);">关闭窗口</button>
             </div>
@@ -571,6 +602,21 @@
             background: #022c22 !important;
             text-decoration: line-through;
         }
+        .step-interrupted {
+            opacity: 1.0 !important;
+            border-color: #f59e0b !important;
+            color: #f59e0b !important;
+            background: #1a1200 !important;
+        }
+        /* 🎯 建纲模式选择器 */
+        .genesis-mode-btn {
+            flex: 1; padding: 8px 6px; border: 2px solid var(--border); border-radius: 6px;
+            text-align: center; cursor: pointer; background: var(--bg); font-size: 0.78rem;
+            font-weight: 700; transition: all 0.2s; user-select: none;
+        }
+        .genesis-mode-btn:hover { border-color: #6366f1; background: #1e1b4b; }
+        .genesis-mode-btn.active { border-color: #818cf8; background: #1e1b4b; color: #a5b4fc; box-shadow: 0 0 10px rgba(99,102,241,0.3); }
+        .genesis-mode-desc { font-size:0.62rem; display:block; font-weight:400; color:var(--text-muted); margin-top:2px; }
     </style>
 
     <div id="faction-modal" class="modal hidden">

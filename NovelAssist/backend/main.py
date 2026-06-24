@@ -717,6 +717,27 @@ class NovelTimeUpdate(BaseModel):
     calendar_config: dict
 
 
+@app.post("/api/novels/{novel_id}/genesis/clear")
+def genesis_clear(novel_id: int, db: Session = Depends(get_db)):
+    """覆写建纲前置：清空大纲/地点/人物/势力及其关联数据"""
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+
+    # 级联删除：从叶子到根
+    db.execute(text("DELETE FROM character_snapshots WHERE character_id IN (SELECT id FROM characters WHERE novel_id=:nid)"), {"nid": novel_id})
+    db.execute(text("DELETE FROM character_routines WHERE character_id IN (SELECT id FROM characters WHERE novel_id=:nid)"), {"nid": novel_id})
+    db.execute(text("DELETE FROM character_trajectories WHERE character_id IN (SELECT id FROM characters WHERE novel_id=:nid)"), {"nid": novel_id})
+    db.execute(text("DELETE FROM character_relations WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM characters WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM outlines WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM locations WHERE novel_id=:nid"), {"nid": novel_id})
+    db.execute(text("DELETE FROM factions WHERE novel_id=:nid"), {"nid": novel_id})
+    db.commit()
+
+    return {"ok": True, "msg": f"已清空小说 {novel_id} 的大纲/地点/人物/势力数据"}
+
+
 @app.get("/api/novels/{novel_id}/time")
 def get_novel_time(novel_id: int, db: Session = Depends(get_db)):
     novel = db.get(Novel, novel_id)
