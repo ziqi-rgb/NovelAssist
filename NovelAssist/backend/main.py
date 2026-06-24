@@ -363,18 +363,21 @@ async def lifespan(app: FastAPI):
     # 此迁移仅执行一次：检测并修复旧版节点结构
     try:
         with SessionLocal() as db_hf:
-            target_chain = db_hf.query(ReasoningChain).filter(
-                ReasoningChain.title == "👤 严谨人设与模板质检流"
-            ).first()
-            if target_chain and isinstance(target_chain.nodes, list):
-                has_old_node = any(n.get("id") in ("c_n6_verify", "c_nm1_ask_template", "c_n0_init_plan") for n in target_chain.nodes if isinstance(n, dict))
-                if has_old_node:
-                    # 仅当检测到旧版节点 ID 时才执行一次性迁移
-                    print("[Hotfix Migration] 检测到旧版人设链节点，执行一次性结构迁移...")
-                    target_chain.nodes = _get_system_chain_nodes(target_chain.title)
-                    flag_modified(target_chain, "nodes")
-                    db_hf.commit()
-                    print("[Hotfix Migration] 人设链节点结构迁移成功（仅此一次）！")
+            # 版本标记检测：缺少 _version 或旧版本的链全部迁移
+            for chain_title in SYSTEM_CHAIN_NAMES:
+                t_chain = db_hf.query(ReasoningChain).filter(ReasoningChain.title == chain_title).first()
+                if t_chain and isinstance(t_chain.nodes, list):
+                    cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
+                    ver = cs.get("_version", 0)
+                    if ver is None or ver < 2:
+                        print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→2，执行迁移...")
+                        t_chain.nodes = _get_system_chain_nodes(chain_title)
+                        cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
+                        cs["_version"] = 2
+                        t_chain.context_settings = cs
+                        flag_modified(t_chain, "nodes")
+                        flag_modified(t_chain, "context_settings")
+            db_hf.commit()
     except Exception as migration_error:
         print(f"[Hotfix Migration Warning] 启动迁移器报错（已安全拦截）: {str(migration_error)}")
     # Seed official reasoning chains — protected: only create if not exists

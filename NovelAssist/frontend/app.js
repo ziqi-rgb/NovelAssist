@@ -2781,7 +2781,7 @@ function validateStructuredOutput(format, items, chainNodes) {
             errors.push("attributes 为空，未按模板填写");
         } else {
             // 获取当前小说的角色模板
-            var tmpl = (currentNovel && currentNovel.character_template) ? currentNovel.character_template : null;
+            var tmpl = charTemplate;
             if (tmpl && Array.isArray(tmpl)) {
                 tmpl.forEach(function(g) {
                     var gname = g.group;
