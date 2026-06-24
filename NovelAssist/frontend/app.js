@@ -2348,6 +2348,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                     // 🔍 校验节点：程序验证
                     if (node.type === "validate") {
                         var vFmt = node.format || "";
+                        var vContent = fullChainContext.replace(/<\/?ROUTE>/g, "").trim();
+                        var lastReasoning = vContent.split("--- 【节点输出】 ---").pop() || "";
                         var vParser = REASONING_FORMATS[vFmt] && REASONING_FORMATS[vFmt].parser;
                         var vResult = { valid: true };
                         if (vParser) {
