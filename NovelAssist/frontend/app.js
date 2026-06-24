@@ -2322,7 +2322,6 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 
                     // 🔀 路由节点
                     if (node.type === "router") {
-                        // 取 fullChainContext 中最后一次出现的 ROUTE 值
                         var rv = "";
                         var allRoutes = fullChainContext.match(/<ROUTE>([\s\S]*?)<\/ROUTE>/g);
                         if (allRoutes && allRoutes.length) {
@@ -2337,6 +2336,10 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                     rNextId = node.branches[rbi].next_node_id; break;
                                 }
                             }
+                        }
+                        // verify 节点输出 DONE 后跳转到 router → 前一模块已完成 → 默认走第一个分支（通常是 YES / 继续下一模块）
+                        if (!rNextId && node.branches && node.branches.length > 0 && (rv === "DONE" || !rv)) {
+                            rNextId = node.branches[0].next_node_id;
                         }
                         if (!rNextId) rNextId = node.next_node_id || null;
                         node.output = "🔀 路由: [" + (rv || "无值") + "] → " + (rNextId || "终止");
@@ -2443,6 +2446,13 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                     node.output = "✅ 写入成功：" + wJson.msg;
                                     fullChainContext += "\n--- 【写入结果】 ---\n" + node.output;
                                     if (onLogCallback) onLogCallback("\n📝 [写入成功] " + wJson.msg + "\n", "tool");
+                                    // 🔄 chain_todos 操作后刷新内存中的 todos，防止后续 update 找不到待办
+                                    if (wt.entity === "chain_todos") {
+                                        try {
+                                            var freshRc = await (await fetch("/api/reasoning_chains/" + chainId + "?novel_id=" + currentNovelId)).json();
+                                            rc.todos = freshRc.todos || [];
+                                        } catch(e) {}
+                                    }
                                 } else {
                                     var wErr = await wRes.json().catch(function() { return {detail:"未知错误"}; });
                                     node.output = "⛔ 写入失败：" + (wErr.detail || "");
