@@ -2204,7 +2204,7 @@ function renderAllNodes() {
         canvas.appendChild(card);
         bindNodeEvents(card, node, idx);
         if (!isAsk && !isRouter && !isWrite) initTargetBuilder(card, node);
-        if (!isAsk) renderBranches(card, node);
+        if (!isAsk && !isWrite) renderBranches(card, node);
         } catch(e) {
             var errCard = document.createElement("div");
             errCard.className = "node-card node-type-write";
@@ -2222,7 +2222,8 @@ function bindNodeEvents(card, node, idx) {
     card.querySelector(".node-del").addEventListener("click", () => { currentChain.nodes.splice(idx, 1); renderAllNodes(); renderLines(); autoSave(); });
     var typeSel = card.querySelector(".node-type-sel");
     if (typeSel) { typeSel.addEventListener("change", function() { node.type = typeSel.value; renderAllNodes(); renderLines(); autoSave(); }); }
-    card.querySelector(".premise-ta").addEventListener("input", e => { node.premise = e.target.value; autoSave(); });
+    var premiseTa = card.querySelector(".premise-ta");
+    if (premiseTa) premiseTa.addEventListener("input", e => { node.premise = e.target.value; autoSave(); });
     var promptTa = card.querySelector(".prompt-ta");
     if (promptTa) promptTa.addEventListener("input", e => { node.prompt = e.target.value; autoSave(); });
     var branchAddBtn = card.querySelector(".branch-add-btn");
@@ -2232,9 +2233,11 @@ function bindNodeEvents(card, node, idx) {
     card.querySelector(".node-run-btn").addEventListener("click", () => runNode(card, node));
     // sequential route
     const nextSel = card.querySelector(".next-node-sel");
+    if (nextSel) {
     nextSel.innerHTML = '<option value="">-- 无 --</option>';
     (currentChain.nodes || []).forEach(n => { if (n.id !== node.id) nextSel.innerHTML += `<option value="${e(n.id)}" ${node.next_node_id===n.id?"selected":""}>${e(n.id)}</option>`; });
     nextSel.addEventListener("change", () => { node.next_node_id = nextSel.value; renderLines(); autoSave(); });
+    }
     // write target events
     bindWriteToEvents(card, node);
 }
@@ -2299,7 +2302,9 @@ function onPortMove(e) {
 }
 
 function renderBranches(card, node) {
-    const list = card.querySelector(".branch-list"); list.innerHTML = "";
+    const list = card.querySelector(".branch-list");
+    if (!list) return;
+    list.innerHTML = "";
     (node.branches || []).forEach((br, bi) => {
         const row = document.createElement("div"); row.className = "branch-row";
         const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "条件"; inp.value = br.condition || "";
