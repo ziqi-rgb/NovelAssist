@@ -219,13 +219,15 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             nodes.append({"id":f"m_{s_id}_write","type":"write","x":CX[1],"y":y,"premise":f"将生成的【{s_label}】地点写入数据库。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_validate","output":"","write_to":{"entity":"location","field":"description","action":"create"}})
             nodes.append({"id":f"m_{s_id}_validate","type":"validate","x":CX[2],"y":y,"premise":f"校验【{s_label}】生成的地点数据是否合法。","prompt":"","format":"location","target":[],"branches":[{"condition":"VALID","next_node_id":f"m_{s_id}_todos"},{"condition":"INVALID","next_node_id":f"m_{s_id}_create"}],"next_node_id":"","output":""})
             nodes.append({"id":f"m_{s_id}_todos","type":"write","x":CX[3],"y":y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"m_{s_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
-            # verify: 纯程序检查，按层级关键词过滤待办
-            if next_s_id != "end":
-                v_branches = [{"condition":"CONTINUE","next_node_id":f"m_{s_id}_create"},{"condition":"NEXT","next_node_id":f"m_{next_s_id}_create"},{"condition":"DONE","next_node_id":""}]
-            else:
-                v_branches = [{"condition":"CONTINUE","next_node_id":f"m_{s_id}_create"},{"condition":"DONE","next_node_id":""}]
+            # 层级 verify：仅检查本层级，CONTINUE=继续创建，NEXT=本层完成→总检
             v_filter = s_top if s_top == s_bottom else f"{s_top}|{s_bottom}"
-            nodes.append({"id":f"m_{s_id}_verify","type":"verify","x":CX[4],"y":y,"premise":f"校验：【{s_label}】层级是否全部完成？","verify_filter":v_filter,"branches":v_branches,"next_node_id":"","output":""})
+            nodes.append({"id":f"m_{s_id}_verify","type":"verify","x":CX[4],"y":y,"premise":f"校验：【{s_label}】层级是否全部完成？","verify_filter":v_filter,"branches":[{"condition":"CONTINUE","next_node_id":f"m_{s_id}_create"},{"condition":"NEXT","next_node_id":f"m_{s_id}_total"}],"next_node_id":"","output":""})
+            # 总 verify：检查全部待办，CONTINUE=继续下一层级，DONE=结束
+            first_s_id = stages[0][0]
+            if next_s_id != "end":
+                nodes.append({"id":f"m_{s_id}_total","type":"verify","x":CX[4],"y":y+80,"premise":"全部层级是否已完成？","verify_filter":"","branches":[{"condition":"CONTINUE","next_node_id":f"m_{next_s_id}_create"},{"condition":"DONE","next_node_id":""}],"next_node_id":"","output":""})
+            else:
+                nodes.append({"id":f"m_{s_id}_total","type":"verify","x":CX[4],"y":y+80,"premise":"全部层级是否已完成？","verify_filter":"","branches":[{"condition":"CONTINUE","next_node_id":f"m_{first_s_id}_create"},{"condition":"DONE","next_node_id":""}],"next_node_id":"","output":""})
         return nodes
     if title == "👤 严谨人设与模板质检流":
         X1, X2 = 400, 890  # 两列布局
@@ -329,12 +331,14 @@ def _get_system_chain_nodes(title: str) -> list[dict]:
             nodes.append({"id":f"o_{m_id}_write","type":"write","x":CX[1],"y":y,"premise":f"将生成的【{m_name}】条目写入 {cat} 分类。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_validate","output":"","write_to":{"entity":"outline","field":"category","sub_field":cat,"action":"create"}})
             nodes.append({"id":f"o_{m_id}_validate","type":"validate","x":CX[2],"y":y,"premise":f"校验【{m_name}】生成的大纲数据是否合法。","prompt":"","format":fmt,"target":[],"branches":[{"condition":"VALID","next_node_id":f"o_{m_id}_todos"},{"condition":"INVALID","next_node_id":f"o_{m_id}_create"}],"next_node_id":"","output":""})
             nodes.append({"id":f"o_{m_id}_todos","type":"write","x":CX[3],"y":y,"premise":"将待办中对应项标记为已完成。","prompt":"","target":[],"branches":[],"next_node_id":f"o_{m_id}_verify","output":"","write_to":{"entity":"chain_todos","field":"status","action":"update"}})
-            # verify: 纯程序检查，按分类关键词过滤待办
+            # 模块 verify：仅检查本分类，CONTINUE=继续创建，NEXT=本模块完成→总检
+            nodes.append({"id":f"o_{m_id}_verify","type":"verify","x":CX[4],"y":y,"premise":f"校验：【{m_name}】是否全部完成？","verify_filter":cat,"branches":[{"condition":"CONTINUE","next_node_id":f"o_{m_id}_create"},{"condition":"NEXT","next_node_id":f"o_{m_id}_total"}],"next_node_id":"","output":""})
+            # 总 verify：检查全部待办，CONTINUE=继续下一模块，DONE=结束
+            first_m_id = modules[0][0]
             if next_m_id != "end":
-                o_branches = [{"condition":"CONTINUE","next_node_id":f"o_{m_id}_create"},{"condition":"NEXT","next_node_id":f"o_{next_m_id}_create"},{"condition":"DONE","next_node_id":""}]
+                nodes.append({"id":f"o_{m_id}_total","type":"verify","x":CX[4],"y":y+80,"premise":"全部模块是否已完成？","verify_filter":"","branches":[{"condition":"CONTINUE","next_node_id":f"o_{next_m_id}_create"},{"condition":"DONE","next_node_id":""}],"next_node_id":"","output":""})
             else:
-                o_branches = [{"condition":"CONTINUE","next_node_id":f"o_{m_id}_create"},{"condition":"DONE","next_node_id":""}]
-            nodes.append({"id":f"o_{m_id}_verify","type":"verify","x":CX[4],"y":y,"premise":f"校验：【{m_name}】是否全部完成？","verify_filter":cat,"branches":o_branches,"next_node_id":"","output":""})
+                nodes.append({"id":f"o_{m_id}_total","type":"verify","x":CX[4],"y":y+80,"premise":"全部模块是否已完成？","verify_filter":"","branches":[{"condition":"CONTINUE","next_node_id":f"o_{first_m_id}_create"},{"condition":"DONE","next_node_id":""}],"next_node_id":"","output":""})
         return nodes
     return []
 
@@ -387,11 +391,11 @@ async def lifespan(app: FastAPI):
                 if t_chain and isinstance(t_chain.nodes, list):
                     cs = t_chain.context_settings if isinstance(t_chain.context_settings, dict) else {}
                     ver = cs.get("_version", 0)
-                    if ver is None or ver < 15:
+                    if ver is None or ver < 16:
                         print(f"[Hotfix Migration] 链「{chain_title}」版本 {ver}→7，执行迁移...")
                         t_chain.nodes = _get_system_chain_nodes(chain_title)
                         cs = dict(t_chain.context_settings) if isinstance(t_chain.context_settings, dict) else {}
-                        cs["_version"] = 15
+                        cs["_version"] = 16
                         t_chain.context_settings = cs
                         flag_modified(t_chain, "nodes")
                         flag_modified(t_chain, "context_settings")
@@ -423,7 +427,7 @@ async def lifespan(app: FastAPI):
                 nodes = _get_system_chain_nodes(name)
                 db3.add(ReasoningChain(
                     title=name,
-                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 15},
+                    context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 16},
                     nodes=nodes,
                 ))
                 db3.commit()
@@ -1561,13 +1565,13 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
         if chain and isinstance(chain.nodes, list):
             cs = chain.context_settings if isinstance(chain.context_settings, dict) else {}
             ver = cs.get("_version", 0) if isinstance(cs, dict) else 0
-            if ver < 15:
+            if ver < 16:
                 print(f"[Runtime Migration] 链「{name}」版本 {ver}→7")
                 chain.nodes = _get_system_chain_nodes(name)
                 if isinstance(chain.context_settings, dict):
-                    chain.context_settings["_version"] = 15
+                    chain.context_settings["_version"] = 16
                 else:
-                    chain.context_settings = {"_version": 15}
+                    chain.context_settings = {"_version": 16}
                 flag_modified(chain, "nodes")
                 flag_modified(chain, "context_settings")
                 db.commit()
@@ -1584,7 +1588,7 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
             db.add(ReasoningChain(
                 novel_id=novel_id,
                 title=name,
-                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 15},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False, "_version": 16},
                 nodes=nodes,
             ))
     db.commit()
