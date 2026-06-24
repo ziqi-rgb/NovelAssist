@@ -2862,6 +2862,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             previous_output: fullChainContext,
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
                             context_settings: contextSettings || rc.context_settings || {},
+                            response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined,
                         }),
                         signal: genesisAbortController ? genesisAbortController.signal : undefined,
                     });
@@ -3780,7 +3781,7 @@ const REASONING_FORMATS = {
             "【description】详细 Markdown 描述\n" +
             "【attributes】JSON 对象，如 {\"气候\":\"极寒\",\"特产\":\"寒铁\"}\n" +
             "<ROUTE>DONE</ROUTE>",
-        jsonExample: '\n\n【JSON Output — 请优先输出JSON】\n{"name":"地点名","scale_level":"国家","parent_name":"父地点名","scale":"REGION","grid_x":5,"grid_y":3,"map_x":5,"map_y":3,"description":"简短描述","attributes":{"气候":"温暖"}}\n如无法输出JSON，再用下方【】格式。',
+        jsonExample: '\n\n【JSON Output — 必须严格输出JSON】\n{"name":"地点名","scale_level":"国家","parent_name":"父地点名","scale":"REGION","grid_x":5,"grid_y":3,"map_x":5,"map_y":3,"description":"简短描述","attributes":{"气候":"温暖"}}\n禁止使用任何其他格式（包括【】标记），必须输出合法JSON。',
         parser: function(text) {
             var locs = [];
             // 优先 JSON 解析
@@ -3895,7 +3896,7 @@ const REASONING_FORMATS = {
             "【order_index】排序序号（整数）\n" +
             "【description】详细 Markdown 描述\n" +
             "<ROUTE>DONE</ROUTE>",
-        jsonExample: '\n\n【JSON Output — 请优先输出JSON】\n{"title":"条目标题","category":"世界观","parent_name":"无","is_always_context":true,"order_index":1,"description":"简短描述"}\n如无法输出JSON，再用下方【】格式。',
+        jsonExample: '\n\n【JSON Output — 必须严格输出JSON】\n{"title":"条目标题","category":"世界观","parent_name":"无","is_always_context":true,"order_index":1,"description":"简短描述"}\n禁止使用任何其他格式（包括【】标记），必须输出合法JSON。',
         parser: function(text) {
             var outlines = [];
             // 优先 JSON 解析
@@ -3936,11 +3937,12 @@ function buildFormatSelector(node) {
 function getFormatPrompt(node) {
     var fmt = REASONING_FORMATS[node.format || ""];
     if (!fmt) return "";
-    var tpl = fmt.template || "";
     if (fmt.jsonExample) {
-        tpl += fmt.jsonExample;
-    } else if (node.format === "character" && typeof charTemplate !== "undefined" && Array.isArray(charTemplate) && charTemplate.length) {
-        // 根据当前模板动态生成 JSON 示例
+        // 有 JSON 示例时只输出 JSON 格式，不输出【】模板
+        return fmt.jsonExample;
+    }
+    if (node.format === "character" && typeof charTemplate !== "undefined" && Array.isArray(charTemplate) && charTemplate.length) {
+        // 根据当前模板动态生成 JSON 示例，不输出【】模板
         var attrsExample = {};
         charTemplate.forEach(function(g) {
             var fields = {};
@@ -3948,9 +3950,9 @@ function getFormatPrompt(node) {
             if (Object.keys(fields).length === 0) fields = {};
             attrsExample[g.group] = fields;
         });
-        tpl += '\n\n【JSON Output — 请优先输出JSON，attributes 严格只含以下分组】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":' + JSON.stringify(attrsExample) + ',"description":"一句话概述"}';
+        return '\n\n【JSON Output — 必须严格输出JSON，attributes 严格只含以下分组】\n{"name":"角色名","aliases":"别名","status":"存活","is_active":true,"faction_name":"势力名","faction_role":"职位","is_always_context":false,"attributes":' + JSON.stringify(attrsExample) + ',"description":"一句话概述"}\n禁止使用任何其他格式（包括【】标记），必须输出合法JSON。';
     }
-    return tpl;
+    return fmt.template || "";
 }
 
 /* ═══════════ 校验节点：程序验证结构化输出 ═══════════ */
