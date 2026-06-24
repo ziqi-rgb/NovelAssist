@@ -577,6 +577,8 @@ async function loadCharRelations() {
         });
     } catch(e) { /* 加载失败不阻塞 */ }
 }
+
+function renderTimeEditor(container) {
     var timeFs = document.createElement("fieldset");
     timeFs.className = "char-fieldset";
     timeFs.style.cssText = "margin-top:16px;border-color:#93c5fd;background:#eff6ff;";
