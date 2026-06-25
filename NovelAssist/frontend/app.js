@@ -1636,7 +1636,7 @@ function replaceActiveTextarea(text) {
     ta.dispatchEvent(new Event("input"));
 }
 
-async function copilotChat(instruction, forceScene) {
+async function copilotChat(instruction, forceScene, mode) {
     const s = getSettings();
     if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
     const content = getActiveContent();
@@ -1653,7 +1653,8 @@ async function copilotChat(instruction, forceScene) {
 
     try {
         var currentAiResponse = "";
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", history: window.copilotChatHistory }) });
+        const body = { novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory };
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
@@ -2633,7 +2634,10 @@ async function executeGenesisFromResume(state) {
 }
 
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
-document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
+document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => {
+    const cmd = b.dataset.cmd;
+    copilotChat(cmd, null, cmd === "续写下文" ? "prefix" : "chat");
+}));
 
 function renderToolProposal(parentBubble, proposal, autoExecute) {
     var argsText = JSON.stringify(proposal.arguments || {}, null, 2);
@@ -3582,7 +3586,7 @@ function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || 
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
 continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
-    try { const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: "请根据前文顺着语气直接续写约200字正文，不要输出任何解释，不要换行分段，紧接上文。", api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
+    try { const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: "请根据前文顺着语气直接续写约200字正文，不要输出任何解释，不要换行分段，紧接上文。", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, mode: "prefix" }) });
         for await (const msg of parseSSEStream(res)) { if (msg.type === "chunk") { contentInput.value += msg.content; contentInput.scrollTop = contentInput.scrollHeight; } }
         contentInput.dispatchEvent(new Event("input")); await saveCurrentChapter(); }
     catch (e) { contentInput.value += `\n\n[出错: ${e.message}]`; } finally { continueBtn.disabled = false; continueBtn.textContent = "\u2728 续写"; } });

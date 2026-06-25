@@ -3250,6 +3250,7 @@ class CopilotRequest(BaseModel):
     base_url: str = ""
     model: str = "gpt-3.5-turbo"
     scene: str = "chat"
+    mode: str = "chat"  # "chat" | "prefix" (DeepSeek Beta prefix completion)
     chain_data: str = ""
     history: list = []
 
@@ -3259,6 +3260,21 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     gs = db.get(GlobalSettings, 1)
     templates = gs.prompt_templates if gs else DEFAULT_PROMPT_TEMPLATES
 
+    # ── Prefix completion mode (DeepSeek Beta) ──
+    if req.mode == "prefix":
+        system_tmpl = templates.get("continue_prefix", DEFAULT_PROMPT_TEMPLATES["continue_prefix"])
+        system_content = resolve_placeholders(system_tmpl, req.novel_id, db)
+        messages: list[dict] = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": req.current_chapter_content},
+            {"role": "assistant", "content": "", "prefix": True},
+        ]
+        return await async_llm_stream(
+            messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL,
+            req.model or LLM_MODEL, tools=None, novel_id=req.novel_id, db=db,
+        )
+
+    # ── Normal chat mode ──
     tmpl = templates.get(req.scene, templates.get("chat", "{instruction}"))
 
     # Merge system + user prompt so resolve_placeholders runs once (halves DB queries)
