@@ -144,7 +144,7 @@
             <button class="nav-btn" data-module="outline"><span class="nav-icon">&#128196;</span><span class="nav-label">设定大纲</span></button>
             <button class="nav-btn" data-module="characters"><span class="nav-icon">&#127917;</span><span class="nav-label">人物档案</span></button>
             <button class="nav-btn" data-module="map"><span class="nav-icon">&#128506;</span><span class="nav-label">地图编辑</span></button>
-            <button class="nav-btn" data-module="sandbox"><span class="nav-icon">&#9876;</span><span class="nav-label">战斗沙盘</span></button>
+            <button class="nav-btn" data-module="sandbox"><span class="nav-icon">&#9876;</span><span class="nav-label">场景沙盘</span></button>
             <button class="nav-btn" data-module="reasoning"><span class="nav-icon">&#129504;</span><span class="nav-label">推理链编辑</span></button>
             <button class="nav-btn" data-module="relations"><span class="nav-icon">🌐</span><span class="nav-label">势力关系</span></button>
             <div class="nav-spacer"></div>
@@ -188,14 +188,14 @@
                 <div id="module-map" class="module-panel hidden"><div class="sidebar-header"><h2>地点列表</h2></div><ul id="location-list-tree"></ul></div>
                 <div id="module-sandbox" class="module-panel hidden">
                     <div class="sandbox-setup">
-                        <h3 style="margin:0 0 8px;font-size:.9rem;">⚔️ 沙盘设定</h3>
+                        <h3 style="margin:0 0 8px;font-size:.9rem;">🎬 场景设定</h3>
                         <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">场地：</label>
                         <select id="sandbox-location" style="width:100%;padding:4px 6px;font-size:.75rem;margin-bottom:8px;"><option value="">-- 选择场地 --</option></select>
-                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">参战人员：</label>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">参与角色：</label>
                         <div id="sandbox-characters" style="max-height:200px;overflow-y:auto;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:4px;"></div>
                         <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">推演情景：</label>
                         <textarea id="sandbox-scenario" placeholder="例：张三在暗处伏击了李四...此处可写复杂指令（只要模型性能足够理解）" style="width:100%;height:80px;font-size:.75rem;padding:6px 8px;border:1px solid var(--border);border-radius:4px;resize:vertical;margin-bottom:8px;"></textarea>
-                        <button id="sandbox-start-btn" class="sys-btn sys-btn-primary" style="width:100%;padding:8px 0;">▶️ 开始战斗推理</button>
+                        <button id="sandbox-start-btn" class="sys-btn sys-btn-primary" style="width:100%;padding:8px 0;">▶️ 开始场景推演</button>
                     </div>
                 </div>
                 <div id="module-reasoning" class="module-panel hidden">

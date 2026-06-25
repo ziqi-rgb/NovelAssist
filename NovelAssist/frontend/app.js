@@ -3106,7 +3106,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", extract_outline: "正文逆向提炼", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "沙盘演武", import_data: "智能导入解析" };
+const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", extract_outline: "正文逆向提炼", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "场景沙盘", import_data: "智能导入解析" };
 
 function getCopilotScene() {
     return "auto";
@@ -4698,14 +4698,14 @@ document.getElementById("sandbox-start-btn").addEventListener("click", async fun
     var locName = document.getElementById("sandbox-location").value;
     if (!locName) { showToast("请选择场地"); return; }
     var checked = document.querySelectorAll("#sandbox-characters input:checked");
-    if (checked.length === 0) { showToast("请选择至少一位参战人员"); return; }
+    if (checked.length === 0) { showToast("请选择至少一位参与角色"); return; }
     var scenario = document.getElementById("sandbox-scenario").value.trim();
     if (!scenario) { showToast("请输入推演情景"); return; }
 
     var charPlaceholders = [];
     checked.forEach(function(cb) { charPlaceholders.push("{character:" + cb.value + "}"); });
 
-    var content = "【演武场地】\n{location:" + locName + "}\n\n【参战人员】\n" + charPlaceholders.join("\n") + "\n\n【推演情景】\n" + scenario;
+    var content = "【场景场地】\n{location:" + locName + "}\n\n【参与角色】\n" + charPlaceholders.join("\n") + "\n\n【推演情景】\n" + scenario;
     var logArea = document.getElementById("sandbox-log-content");
     sandboxLogText = "";
     logArea.innerHTML = '<em style="color:var(--muted);">推演中...</em>';
