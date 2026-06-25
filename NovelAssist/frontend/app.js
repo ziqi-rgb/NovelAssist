@@ -987,17 +987,10 @@ function onMapCellClick(e, loc, x, y) {
         e.stopPropagation();
     } else {
         const parentScale = mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level || "建筑";
-        const name = prompt(`在此创建新地点（标尺: ${parentScale}，可自由输入自定义标尺）:`, "");
+        const name = prompt("在此创建新地点：", "");
         if (!name) return;
-        // Allow inline scale override: "地点名@标尺名"
-        const atIdx = name.lastIndexOf("@");
-        let scaleLevel = parentScale;
-        let finalName = name;
-        if (atIdx > 0) {
-            finalName = name.substring(0, atIdx).trim();
-            scaleLevel = name.substring(atIdx + 1).trim() || parentScale;
-        }
-        createMapLocation(finalName, x, y, scaleLevel);
+        const scaleLevel = prompt(`标尺级别（可直接回车使用默认「${parentScale}」）:`, parentScale) || parentScale;
+        createMapLocation(name, x, y, scaleLevel);
     }
 }
 
