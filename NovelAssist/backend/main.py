@@ -3285,9 +3285,11 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
             first_half = "请续写下文"
             second_half = text
 
+        import random, time
+        nonce = f"{random.randint(100000,999999)}-{int(time.time()*1000)%1000000}"
         msgs: list[dict] = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": f"请续写下文\n\n{first_half}"},
+            {"role": "user", "content": f"[#{nonce}] 请续写下文\n\n{first_half}"},
             {"role": "assistant", "content": second_half, "prefix": True},
         ]
         # Use raw httpx to preserve non-standard "prefix" key in message dict

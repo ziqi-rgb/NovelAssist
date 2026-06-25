@@ -3602,10 +3602,10 @@ continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return
                 const row = document.createElement("div"); row.className = "cp-action-row";
                 const insBtn = document.createElement("button"); insBtn.className = "cp-insert-btn";
                 insBtn.textContent = "\u2B05 插入到当前光标处";
-                insBtn.addEventListener("click", () => { insertTextAtCursor(currentAiResponse); });
-                const repBtn = document.createElement("button"); repBtn.className = "cp-replace-btn";
+                insBtn.addEventListener("click", () => { insertToActiveTextarea(currentAiResponse); });
+                const repBtn = document.createElement("button"); repBtn.className = "cp-insert-btn";
                 repBtn.textContent = "\uD83D\uDD04 替换当前文本";
-                repBtn.addEventListener("click", () => { contentInput.value = currentAiResponse; contentInput.dispatchEvent(new Event("input")); saveCurrentChapter(); });
+                repBtn.addEventListener("click", () => { if (confirm("替换当前编辑器全部内容？")) replaceActiveTextarea(currentAiResponse); });
                 row.appendChild(insBtn); row.appendChild(repBtn); aiB.appendChild(row);
             }
         }
