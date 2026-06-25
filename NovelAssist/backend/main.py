@@ -1390,6 +1390,51 @@ def get_computed_attributes(location_id: int, db: Session, _depth: int = 0) -> d
     return merged
 
 
+def _sync_attrs_to_templates(db: Session, novel_id: int, scale_level: str, attrs: dict) -> None:
+    """Sync new attribute keys into the novel's location_templates under an「AI 创建」group."""
+    if not attrs or not scale_level:
+        return
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        return
+    templates = dict(novel.location_templates or {})
+    groups: list = list(templates.get(scale_level, []))
+    if not isinstance(groups, list):
+        groups = []
+
+    # Collect all existing field names across all groups
+    existing_fields: set[str] = set()
+    for g in groups:
+        for f in (g.get("fields") or []):
+            if isinstance(f, dict) and f.get("name"):
+                existing_fields.add(f["name"])
+
+    # Find or create the「AI 创建」group
+    ai_group = None
+    for g in groups:
+        if g.get("group") == "AI 创建":
+            ai_group = g
+            break
+    if ai_group is None:
+        ai_group = {"group": "AI 创建", "fields": []}
+        groups.append(ai_group)
+
+    # Add new keys
+    ai_fields: list = list(ai_group.get("fields") or [])
+    added = False
+    for key in attrs:
+        if key not in existing_fields:
+            ai_fields.append({"name": key, "type": "text", "inheritable": False})
+            existing_fields.add(key)
+            added = True
+
+    if added:
+        ai_group["fields"] = ai_fields
+        templates[scale_level] = groups
+        novel.location_templates = templates
+        db.commit()
+
+
 def enrich_location_out(loc, db: Session) -> dict:
     try:
         comp = get_computed_attributes(loc.id, db)
@@ -2965,10 +3010,9 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(Outline).filter(Outline.id == eid).delete()
 
         elif etype == "location":
-            # Scale validation and downgrade
-            valid_scales = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"]
-            input_scale = data.get("scale", "街区")
-            if input_scale not in valid_scales:
+            # Scale fuzzy mapping (convenience, no rejection — custom scales pass through)
+            input_scale = data.get("scale", "")
+            if input_scale:
                 s_lower = str(input_scale).lower()
                 if "大千世界" in s_lower:
                     input_scale = "大千世界"
@@ -2984,8 +3028,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     input_scale = "城池"
                 elif "村" in s_lower or "village" in s_lower or "街" in s_lower or "建筑" in s_lower or "building" in s_lower:
                     input_scale = "街区"
-                else:
-                    input_scale = "街区"
+            else:
+                input_scale = "街区"
             data["scale"] = input_scale
 
             # Upsert: check existing by name
@@ -3007,7 +3051,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 if not parent_loc:
                     parent_loc = Location(
                         novel_id=novel_id, name=data["parent_name"],
-                        scale_level="大陆", description="AI 自动溯源创建",
+                        scale_level="大千世界", description="AI 自动溯源创建",
                     )
                     db.add(parent_loc)
                     db.commit()
@@ -3031,6 +3075,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     map_y=map_y_val,
                     attributes=data.get("attributes", {}),
                 ))
+                # Sync new attribute keys to location_templates
+                _sync_attrs_to_templates(db, novel_id, data.get("scale_level") or data.get("scale", ""), data.get("attributes", {}))
             elif action == "update" and eid:
                 item = db.get(Location, eid)
                 if item:
@@ -3060,6 +3106,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.map_y = int(data["map_y"])
                     if "attributes" in data and isinstance(data["attributes"], dict):
                         item.attributes = {**item.attributes, **data["attributes"]}
+                        _sync_attrs_to_templates(db, novel_id, item.scale_level or "", data["attributes"])
             elif action == "delete" and eid:
                 db.query(Location).filter(Location.id == eid).delete()
 

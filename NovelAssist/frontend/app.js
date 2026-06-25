@@ -848,11 +848,24 @@ document.getElementById("restore-snapshot-btn").addEventListener("click", async 
     loadCharactersModule();
 });
 /* ═══════════ Map — Grid 25x25 ═══════════ */
-const SCALE_LEVELS = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"];
+const DEFAULT_SCALES = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"];
+
+function refreshScaleDatalists() {
+    // Collect all known scale levels: defaults + template keys
+    const known = new Set(DEFAULT_SCALES);
+    Object.keys(locTemplates).forEach(k => known.add(k));
+    const options = [...known].map(s => `<option value="${e(s)}">`).join("");
+
+    const dl1 = document.getElementById("loc-scale-datalist");
+    if (dl1) dl1.innerHTML = options;
+
+    const dl2 = document.getElementById("loc-tmpl-scale-datalist");
+    if (dl2) dl2.innerHTML = options;
+}
+
 let mapMode = "list";
 let mapParentId = null;
-let mapScaleIndex = 0;
-let mapBreadcrumbs = [{ id: null, name: "大千世界" }];
+let mapBreadcrumbs = [{ id: null, name: "大千世界", scale_level: "大千世界" }];
 
 document.getElementById("map-list-btn").addEventListener("click", () => {
     mapMode = "list";
@@ -868,8 +881,7 @@ document.getElementById("map-grid-btn").addEventListener("click", () => {
     document.getElementById("map-list-mode").classList.add("hidden");
     document.getElementById("map-grid-mode").classList.remove("hidden");
     mapParentId = null;
-    mapScaleIndex = 0;
-    mapBreadcrumbs = [{ id: null, name: "大千世界" }];
+    mapBreadcrumbs = [{ id: null, name: "大千世界", scale_level: "大千世界" }];
     renderMapGrid();
 });
 
@@ -880,11 +892,9 @@ function enterLocationGrid(loc) {
     document.getElementById("map-list-mode").classList.add("hidden");
     document.getElementById("map-grid-mode").classList.remove("hidden");
     mapParentId = loc.id;
-    const parentIdx = SCALE_LEVELS.indexOf(loc.scale_level);
-    mapScaleIndex = parentIdx >= 0 ? parentIdx : 0;
     mapBreadcrumbs = [
-        { id: null, name: "大千世界" },
-        { id: loc.id, name: loc.name },
+        { id: null, name: "大千世界", scale_level: "大千世界" },
+        { id: loc.id, name: loc.name, scale_level: loc.scale_level || "" },
     ];
     renderMapGrid();
 }
@@ -893,15 +903,14 @@ function updateBreadcrumbs() {
     const bc = document.getElementById("map-breadcrumbs");
     bc.innerHTML = mapBreadcrumbs.map((b, i) =>
         i < mapBreadcrumbs.length - 1
-            ? `<span data-idx="${i}">${e(b.name)}</span> > `
-            : `<strong>${e(b.name)}</strong>`
+            ? `<span data-idx="${i}">${e(b.name)}<small style="color:var(--muted)"> [${e(b.scale_level||"")}]</small></span> > `
+            : `<strong>${e(b.name)}<small style="color:var(--muted)"> [${e(b.scale_level||"")}]</small></strong>`
     ).join("");
     bc.querySelectorAll("span").forEach(s => {
         s.addEventListener("click", () => {
             const idx = Number(s.dataset.idx);
             mapBreadcrumbs = mapBreadcrumbs.slice(0, idx + 1);
             mapParentId = mapBreadcrumbs[mapBreadcrumbs.length - 1].id;
-            mapScaleIndex = idx;
             renderMapGrid();
         });
     });
@@ -912,8 +921,7 @@ async function renderMapGrid() {
     container.innerHTML = '<div class="map-grid" id="map-grid"></div>';
     updateBreadcrumbs();
 
-    const childLevel = mapScaleIndex + 1 < SCALE_LEVELS.length ? SCALE_LEVELS[mapScaleIndex + 1] : "具体建筑";
-    let url = `/api/locations?novel_id=${currentNovelId}&scale_level=${encodeURIComponent(childLevel)}`;
+    let url = `/api/locations?novel_id=${currentNovelId}`;
     if (mapParentId !== null) {
         url += `&parent_id=${mapParentId}`;
     } else {
@@ -958,10 +966,8 @@ function onMapCellClick(e, loc, x, y) {
         menu.className = "map-context-menu";
         menu.style.left = e.clientX + "px";
         menu.style.top = e.clientY + "px";
-        menu.innerHTML = `<button data-action="edit">📝 编辑详情</button>`;
-        if (mapScaleIndex < SCALE_LEVELS.length - 1) {
-            menu.innerHTML += `<button data-action="drill">🔍 进入内部</button>`;
-        }
+        menu.innerHTML = `<button data-action="edit">📝 编辑详情</button>
+            <button data-action="drill">🔍 进入内部</button>`;
         document.body.appendChild(menu);
         menu.querySelector("[data-action=edit]").addEventListener("click", () => {
             closeContextMenu();
@@ -971,26 +977,27 @@ function onMapCellClick(e, loc, x, y) {
             renderLocationDetail(loc);
             document.getElementById("map-list-btn").click();
         });
-        menu.querySelector("[data-action=drill]")?.addEventListener("click", () => {
+        menu.querySelector("[data-action=drill]").addEventListener("click", () => {
             closeContextMenu();
             mapParentId = loc.id;
-            mapScaleIndex += 1;
-            mapBreadcrumbs.push({ id: loc.id, name: loc.name });
+            mapBreadcrumbs.push({ id: loc.id, name: loc.name, scale_level: loc.scale_level || "" });
             renderMapGrid();
         });
         document.addEventListener("click", closeContextMenu, { once: true });
         e.stopPropagation();
     } else {
-        const nextLevel = mapScaleIndex + 1 < SCALE_LEVELS.length ? SCALE_LEVELS[mapScaleIndex + 1] : "具体建筑";
-        const name = prompt(`在此创建 ${nextLevel}：`, "");
+        const breadcrumbScale = mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level || "";
+        const name = prompt(`在此创建新地点（当前标尺: ${breadcrumbScale}）:`, "");
         if (!name) return;
         createMapLocation(name, x, y);
     }
 }
 
 async function createMapLocation(name, x, y) {
-    const nextLevel = mapScaleIndex + 1 < SCALE_LEVELS.length ? SCALE_LEVELS[mapScaleIndex + 1] : "具体建筑";
-    await fetch("/api/locations" + nidQ(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, scale_level: nextLevel, parent_id: mapParentId, grid_x: x, grid_y: y }) });
+    const defaultScale = (mapBreadcrumbs.length > 1 && mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level)
+        ? mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level : "建筑";
+    const scaleLevel = prompt(`设置标尺级别（预设: ${DEFAULT_SCALES.join("/")}，也支持自定义）:`, defaultScale) || defaultScale;
+    await fetch("/api/locations" + nidQ(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, scale_level: scaleLevel, parent_id: mapParentId, grid_x: x, grid_y: y }) });
     await loadLocationTree();
     renderMapGrid();
 }
@@ -1016,6 +1023,7 @@ document.getElementById("loc-tmpl-add-group").addEventListener("click", () => {
 document.getElementById("loc-tmpl-save").addEventListener("click", async () => {
     collectLocTmpl();
     await fetch(`/api/novels/${currentNovelId}/location_templates`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(locTemplates) });
+    refreshScaleDatalists();
     document.getElementById("loc-tmpl-modal").classList.add("hidden");
 });
 
@@ -1046,7 +1054,7 @@ function renderLocTmplEditor() {
         (g.fields || []).forEach((f, fi) => {
             const r = document.createElement("div"); r.className = "tmpl-field-row";
             r.style.cssText = "display:flex;gap:4px;align-items:center;margin-bottom:3px;padding-left:12px;";
-            r.innerHTML = `<input class="tmpl-fname" value="${e(f.name)}" placeholder="字段名" style="flex:1;font-size:.72rem;"><label style="font-size:.68rem;display:flex;align-items:center;gap:2px;white-space:nowrap;"><input type="checkbox" class="tmpl-inherit" ${f.inheritable?"checked":""}>可被子地点继承</label><button data-delfield="${fi}" class="sys-btn sys-btn-danger">🗑️</button>`;
+            r.innerHTML = `<input class="tmpl-fname" value="${e(f.name)}" placeholder="字段名" style="flex:1;font-size:.72rem;"><label style="font-size:.68rem;display:flex;align-items:center;gap:2px;white-space:nowrap;"><input type="checkbox" class="tmpl-inherit" ${f.inheritable?"checked":""}>可被子地点继承</label><button data-transferfield="${gi}-${fi}" class="sys-btn sys-btn-secondary" title="转移到其他分组" style="font-size:.65rem;padding:1px 4px;">📤</button><button data-delfield="${fi}" class="sys-btn sys-btn-danger">🗑️</button>`;
             fieldsDiv.appendChild(r);
         });
         const addRow = document.createElement("div");
@@ -1083,6 +1091,28 @@ function renderLocTmplEditor() {
             if (groups2[gi]) {
                 groups2[gi].fields.push({ name: "", type: "text", inheritable: false });
             }
+            locTemplates[scale] = groups2;
+            renderLocTmplEditor();
+        });
+    });
+    container.querySelectorAll("[data-transferfield]").forEach(b => {
+        b.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            collectLocTmpl();
+            const groups2 = locTemplates[scale] || [];
+            const [srcGi, srcFi] = b.dataset.transferfield.split("-").map(Number);
+            if (groups2.length <= 1) { alert("只有一个分组，无法转移。请先添加目标分组。"); return; }
+            if (!groups2[srcGi] || !groups2[srcGi].fields || srcFi >= groups2[srcGi].fields.length) return;
+            const field = groups2[srcGi].fields[srcFi];
+            // Build target group options (exclude source group)
+            const options = groups2.map((g, i) => i !== srcGi ? `<option value="${i}">${e(g.group||"未命名")}</option>` : "").join("");
+            const targetGiStr = prompt("选择目标分组:\n" + groups2.map((g, i) => `${i}: ${g.group||"未命名"}`).filter((_, i) => i !== srcGi).join("\n"), "");
+            const targetGi = Number(targetGiStr);
+            if (isNaN(targetGi) || targetGi < 0 || targetGi >= groups2.length || targetGi === srcGi) return;
+            // Transfer
+            groups2[srcGi].fields.splice(srcFi, 1);
+            if (!groups2[targetGi].fields) groups2[targetGi].fields = [];
+            groups2[targetGi].fields.push(field);
             locTemplates[scale] = groups2;
             renderLocTmplEditor();
         });
@@ -1221,6 +1251,7 @@ function collectLocationAttributes() {
 async function loadLocationTree() {
     // Always refresh templates so renderLocationDetail works
     locTemplates = await (await fetch(`/api/novels/${currentNovelId}/location_templates`)).json() || {};
+    refreshScaleDatalists();
     const list = document.getElementById("location-list-tree");
     const locs = await (await fetch("/api/locations" + nidQ())).json();
     list.innerHTML = "";
@@ -4055,8 +4086,6 @@ function validateStructuredOutput(format, items, chainNodes, templateSnapshot) {
 
     if (format === "location") {
         if (!item.name || item.name.trim() === "" || item.name === "未知") errors.push("name 为空或无效");
-        var validScales = ["大千世界","宇宙","星球","大陆","国家","城池","街区","建筑"];
-        if (item.scale_level && validScales.indexOf(item.scale_level) === -1) errors.push("scale_level 不在有效值中: " + item.scale_level);
         if (item.grid_x !== undefined && (item.grid_x < 0 || item.grid_x > 24)) errors.push("grid_x 超出 0-24");
         if (item.grid_y !== undefined && (item.grid_y < 0 || item.grid_y > 24)) errors.push("grid_y 超出 0-24");
         if (!item.description || item.description.trim().length < 3) errors.push("description 过短或缺失");

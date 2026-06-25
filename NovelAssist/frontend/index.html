@@ -332,10 +332,9 @@
                                 <div class="loc-meta-box" style="margin-top:16px;border-top:1px dashed var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px;">
                                     <div style="display:flex;gap:8px;align-items:center;">
                                         <label style="font-size:0.75rem;font-weight:700;min-width:60px;color:var(--accent);">空间标尺:</label>
-                                        <select id="loc-scale-select" style="flex:1;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
-                                            <option value="大千世界">大千世界</option><option value="宇宙">宇宙</option><option value="星球">星球</option>
-                                            <option value="大陆">大陆</option><option value="国家">国家</option><option value="城池">城池</option><option value="街区">街区</option>
-                                        </select>
+                                        <input id="loc-scale-select" list="loc-scale-datalist" placeholder="标尺级别" style="flex:1;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                        <datalist id="loc-scale-datalist">
+                                        </datalist>
                                     </div>
                                     <div style="display:flex;gap:8px;align-items:center;">
                                         <label style="font-size:0.75rem;font-weight:700;min-width:60px;color:var(--accent);">嵌套上级:</label>
@@ -462,9 +461,9 @@
         <div class="modal-box" style="width:700px;max-height:85vh;overflow-y:auto;">
             <h3 style="margin:0 0 8px;">⚙️ 地点模板设置</h3>
             <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <select id="loc-tmpl-scale-sel" style="font-size:.8rem;padding:4px 8px;">
-                    <option value="大千世界">大千世界</option><option value="宇宙">宇宙</option><option value="星球">星球</option><option value="大陆">大陆</option><option value="国家">国家</option><option value="城池">城池</option><option value="街区">街区</option>
-                </select>
+                <input id="loc-tmpl-scale-sel" list="loc-tmpl-scale-datalist" placeholder="标尺级别" style="font-size:.8rem;padding:4px 8px;">
+                <datalist id="loc-tmpl-scale-datalist">
+                </datalist>
                 <button id="loc-tmpl-add-group" class="sys-btn sys-btn-secondary" style="font-size:.75rem;">+ 添加分组</button>
             </div>
             <div id="loc-tmpl-editor"></div>
