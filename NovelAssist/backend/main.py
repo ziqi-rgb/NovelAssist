@@ -1079,10 +1079,6 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     pending = ch.pending_timeline_text.strip() if ch.pending_timeline_text else ""
     full_text = (pending + "\n\n" + text).strip() if pending else text
 
-    # Always use default archive templates (not user-customizable)
-    tl_template = DEFAULT_PROMPT_TEMPLATES["archive_timeline"]
-    char_template = DEFAULT_PROMPT_TEMPLATES["archive_character"]
-
     # 2. Timeline summary
     elapsed_years = 0
     elapsed_months = 0
@@ -1097,7 +1093,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     try:
         tl_resp = await client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": tl_template.replace("{text}", full_text)}],
+            messages=[{"role": "user", "content": templates.get("archive_timeline", DEFAULT_PROMPT_TEMPLATES["archive_timeline"]).replace("{text}", full_text)}],
             temperature=0.5,
         )
         raw_tl = (tl_resp.choices[0].message.content or "").strip()
@@ -1194,7 +1190,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                 char_list.append({"id": c.id, "name": name, "status": c.status, "is_active": c.is_active, "attributes": c.attributes or {}})
             char_json = json.dumps(char_list, ensure_ascii=False)
             tmpl_json = json.dumps(char_template, ensure_ascii=False)
-            prompt = char_template.replace("{template}", tmpl_json).replace("{characters}", char_json).replace("{text}", text)
+            prompt = templates.get("archive_character", DEFAULT_PROMPT_TEMPLATES["archive_character"]).replace("{template}", tmpl_json).replace("{characters}", char_json).replace("{text}", text)
             cu_resp = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
