@@ -3266,10 +3266,29 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     if req.mode == "prefix":
         system_tmpl = templates.get("continue_prefix", DEFAULT_PROMPT_TEMPLATES["continue_prefix"])
         system_content = resolve_placeholders(system_tmpl, req.novel_id, db)
+
+        # Split chapter at nearest period (。) to midpoint
+        text = req.current_chapter_content
+        if len(text) > 60:
+            mid = len(text) // 2
+            left = text.rfind("。", 0, mid)
+            right = text.find("。", mid)
+            if left >= 0 and (right < 0 or (mid - left) <= (right - mid)):
+                split_at = left + 1  # include 。in first half
+            elif right >= 0:
+                split_at = right + 1
+            else:
+                split_at = mid
+            first_half = text[:split_at].rstrip()
+            second_half = text[split_at:].lstrip()
+        else:
+            first_half = "请续写下文"
+            second_half = text
+
         msgs: list[dict] = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": req.current_chapter_content},
-            {"role": "assistant", "content": "\n", "prefix": True},
+            {"role": "user", "content": f"请续写下文\n\n{first_half}"},
+            {"role": "assistant", "content": second_half, "prefix": True},
         ]
         # Use raw httpx to preserve non-standard "prefix" key in message dict
         base_url = req.base_url or LLM_BASE_URL
