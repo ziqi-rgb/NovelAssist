@@ -2887,13 +2887,23 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 sc = lc.scale.value if hasattr(lc.scale, "value") else str(lc.scale)
                 lines.append(f"{idx}. {lc.name} [{sc}]")
             parts.append("\n".join(lines))
-        for et, label in [("history", "历史时间线"), ("world", "世界时间线")]:
+        # Add current calendar time
+        lore_time = CalendarEngine.format_tick_to_lore_time(current_tick, novel.calendar_config if novel else {})
+        parts.append(f"## 当前世界时间\n{lore_time}")
+
+        # All three timeline types with contextual annotations
+        timeline_types: list[tuple[str, str, str]] = [
+            ("history", "历史时间线", "（曾经发生过这些事）"),
+            ("main_story", "正文时间线", "（现在主角们正在经历这些事）"),
+            ("world", "世界时间线", "（与此同时，摄像机之外的世界中，这些事情发生了）"),
+        ]
+        for et, label, annotation in timeline_types:
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
                 TimelineEvent.event_type == et,
             ).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label)).all()
             if events:
-                lines = [f"## {label} (索引 — 用 query_world_state(timeline) 获取详情)"]
+                lines = [f"## {label} (索引 — 用 query_world_state(timeline) 获取详情)\n{annotation}"]
                 for e in events:
                     title_part = f" — {e.title}" if e.title else ""
                     lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
