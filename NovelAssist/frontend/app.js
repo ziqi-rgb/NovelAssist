@@ -1013,8 +1013,9 @@ async function createMapLocation(name, x, y, scaleLevel) {
         alert("创建失败: 网络错误");
         return;
     }
-    await loadLocationTree();
+    // Refresh grid first (critical for UX), then tree
     renderMapGrid();
+    try { await loadLocationTree(); } catch (e) { /* tree refresh is best-effort */ }
 }
 
 /* ═══════════ Location Templates ═══════════ */
