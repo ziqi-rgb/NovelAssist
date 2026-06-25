@@ -474,6 +474,12 @@ contentInput.addEventListener("input", () => {
         }
     }, 1000);
 });
+// Capture selection on blur so chat can use it after focus moves
+let contentSelectionStart = 0, contentSelectionEnd = 0;
+contentInput.addEventListener("blur", () => {
+    contentSelectionStart = contentInput.selectionStart;
+    contentSelectionEnd = contentInput.selectionEnd;
+});
 
 function showArchiveOverlay() { document.getElementById("archive-overlay").classList.remove("hidden"); }
 function hideArchiveOverlay() { document.getElementById("archive-overlay").classList.add("hidden"); }
@@ -1622,7 +1628,12 @@ function getActiveSelection() {
     const sel = window.getSelection();
     if (sel && sel.toString().trim()) return sel.toString();
     const ta = getActiveTextarea();
-    return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+    // Use cached selection from blur if current selection is empty (user moved focus)
+    const cur = ta.value.substring(ta.selectionStart, ta.selectionEnd);
+    if (!cur.trim() && ta === contentInput && contentSelectionStart !== contentSelectionEnd) {
+        return ta.value.substring(contentSelectionStart, contentSelectionEnd);
+    }
+    return cur;
 }
 
 function insertToActiveTextarea(text) {
