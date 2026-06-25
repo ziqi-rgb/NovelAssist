@@ -4736,12 +4736,12 @@ document.getElementById("sandbox-copy-btn").addEventListener("click", function()
     ta.value = ta.value.substring(0, start) + sandboxLogText + ta.value.substring(start);
     ta.focus(); ta.selectionStart = start + sandboxLogText.length; ta.selectionEnd = start + sandboxLogText.length;
     ta.dispatchEvent(new Event("input"));
-    showToast("战报已复制到当前编辑器");
+    showToast("内容已复制到当前编辑器");
 });
 
 document.getElementById("sandbox-next-btn").addEventListener("click", function() {
     var scenario = document.getElementById("sandbox-scenario");
-    scenario.value = "【接续上一回合战报继续推演】\n\n" + (sandboxLogText || "");
+    scenario.value = "【接续上一回合继续推演】\n\n" + (sandboxLogText || "");
     document.getElementById("sandbox-start-btn").click();
 });
 
