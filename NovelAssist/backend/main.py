@@ -88,7 +88,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "⚠️【强制格式】：必须是标准的嵌套 JSON 对象(Object)，绝对不能是转义的字符串！新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区,建筑中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。",
+                        "description": "⚠️【强制格式】：必须是标准的嵌套 JSON 对象(Object)，绝对不能是转义的字符串！新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区,建筑中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。\ntimeline: title(事件名称)/time_label(时间标签如\"大陆历前1200年\")/content(事件详情)/event_type(history|main_story|world)/related_location_name(关联地点名)。",
                         "additionalProperties": True,
                     },
                 },
@@ -727,6 +727,7 @@ class EventOut(BaseModel):
 
 class TimelineCreate(BaseModel):
     event_type: str = "main_story"
+    title: str = ""
     time_label: str = ""
     content: str = ""
     related_location_id: Optional[int] = None
@@ -735,9 +736,13 @@ class TimelineOut(BaseModel):
     id: int
     novel_id: int
     event_type: str
+    timeline_index: int = 0
+    title: str = ""
     time_label: str
     content: str
+    absolute_tick: int = 0
     related_location_id: Optional[int] = None
+    created_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
@@ -1734,12 +1739,37 @@ def list_timeline(
 
 @app.post("/api/timeline", response_model=TimelineOut)
 def create_timeline(body: TimelineCreate, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    # Auto-assign timeline_index: max + 1 per novel × event_type
+    max_idx = db.scalar(
+        select(func.max(TimelineEvent.timeline_index)).where(
+            TimelineEvent.novel_id == novel_id,
+            TimelineEvent.event_type == body.event_type,
+        )
+    )
     t = TimelineEvent(
         event_type=body.event_type,  # type: ignore[arg-type]
+        title=body.title,
         time_label=body.time_label, content=body.content,
+        timeline_index=(max_idx or 0) + 1,
         related_location_id=body.related_location_id, novel_id=novel_id,
     )
     db.add(t)
+    db.commit()
+    db.refresh(t)
+    return t
+
+
+@app.put("/api/timeline/{event_id}", response_model=TimelineOut)
+def update_timeline(event_id: int, body: TimelineCreate, db: Session = Depends(get_db)):
+    t = db.get(TimelineEvent, event_id)
+    if not t:
+        raise HTTPException(404, "事件不存在")
+    t.title = body.title
+    t.time_label = body.time_label
+    t.content = body.content
+    t.event_type = body.event_type  # type: ignore[arg-type]
+    if body.related_location_id is not None:
+        t.related_location_id = body.related_location_id
     db.commit()
     db.refresh(t)
     return t
@@ -2199,8 +2229,8 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                 lines = [f"• {l.name}[{l.scale_level}] — {l.description or ''}" for l in locs if not filt or _m(l.name)]
                 result["locations"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("timeline","all"):
-                evts = db.query(TimelineEvent).filter(TimelineEvent.novel_id==novel_id).order_by(TimelineEvent.time_label).all()
-                lines = [f"• {e.time_label}: {e.content}" for e in evts if not filt or (_m(e.time_label) or _m(e.content))]
+                evts = db.query(TimelineEvent).filter(TimelineEvent.novel_id==novel_id).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label).all()
+                lines = [f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}" for e in evts if not filt or (_m(e.time_label) or _m(e.content) or _m(e.title))]
                 result["timeline"] = "\n".join(lines) if lines else "(无)"
             return "查询结果:\n" + "\n\n".join(f"--- {k} ---\n{v}" for k,v in result.items())
         return "工具不可用"
@@ -2627,11 +2657,12 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
                 TimelineEvent.event_type == et,
-            ).order_by(TimelineEvent.time_label)).all()
+            ).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label)).all()
             if events:
-                lines = [f"## {label}"]
+                lines = [f"## {label} (索引 — 用 query_world_state(timeline) 获取详情)"]
                 for e in events:
-                    lines.append(f"- **{e.time_label}**: {e.content}")
+                    title_part = f" — {e.title}" if e.title else ""
+                    lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
                 parts.append("\n".join(lines))
         return "\n\n".join(parts) if parts else "(无上下文)"
 
@@ -2778,48 +2809,52 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
                 TimelineEvent.event_type == "history",
-            ).order_by(TimelineEvent.time_label)).all()
+            ).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label)).all()
             if not events:
                 return "(无历史时间线)"
-            lines = ["## 历史时间线"]
+            lines = ["## 历史时间线 (索引列表 — 用 query_world_state(timeline) 获取详情)"]
             for e in events:
-                lines.append(f"- **{e.time_label}**: {e.content}")
+                title_part = f" — {e.title}" if e.title else ""
+                lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
             return "\n".join(lines)
 
         if ph == "timeline_world":
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
                 TimelineEvent.event_type == "world",
-            ).order_by(TimelineEvent.time_label)).all()
+            ).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label)).all()
             if not events:
                 return "(无世界时间线)"
-            lines = ["## 世界时间线"]
+            lines = ["## 世界时间线 (索引列表 — 用 query_world_state(timeline) 获取详情)"]
             for e in events:
-                lines.append(f"- **{e.time_label}**: {e.content}")
+                title_part = f" — {e.title}" if e.title else ""
+                lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
             return "\n".join(lines)
 
         if ph == "timeline_main":
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
                 TimelineEvent.event_type == "main_story",
-            ).order_by(TimelineEvent.time_label)).all()
+            ).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label)).all()
             if not events:
                 return "(无正文时间线)"
-            lines = ["## 正文时间线"]
+            lines = ["## 正文时间线 (索引列表 — 用 query_world_state(timeline) 获取详情)"]
             for e in events:
-                lines.append(f"- **{e.time_label}**: {e.content}")
+                title_part = f" — {e.title}" if e.title else ""
+                lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
             return "\n".join(lines)
 
         if ph == "timeline":
             events = db.scalars(select(TimelineEvent).where(
                 TimelineEvent.novel_id == novel_id,
                 TimelineEvent.event_type == "main_story",
-            ).order_by(TimelineEvent.time_label)).all()
+            ).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label)).all()
             if not events:
                 return "(无正文时间线)"
-            lines = ["## 正文时间线"]
+            lines = ["## 正文时间线 (索引列表 — 用 query_world_state(timeline) 获取详情)"]
             for e in events:
-                lines.append(f"- **{e.time_label}**: {e.content}")
+                title_part = f" — {e.title}" if e.title else ""
+                lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
             return "\n".join(lines)
 
         if ph == "lore":
@@ -3285,12 +3320,12 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             result["locations"] = "\n".join(lines) if lines else "(无匹配地点)"
 
         if qtype in ("timeline", "all"):
-            events = db.query(TimelineEvent).filter(TimelineEvent.novel_id == novel_id).order_by(TimelineEvent.time_label).all()
+            events = db.query(TimelineEvent).filter(TimelineEvent.novel_id == novel_id).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label).all()
             lines = []
             for e in events:
-                if filt and not _match(e.time_label) and not _match(e.content):
+                if filt and not _match(e.time_label) and not _match(e.content) and not _match(e.title):
                     continue
-                lines.append(f"• {e.time_label}: {e.content}")
+                lines.append(f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}")
             result["timeline"] = "\n".join(lines) if lines else "(无时间线事件)"
 
         return {"status": "success", "query_type": qtype, "data": result}
@@ -3499,23 +3534,59 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         elif etype == "timeline":
             if action == "add":
+                # Auto-assign timeline_index: max + 1 per novel × event_type
+                evt_type = TimelineEventType.MAIN_STORY
+                if "event_type" in data:
+                    try:
+                        evt_type = TimelineEventType(data["event_type"])
+                    except ValueError:
+                        pass
+                max_idx = db.scalar(
+                    select(func.max(TimelineEvent.timeline_index)).where(
+                        TimelineEvent.novel_id == novel_id,
+                        TimelineEvent.event_type == evt_type,
+                    )
+                )
+                # Resolve related_location_name → related_location_id
+                rel_loc_id = data.get("related_location_id")
+                if not rel_loc_id and data.get("related_location_name"):
+                    loc_obj = db.query(Location).filter(
+                        Location.novel_id == novel_id, Location.name == data["related_location_name"]
+                    ).first()
+                    if loc_obj:
+                        rel_loc_id = loc_obj.id
                 db.add(TimelineEvent(
                     novel_id=novel_id,
-                    event_type=TimelineEventType.MAIN_STORY,
+                    event_type=evt_type,
+                    title=data.get("title", ""),
                     time_label=data.get("time_label", data.get("time_str", "")),
                     content=data.get("content", data.get("event_desc", "")),
                     absolute_tick=novel.current_tick if novel else 0,
-                    timeline_index=0,
+                    timeline_index=(max_idx or 0) + 1,
+                    related_location_id=rel_loc_id,
                 ))
             elif action == "update" and eid:
                 item = db.get(TimelineEvent, eid)
                 if item:
+                    if "title" in data:
+                        item.title = data["title"]
                     if "time_label" in data or "time_str" in data:
                         item.time_label = data.get("time_label", data.get("time_str", item.time_label))
                     if "content" in data or "event_desc" in data:
                         item.content = data.get("content", data.get("event_desc", item.content))
                     if "event_type" in data:
-                        item.event_type = data["event_type"]
+                        try:
+                            item.event_type = TimelineEventType(data["event_type"])
+                        except ValueError:
+                            pass
+                    if "related_location_name" in data:
+                        loc_obj = db.query(Location).filter(
+                            Location.novel_id == novel_id, Location.name == data["related_location_name"]
+                        ).first()
+                        if loc_obj:
+                            item.related_location_id = loc_obj.id
+                    if "related_location_id" in data:
+                        item.related_location_id = data["related_location_id"]
             elif action == "delete" and eid:
                 db.query(TimelineEvent).filter(TimelineEvent.id == eid).delete()
 

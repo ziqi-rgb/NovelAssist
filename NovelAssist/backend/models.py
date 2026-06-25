@@ -196,10 +196,13 @@ class TimelineEvent(Base):
         SAEnum(TimelineEventType), nullable=False, default=TimelineEventType.MAIN_STORY
     )
     timeline_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     time_label: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     absolute_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     related_location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     novel: Mapped[Novel] = relationship(back_populates="timeline_events")
     related_location: Mapped[Optional[Location]] = relationship()
