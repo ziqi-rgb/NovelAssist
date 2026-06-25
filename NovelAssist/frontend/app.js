@@ -1659,8 +1659,7 @@ async function copilotChat(instruction, forceScene, mode) {
 
     try {
         var currentAiResponse = "";
-        const archived = document.getElementById("archived-content-viewer").textContent.trim();
-        const body = { novel_id: currentNovelId, current_chapter_content: content, archived_content: archived, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory };
+        const body = { novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory };
         const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
@@ -3589,8 +3588,7 @@ chainGenBtn.addEventListener("click", async () => {
 function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false" }; }
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
-continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value;
-    const archived = document.getElementById("archived-content-viewer").textContent.trim(); continueBtn.disabled = true; continueBtn.textContent = "生成中...";
+continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
     // Show in AI chat area
     const userB = document.createElement("div"); userB.className = "copilot-bubble user";
     userB.innerHTML = `<div class="cp-label">你</div>续写<div style="text-align:right;margin-top:6px;"><span class="undo-capsule" onclick="truncateChat(this)">✕ 撤回</span></div>`;
@@ -3600,7 +3598,7 @@ continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return
     copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
     try {
         var currentAiResponse = "";
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, archived_content: archived, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, mode: "prefix" }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, mode: "prefix" }) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
