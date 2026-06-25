@@ -95,6 +95,27 @@ def run_migration() -> None:
         if "updated_at" not in te_cols2:
             db.execute(text("ALTER TABLE timeline_events ADD COLUMN updated_at TIMESTAMP"))
             db.commit()
+        if "character_names" not in te_cols2:
+            db.execute(text("ALTER TABLE timeline_events ADD COLUMN character_names JSON DEFAULT '[]'"))
+            db.commit()
+        if "category" not in te_cols2:
+            db.execute(text("ALTER TABLE timeline_events ADD COLUMN category TEXT DEFAULT '其他'"))
+            db.commit()
+
+        # Ensure timeline_event_relations table exists
+        insp2 = inspect(db.get_bind())
+        if "timeline_event_relations" not in insp2.get_table_names():
+            db.execute(text("""
+                CREATE TABLE timeline_event_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    novel_id INTEGER NOT NULL DEFAULT 1 REFERENCES novels(id),
+                    source_event_id INTEGER NOT NULL REFERENCES timeline_events(id) ON DELETE CASCADE,
+                    target_event_id INTEGER NOT NULL REFERENCES timeline_events(id) ON DELETE CASCADE,
+                    label VARCHAR(64) NOT NULL DEFAULT '导致',
+                    description TEXT NOT NULL DEFAULT ''
+                )
+            """))
+            db.commit()
 
         if "faction_id" not in char_cols:
             db.execute(text("ALTER TABLE characters ADD COLUMN faction_id INTEGER"))

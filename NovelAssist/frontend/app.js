@@ -218,7 +218,10 @@ async function loadTimeline() {
     items.forEach(it => {
         const d = document.createElement("div"); d.className = "timeline-item";
         d.style.cursor = "pointer";
-        d.innerHTML = `<span class="tl-index">#${it.timeline_index || '?'}</span> <span class="tl-time">${e(it.time_label)}</span> <span class="tl-title">${e(it.title || '(无标题)')}</span>`;
+        const catEmoji = { "地形变动":"🏔","人物生死":"💀","政治事件":"🏛","宝物现世":"💎","生物异动":"🐉","自然演变":"🌿","其他":"📋" };
+        const catBadge = `<span class="tl-cat">${catEmoji[it.category]||'📋'} ${e(it.category||'其他')}</span>`;
+        const charPills = (it.character_names || []).map(c => `<span class="tl-char-pill">${e(c)}</span>`).join('');
+        d.innerHTML = `<span class="tl-index">#${it.timeline_index || '?'}</span> ${catBadge} <span class="tl-time">${e(it.time_label)}</span> <span class="tl-title">${e(it.title || '(无标题)')}</span>${charPills}`;
         d.addEventListener("click", () => openTimelineDetail(it));
         const del = document.createElement("button"); del.className = "tl-del"; del.innerHTML = "&#128465;";
         del.addEventListener("click", async (ev) => { ev.stopPropagation(); if (!confirm("删除？")) return; await apiDel("/api/timeline", it.id); loadTimeline(); });
@@ -237,16 +240,54 @@ document.getElementById("tl-add-btn").addEventListener("click", async () => {
 
 // ═══════ Timeline Detail / Edit Modal ═══════
 let _tlEditId = null;
-function openTimelineDetail(it) {
+async function openTimelineDetail(it) {
     _tlEditId = it.id;
     document.getElementById("tl-detail-index").textContent = `#${it.timeline_index || '?'}`;
     document.getElementById("tl-detail-title").value = it.title || '';
     document.getElementById("tl-detail-label").value = it.time_label || '';
     document.getElementById("tl-detail-type").value = it.event_type || currentTimelineType.toLowerCase();
+    document.getElementById("tl-detail-category").value = it.category || '其他';
+    document.getElementById("tl-detail-chars").value = (it.character_names || []).join(', ');
     document.getElementById("tl-detail-location").value = '';
     document.getElementById("tl-detail-content").value = it.content || '';
     document.getElementById("tl-detail-modal").classList.remove("hidden");
+    loadEventRelations(it.id);
 }
+async function loadEventRelations(eventId) {
+    const container = document.getElementById("tl-detail-relations");
+    try {
+        const rels = await (await fetch(`/api/timeline/${eventId}/relations`)).json();
+        if (!rels.length) { container.innerHTML = '<span style="color:var(--text-muted);">(无因果关系)</span>'; return; }
+        container.innerHTML = rels.map(r => {
+            const isSource = r.source_event_id === eventId;
+            const otherId = isSource ? r.target_event_id : r.source_event_id;
+            const dir = isSource ? '→' : '←';
+            return `<span class="rel-pill">${dir} #${otherId} ${e(r.label)} <button class="rel-pill-del" data-rid="${r.id}">×</button></span>`;
+        }).join('');
+        container.querySelectorAll(".rel-pill-del").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                await apiDel("/api/timeline/relations", parseInt(btn.dataset.rid));
+                loadEventRelations(eventId);
+            });
+        });
+    } catch (e) { container.innerHTML = ''; }
+}
+document.getElementById("tl-rel-add-btn").addEventListener("click", async () => {
+    if (!_tlEditId) return;
+    const idx = parseInt(document.getElementById("tl-rel-index").value);
+    if (isNaN(idx)) return;
+    const label = document.getElementById("tl-rel-label").value;
+    // Find the target event by timeline_index
+    const items = await (await fetch(`/api/timeline?novel_id=${currentNovelId}`)).json();
+    const tgt = items.find(x => x.timeline_index === idx);
+    if (!tgt) { alert(`未找到序号为 ${idx} 的事件`); return; }
+    await fetch(`/api/timeline/relations?novel_id=${currentNovelId}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_event_id: _tlEditId, target_event_id: tgt.id, label }),
+    });
+    document.getElementById("tl-rel-index").value = '';
+    loadEventRelations(_tlEditId);
+});
 document.getElementById("tl-detail-cancel").addEventListener("click", () => {
     document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
 });
@@ -255,10 +296,13 @@ document.getElementById("tl-detail-modal").querySelector(".modal-backdrop").addE
 });
 document.getElementById("tl-detail-save").addEventListener("click", async () => {
     if (!_tlEditId) return;
+    const charStr = document.getElementById("tl-detail-chars").value.trim();
     const body = {
         event_type: document.getElementById("tl-detail-type").value,
         title: document.getElementById("tl-detail-title").value.trim(),
         time_label: document.getElementById("tl-detail-label").value.trim(),
+        category: document.getElementById("tl-detail-category").value,
+        character_names: charStr ? charStr.split(',').map(s => s.trim()).filter(Boolean) : [],
         content: document.getElementById("tl-detail-content").value.trim(),
         related_location_name: document.getElementById("tl-detail-location").value.trim() || null,
     };
@@ -268,7 +312,7 @@ document.getElementById("tl-detail-save").addEventListener("click", async () => 
 });
 document.getElementById("tl-detail-delete").addEventListener("click", async () => {
     if (!_tlEditId) return;
-    if (!confirm("确定删除此事件？")) return;
+    if (!confirm("确定删除此事件？关联的因果关系也会一并删除。")) return;
     await apiDel("/api/timeline", _tlEditId);
     document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
     loadTimeline();

@@ -33,6 +33,16 @@ class TimelineEventType(enum.Enum):
     WORLD = "world"
 
 
+class EventCategory(enum.Enum):
+    TERRAIN = "地形变动"
+    CHARACTER_LIFE = "人物生死"
+    POLITICAL = "政治事件"
+    TREASURE = "宝物现世"
+    CREATURE = "生物异动"
+    NATURAL = "自然演变"
+    OTHER = "其他"
+
+
 class Novel(Base):
     __tablename__ = "novels"
 
@@ -198,6 +208,8 @@ class TimelineEvent(Base):
     timeline_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     time_label: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="其他")
+    character_names: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     absolute_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     related_location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
@@ -206,6 +218,21 @@ class TimelineEvent(Base):
 
     novel: Mapped[Novel] = relationship(back_populates="timeline_events")
     related_location: Mapped[Optional[Location]] = relationship()
+
+
+class TimelineEventRelation(Base):
+    """事件因果关系 — 有向边：source → target"""
+    __tablename__ = "timeline_event_relations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
+    source_event_id: Mapped[int] = mapped_column(ForeignKey("timeline_events.id", ondelete="CASCADE"), nullable=False)
+    target_event_id: Mapped[int] = mapped_column(ForeignKey("timeline_events.id", ondelete="CASCADE"), nullable=False)
+    label: Mapped[str] = mapped_column(String(64), nullable=False, default="导致")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    source_event: Mapped[TimelineEvent] = relationship(foreign_keys=[source_event_id])
+    target_event: Mapped[TimelineEvent] = relationship(foreign_keys=[target_event_id])
 
 
 class CharacterSnapshot(Base):
