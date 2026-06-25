@@ -90,6 +90,7 @@ class Chapter(Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     archived_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    pending_timeline_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     volume_id: Mapped[Optional[int]] = mapped_column(ForeignKey("volumes.id"), nullable=True)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)

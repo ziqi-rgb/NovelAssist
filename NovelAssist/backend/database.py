@@ -58,6 +58,9 @@ def run_migration() -> None:
         if "archived_content" not in ch_cols:
             db.execute(text("ALTER TABLE chapters ADD COLUMN archived_content TEXT DEFAULT ''"))
             db.commit()
+        if "pending_timeline_text" not in ch_cols:
+            db.execute(text("ALTER TABLE chapters ADD COLUMN pending_timeline_text TEXT DEFAULT ''"))
+            db.commit()
 
         te_cols = [c["name"] for c in insp.get_columns("timeline_events")]
         if "timeline_index" not in te_cols:
