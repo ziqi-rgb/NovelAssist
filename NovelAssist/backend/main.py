@@ -1070,17 +1070,6 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     base_url = req.base_url or LLM_BASE_URL
     model = req.model or LLM_MODEL
 
-    # 1. Move text — prefer position-based removal, fall back to str.replace
-    if req.selection_start < req.selection_end and ch.content[req.selection_start:req.selection_end] == text:
-        remaining = (ch.content[:req.selection_start] + ch.content[req.selection_end:]).strip()
-    else:
-        remaining = ch.content.replace(text, "", 1).strip()
-    if ch.archived_content:
-        ch.archived_content += "\n\n" + text
-    else:
-        ch.archived_content = text
-    ch.content = remaining
-
     gs = db.get(GlobalSettings, 1)
     templates = gs.prompt_templates if gs else DEFAULT_PROMPT_TEMPLATES
 
@@ -1290,6 +1279,17 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
         raise
     except Exception as e:
         character_error = str(e)
+
+    # Move text from content → archived (only after all processing succeeds)
+    if req.selection_start < req.selection_end and ch.content[req.selection_start:req.selection_end] == text:
+        remaining = (ch.content[:req.selection_start] + ch.content[req.selection_end:]).strip()
+    else:
+        remaining = ch.content.replace(text, "", 1).strip()
+    if ch.archived_content:
+        ch.archived_content += "\n\n" + text
+    else:
+        ch.archived_content = text
+    ch.content = remaining
 
     db.commit()
     return {
