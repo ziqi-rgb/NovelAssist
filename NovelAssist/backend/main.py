@@ -1407,10 +1407,13 @@ def _resolve_coord_conflict(db: Session, novel_id: int, parent_id: int | None, g
             q = q.filter(Location.id != exclude_id)
         if q.first() is None:
             break  # No conflict
-        # Shift: x+1, wrap at 24
+        # Shift: x+1, wrap at 24; (24,24) wraps to (0,0)
         if grid_x >= 24:
             grid_x = 0
-            grid_y += 1
+            if grid_y >= 24:
+                grid_y = 0
+            else:
+                grid_y += 1
         else:
             grid_x += 1
     return grid_x, grid_y
