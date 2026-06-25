@@ -3191,10 +3191,6 @@ const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
 const promptLabels = { system_agent: "系统代理神谕", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "场景沙盘" };
 
-function getCopilotScene() {
-    return "auto";
-}
-
 document.getElementById("prompt-settings-btn").addEventListener("click", async () => {
     const prompts = await (await fetch("/api/settings/prompts")).json();
     promptTpl.innerHTML = '<div style="text-align:right;margin-bottom:10px;"><button class="sys-btn sys-btn-danger" style="font-size:.72rem;" onclick="if(confirm(\'确定恢复所有提示词为系统默认吗？您的修改将丢失！\')){fetch(\'/api/settings/reset_prompts\',{method:\'POST\'}).then(function(){location.reload();});}">🔄 恢复全部出厂默认</button></div>';
