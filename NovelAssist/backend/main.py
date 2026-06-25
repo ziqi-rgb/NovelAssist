@@ -204,6 +204,7 @@ AGENT_TOOLS = [
                         "description": "数据类型：characters(人物列表含势力归属), factions(势力目录含成员), relations(关系有向图谱), locations(地点列表), timeline(时间线), all(全部)",
                     },
                     "filter": {"type": "string", "description": "可选的名称过滤关键词"},
+                    "event_index": {"type": "integer", "description": "仅对 timeline 有效：指定要检索的时间线事件序号(timeline_index)，返回该事件的完整详情(title/time_label/content/event_type/absolute_tick/关联地点)。不填则返回全部事件。"},
                 },
                 "required": ["query_type"],
             },
@@ -2193,6 +2194,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
         if tool_name == "query_world_state" and novel_id and db:
             qtype = arguments.get("query_type", "all")
             filt = (arguments.get("filter") or "").strip()
+            evt_idx = arguments.get("event_index")
             result = {}
             def _m(s): return not filt or filt.lower() in (s or "").lower()
             if qtype in ("characters","all"):
@@ -2229,9 +2231,28 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                 lines = [f"• {l.name}[{l.scale_level}] — {l.description or ''}" for l in locs if not filt or _m(l.name)]
                 result["locations"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("timeline","all"):
-                evts = db.query(TimelineEvent).filter(TimelineEvent.novel_id==novel_id).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label).all()
-                lines = [f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}" for e in evts if not filt or (_m(e.time_label) or _m(e.content) or _m(e.title))]
-                result["timeline"] = "\n".join(lines) if lines else "(无)"
+                evts_q = db.query(TimelineEvent).filter(TimelineEvent.novel_id==novel_id)
+                if evt_idx is not None:
+                    evts_q = evts_q.filter(TimelineEvent.timeline_index == evt_idx)
+                evts = evts_q.order_by(TimelineEvent.timeline_index, TimelineEvent.time_label).all()
+                if evt_idx is not None:
+                    if evts:
+                        e = evts[0]
+                        loc_name = db.get(Location, e.related_location_id).name if e.related_location_id else "无"
+                        result["timeline"] = (
+                            f"📌 事件 #{e.timeline_index}\n"
+                            f"标题: {e.title or '(无)'}\n"
+                            f"时间: {e.time_label}\n"
+                            f"类型: {e.event_type}\n"
+                            f"绝对Tick: {e.absolute_tick}\n"
+                            f"关联地点: {loc_name}\n"
+                            f"详情:\n{e.content}"
+                        )
+                    else:
+                        result["timeline"] = f"未找到序号为 {evt_idx} 的时间线事件"
+                else:
+                    lines = [f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}" for e in evts if not filt or (_m(e.time_label) or _m(e.content) or _m(e.title))]
+                    result["timeline"] = "\n".join(lines) if lines else "(无)"
             return "查询结果:\n" + "\n\n".join(f"--- {k} ---\n{v}" for k,v in result.items())
         return "工具不可用"
 
@@ -3268,6 +3289,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
     if req.tool_name == "query_world_state":
         qtype = req.arguments.get("query_type", "all")
         filt = (req.arguments.get("filter") or "").strip()
+        evt_idx = req.arguments.get("event_index")
         result = {}
 
         def _match(s):
@@ -3320,13 +3342,32 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             result["locations"] = "\n".join(lines) if lines else "(无匹配地点)"
 
         if qtype in ("timeline", "all"):
-            events = db.query(TimelineEvent).filter(TimelineEvent.novel_id == novel_id).order_by(TimelineEvent.timeline_index, TimelineEvent.time_label).all()
-            lines = []
-            for e in events:
-                if filt and not _match(e.time_label) and not _match(e.content) and not _match(e.title):
-                    continue
-                lines.append(f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}")
-            result["timeline"] = "\n".join(lines) if lines else "(无时间线事件)"
+            evts_q = db.query(TimelineEvent).filter(TimelineEvent.novel_id == novel_id)
+            if evt_idx is not None:
+                evts_q = evts_q.filter(TimelineEvent.timeline_index == evt_idx)
+            events = evts_q.order_by(TimelineEvent.timeline_index, TimelineEvent.time_label).all()
+            if evt_idx is not None:
+                if events:
+                    e = events[0]
+                    loc_name = db.get(Location, e.related_location_id).name if e.related_location_id else "无"
+                    result["timeline"] = (
+                        f"📌 事件 #{e.timeline_index}\n"
+                        f"标题: {e.title or '(无)'}\n"
+                        f"时间: {e.time_label}\n"
+                        f"类型: {e.event_type}\n"
+                        f"绝对Tick: {e.absolute_tick}\n"
+                        f"关联地点: {loc_name}\n"
+                        f"详情:\n{e.content}"
+                    )
+                else:
+                    result["timeline"] = f"未找到序号为 {evt_idx} 的时间线事件"
+            else:
+                lines = []
+                for e in events:
+                    if filt and not _match(e.time_label) and not _match(e.content) and not _match(e.title):
+                        continue
+                    lines.append(f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}")
+                result["timeline"] = "\n".join(lines) if lines else "(无时间线事件)"
 
         return {"status": "success", "query_type": qtype, "data": result}
 
