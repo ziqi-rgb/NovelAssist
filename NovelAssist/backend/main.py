@@ -452,6 +452,8 @@ async def lifespan(app: FastAPI):
         db.execute(text("UPDATE timeline_events SET event_type = 'HISTORY' WHERE event_type = 'history'"))
         db.execute(text("UPDATE timeline_events SET event_type = 'WORLD' WHERE event_type = 'world'"))
         db.commit()
+        # Auto-heal coordinate conflicts across all locations
+        _auto_heal_all_coord_conflicts(db)
     # Prompt auto-heal in independent session
     with SessionLocal() as db2:
         gs = db2.get(GlobalSettings, 1)
@@ -1417,6 +1419,44 @@ def _resolve_coord_conflict(db: Session, novel_id: int, parent_id: int | None, g
         else:
             grid_x += 1
     return grid_x, grid_y
+
+
+def _auto_heal_all_coord_conflicts(db: Session) -> None:
+    """Startup healing: scan all locations grouped by (novel_id, parent_id), shift duplicate coords."""
+    all_locs = db.query(Location).order_by(Location.id).all()
+    # Group by (novel_id, parent_id) — use -1 as sentinel for NULL parent
+    groups: dict[tuple[int, int], list[Location]] = {}
+    for loc in all_locs:
+        if loc.grid_x is None or loc.grid_y is None:
+            continue
+        key = (loc.novel_id, loc.parent_id if loc.parent_id is not None else -1)
+        groups.setdefault(key, []).append(loc)
+
+    fixed = 0
+    for key, locs in groups.items():
+        novel_id, _ = key
+        seen: set[tuple[int, int]] = set()
+        for loc in locs:
+            x, y = loc.grid_x, loc.grid_y
+            original = (x, y)
+            # Resolve conflict against already-seen coords in this group
+            while (x, y) in seen:
+                if x >= 24:
+                    x = 0
+                    if y >= 24:
+                        y = 0
+                    else:
+                        y += 1
+                else:
+                    x += 1
+            seen.add((x, y))
+            if (x, y) != original:
+                loc.grid_x, loc.grid_y = x, y
+                loc.map_x, loc.map_y = x, y
+                fixed += 1
+    if fixed:
+        db.commit()
+        print(f"[Coord Heal] 自动修复 {fixed} 个坐标冲突")
 
 
 def _sync_attrs_to_templates(db: Session, novel_id: int, scale_level: str, attrs: dict) -> None:
