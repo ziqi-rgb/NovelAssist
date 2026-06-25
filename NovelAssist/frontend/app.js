@@ -2565,8 +2565,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 rc._template_snapshot = [
                                     {"group":"基础信息","fields":["姓名","年龄","性别","性格"]},
                                     {"group":"外貌特征","fields":["身高","发色","瞳色"]},
-                                    {"group":"背景故事","fields":["出身","经历"]},
-                                    {"group":"人物关系","fields":[]}
+                                    {"group":"背景故事","fields":["出身","经历"]}
                                 ];
                                 // 写入数据库持久化，后续重建不再重置
                                 try { await fetch("/api/novels/" + currentNovelId + "/template", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(rc._template_snapshot) }); } catch(e) {}
