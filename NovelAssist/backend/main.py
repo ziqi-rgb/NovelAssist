@@ -1083,6 +1083,8 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     timeline_added = False
     timeline_events_added: list[str] = []
     timeline_error: Optional[str] = None
+    pending_timeline_events: list[TimelineEvent] = []
+    pending_tick_advance = 0
     novel = db.get(Novel, ch.novel_id)
     try:
         tl_resp = await client.chat.completions.create(
@@ -1108,9 +1110,8 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
             elapsed_hours = int(parsed_tl.get("elapsed_hours", 0))
             # Multi-dimensional tick conversion: 1 year=8640h, 1 month=720h, 1 day=24h
             tick_increment = (elapsed_years * 8640) + (elapsed_months * 720) + (elapsed_days * 24) + elapsed_hours
-            if tick_increment > 0 and novel:
-                novel.current_tick += tick_increment
-            cal_time = format_ticks_to_calendar(novel.current_tick) if novel else ""
+            pending_tick_advance = tick_increment
+            cal_time = format_ticks_to_calendar((novel.current_tick if novel else 0) + tick_increment)
             events_list = parsed_tl.get("events", [])
             for evt in events_list:
                 max_idx = db.scalar(
@@ -1127,9 +1128,9 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                     timeline_index=new_idx,
                     time_label=cal_time,
                     content=evt_desc,
-                    absolute_tick=novel.current_tick if novel else 0,
+                    absolute_tick=(novel.current_tick if novel else 0) + tick_increment,
                 )
-                db.add(te)
+                pending_timeline_events.append(te)
                 timeline_added = True
                 timeline_events_added.append(f"[{cal_time}] {evt_desc}")
     except HTTPException:
@@ -1193,7 +1194,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                             attributes=attrs_init,
                         )
                         db.add(new_char)
-                        db.commit()
+                        db.flush()
                         db.refresh(new_char)
                         name = new_char.name
                         updated_names.append(f"✨ [新登场] {name} ({new_char.status})")
@@ -1269,7 +1270,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                         description=f"由归档事件自动创建：{fac_name}",
                                     )
                                     db.add(new_fac)
-                                    db.commit()
+                                    db.flush()
                                     db.refresh(new_fac)
                                     target.faction_id = new_fac.id
 
@@ -1280,7 +1281,17 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     except Exception as e:
         character_error = str(e)
 
-    # Move text from content → archived (only after all processing succeeds)
+    # ── All processing succeeded — now apply all pending writes atomically ──
+
+    # Apply world time advancement
+    if pending_tick_advance > 0 and novel:
+        novel.current_tick += pending_tick_advance
+
+    # Create timeline events
+    for te in pending_timeline_events:
+        db.add(te)
+
+    # Move text from content → archived
     if req.selection_start < req.selection_end and ch.content[req.selection_start:req.selection_end] == text:
         remaining = (ch.content[:req.selection_start] + ch.content[req.selection_end:]).strip()
     else:
