@@ -3183,7 +3183,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { system_agent: "系统代理神谕", intent_classifier: "意图预检分类器", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", extract_outline: "正文逆向提炼", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "场景沙盘", import_data: "智能导入解析" };
+const promptLabels = { system_agent: "系统代理神谕", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", extract_outline: "正文逆向提炼", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "场景沙盘" };
 
 function getCopilotScene() {
     return "auto";
@@ -3194,7 +3194,7 @@ document.getElementById("prompt-settings-btn").addEventListener("click", async (
     promptTpl.innerHTML = '<div style="text-align:right;margin-bottom:10px;"><button class="sys-btn sys-btn-danger" style="font-size:.72rem;" onclick="if(confirm(\'确定恢复所有提示词为系统默认吗？您的修改将丢失！\')){fetch(\'/api/settings/reset_prompts\',{method:\'POST\'}).then(function(){location.reload();});}">🔄 恢复全部出厂默认</button></div>';
     Object.entries(promptLabels).forEach(([key, label]) => {
         var warning = "";
-        if (key === "chat" || key === "import_data" || key === "system_agent" || key === "intent_classifier") {
+        if (key === "chat" || key === "system_agent") {
             warning = ' <span style="color:#ef4444;font-size:0.75rem;">(⚠️ 核心动作系统词，勿随意删减指令)</span>';
         }
         const div = document.createElement("div"); div.style.marginBottom = "12px";
@@ -3241,14 +3241,6 @@ async function loadChainSelect() {
     chainSelect.innerHTML = '<option value="">-- 选择推演方案 --</option>';
     const chains = await (await fetch("/api/reasoning_chains" + nidQ())).json();
     chains.forEach(rc => { chainSelect.innerHTML += `<option value="${rc.id}">${e(rc.title)}</option>`; });
-    // Also populate chat scene dropdown with SOP chains
-    var sceneSel = document.getElementById("chat-scene-select");
-    if (sceneSel) {
-        sceneSel.querySelectorAll("option[value^='chain_']").forEach(function(o) { o.remove(); });
-        chains.forEach(function(rc) {
-            sceneSel.innerHTML += '<option value="chain_' + rc.id + '">🔗 SOP: ' + e(rc.title) + '</option>';
-        });
-    }
 }
 
 chainSelect.addEventListener("change", async () => {

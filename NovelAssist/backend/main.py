@@ -18,7 +18,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import httpx
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query, Body
@@ -1853,6 +1852,18 @@ def list_reasoning_chains(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: S
                 nodes=nodes,
             ))
     db.commit()
+    # 🛡️ 系统链去重：若存在同名重复（历史遗留），保留最旧(ID最小)的，删除其余
+    for name in SYSTEM_CHAIN_NAMES:
+        dupes = db.scalars(
+            select(ReasoningChain).where(
+                ReasoningChain.novel_id == novel_id,
+                ReasoningChain.title == name,
+            ).order_by(ReasoningChain.id)
+        ).all()
+        if len(dupes) > 1:
+            for dupe in dupes[1:]:
+                db.delete(dupe)
+            db.commit()
     return db.scalars(select(ReasoningChain).where(ReasoningChain.novel_id == novel_id).order_by(ReasoningChain.id)).all()
 
 @app.get("/api/reasoning_chains/{chain_id}", response_model=ReasoningChainOut)
@@ -2142,32 +2153,6 @@ class ReasoningExecuteRequest(BaseModel):
     no_tools: bool = False  # 禁用工具调用（Genesis 建纲模式）
 
 
-async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: str, system_prompt: str) -> str:
-    if not instruction.strip():
-        return "chat"
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"判断以下用户指令的意图类别：\n{instruction}"},
-        ],
-        "max_tokens": 10, "temperature": 0.0,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(url, headers=headers, json=payload)
-            if res.status_code == 200:
-                ans = res.json()["choices"][0]["message"]["content"].strip().lower()
-                for valid in ["chat", "map_assist", "outline_assist", "character_assist", "import_data"]:
-                    if valid in ans:
-                        return valid
-    except Exception:
-        pass
-    return "chat"
-
-
 async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None) -> StreamingResponse:
 
     def _execute_readonly_tool(tool_name: str, arguments: dict) -> str:
@@ -2429,6 +2414,155 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
     novel = db.get(Novel, novel_id)
     current_tick = novel.current_tick if novel else 0
 
+    # ═══════════ Lazy-batch cache — eliminates N+1 queries ═══════════
+    class _Cache:
+        """Lazily loads and indexes all per-novel reference data so inner
+        callbacks never issue individual DB queries inside loops."""
+        __slots__ = ()
+        _chars: dict[int, Character] | None = None
+        _locs: dict[int, Location] | None = None
+        _factions: dict[int, Faction] | None = None
+        _traj: dict[int, CharacterTrajectory | None] | None = None  # best active traj per char_id
+        _routines: dict[int, list[CharacterRoutine]] | None = None
+        _faction_members: dict[int, list[Character]] | None = None  # faction_id → members
+
+        @classmethod
+        def _ensure_chars(cls):
+            if cls._chars is None:
+                all_c = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+                cls._chars = {c.id: c for c in all_c}
+
+        @classmethod
+        def _ensure_locs(cls):
+            if cls._locs is None:
+                all_l = db.scalars(select(Location).where(Location.novel_id == novel_id)).all()
+                cls._locs = {loc.id: loc for loc in all_l}
+
+        @classmethod
+        def _ensure_factions(cls):
+            if cls._factions is None:
+                all_f = db.scalars(select(Faction).where(Faction.novel_id == novel_id)).all()
+                cls._factions = {f.id: f for f in all_f}
+
+        @classmethod
+        def _ensure_traj(cls):
+            if cls._traj is None:
+                cls._traj = {}
+                trajs = db.scalars(
+                    select(CharacterTrajectory).where(
+                        CharacterTrajectory.character_id.in_(
+                            select(Character.id).where(Character.novel_id == novel_id)
+                        ),
+                        CharacterTrajectory.start_tick <= current_tick,
+                    ).order_by(CharacterTrajectory.start_tick.desc())
+                ).all()
+                for t in trajs:
+                    if t.character_id not in cls._traj:
+                        cls._traj[t.character_id] = t
+
+        @classmethod
+        def _ensure_routines(cls):
+            if cls._routines is None:
+                cls._routines = {}
+                all_r = db.scalars(
+                    select(CharacterRoutine).where(
+                        CharacterRoutine.character_id.in_(
+                            select(Character.id).where(Character.novel_id == novel_id)
+                        )
+                    )
+                ).all()
+                for r in all_r:
+                    cls._routines.setdefault(r.character_id, []).append(r)
+
+        @classmethod
+        def _ensure_faction_members(cls):
+            if cls._faction_members is None:
+                cls._faction_members = {}
+                cls._ensure_chars()
+                for c in cls._chars.values():
+                    if c.faction_id:
+                        cls._faction_members.setdefault(c.faction_id, []).append(c)
+
+        @classmethod
+        def char_status(cls, char_id: int) -> dict:
+            """Cached replacement for get_character_current_status()."""
+            cls._ensure_traj()
+            cls._ensure_locs()
+            cls._ensure_routines()
+            cls._ensure_chars()
+
+            traj = cls._traj.get(char_id)
+            if traj and (traj.end_tick is None or traj.end_tick > current_tick):
+                loc = cls._locs.get(traj.location_id)
+                return {"type": "trajectory", "location_id": traj.location_id,
+                        "location_name": loc.name if loc else "未知地", "desc": traj.reason}
+
+            fallback_routine = None
+            routines = cls._routines.get(char_id, [])
+            config = novel.calendar_config if novel and novel.calendar_config else {}
+            for r in routines:
+                if not r.cycle_value or str(r.cycle_value).strip() == "常驻":
+                    fallback_routine = r
+                elif CalendarEngine.is_routine_active(current_tick, config, r.cycle_type, r.cycle_value):
+                    loc = cls._locs.get(r.location_id)
+                    return {"type": "routine", "location_id": r.location_id,
+                            "location_name": loc.name if loc else "未知地", "desc": r.activity}
+            if fallback_routine:
+                loc = cls._locs.get(fallback_routine.location_id)
+                loc_name = loc.name if loc else "未知地"
+                return {"type": "routine_fallback", "location_id": fallback_routine.location_id,
+                        "location_name": loc_name, "desc": f"常驻于{loc_name}"}
+            return {"type": "unknown", "location_id": None, "location_name": "行踪不明", "desc": ""}
+
+        @classmethod
+        def computed_attrs(cls, location_id: int) -> dict:
+            """Cached replacement for get_computed_attributes — no recursive DB hits."""
+            cls._ensure_locs()
+            result: dict = {}
+            cur: int | None = location_id
+            visited: set[int] = set()
+            while cur is not None and cur not in visited:
+                visited.add(cur)
+                loc = cls._locs.get(cur)
+                if loc and loc.attributes and isinstance(loc.attributes, dict):
+                    for k, v in loc.attributes.items():
+                        if v and k not in result:
+                            result[k] = v
+                cur = loc.parent_id if loc else None
+            return result
+
+        @classmethod
+        def get_faction(cls, faction_id: int) -> Faction | None:
+            cls._ensure_factions()
+            return cls._factions.get(faction_id)
+
+        @classmethod
+        def get_char(cls, char_id: int) -> Character | None:
+            cls._ensure_chars()
+            return cls._chars.get(char_id)
+
+        @classmethod
+        def get_loc(cls, loc_id: int) -> Location | None:
+            cls._ensure_locs()
+            return cls._locs.get(loc_id)
+
+        @classmethod
+        def all_chars(cls) -> list[Character]:
+            cls._ensure_chars()
+            return list(cls._chars.values())
+
+        @classmethod
+        def all_locs(cls) -> list[Location]:
+            cls._ensure_locs()
+            return list(cls._locs.values())
+
+        @classmethod
+        def faction_members_of(cls, faction_id: int) -> list[Character]:
+            cls._ensure_faction_members()
+            return cls._faction_members.get(faction_id, [])
+
+    # ═══════════ End cache ═══════════
+
     def _fmt_char(c) -> str:
         name = c.name
         if c.attributes and isinstance(c.attributes, dict):
@@ -2436,7 +2570,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             if isinstance(base, dict) and base.get("姓名"):
                 name = str(base["姓名"])
         parts: list[str] = [f"- **{name}** (ID:{c.id}) [{c.status}] {'🏃活跃' if c.is_active else '🚪退场'}"]
-        status = get_character_current_status(c.id, current_tick, db)
+        status = _Cache.char_status(c.id)
         parts.append(f"  📍 当前位置: {status['location_name']} ({status['desc']})")
         if c.aliases:
             parts.append(f"  别名: {c.aliases}")
@@ -2455,7 +2589,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
         line = f"- **{lc.name}** [{sc}]"
         if lc.description:
             line += f": {lc.description}"
-        comp = get_computed_attributes(lc.id, db)
+        comp = _Cache.computed_attrs(lc.id)
         if comp:
             for k, v in comp.items():
                 if v:
@@ -2472,15 +2606,14 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             for o in outlines:
                 lines.append(f"- **{o.title}** [{o.category}]: {o.description}")
             parts.append("\n".join(lines))
-        chars = db.scalars(select(Character).where(
-            Character.novel_id == novel_id, Character.is_always_context.is_(True)
-        )).all()
-        if chars:
+        _Cache._ensure_chars()
+        always_chars = [c for c in _Cache.all_chars() if c.is_always_context]
+        if always_chars:
             lines = ["## 常驻人物"]
-            for c in chars:
+            for c in always_chars:
                 lines.append(_fmt_char(c))
             parts.append("\n".join(lines))
-        locs = db.scalars(select(Location).where(Location.novel_id == novel_id)).all()
+        locs = _Cache.all_locs()
         if locs:
             lines = ["## 地点列表"]
             for lc in locs:
@@ -2511,7 +2644,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return "\n".join(lines)
 
         if ph == "characters_list":
-            chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+            chars = _Cache.all_chars()
             # Active + always_context characters (always_context overrides inactive)
             active = [c for c in chars if c.is_active or c.is_always_context]
             if not active:
@@ -2524,10 +2657,10 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     if isinstance(base, dict) and base.get("姓名"):
                         name = str(base["姓名"])
                 active_tag = "🏃活跃" if c.is_active else "🚪退场(常驻)"
-                status_info = get_character_current_status(c.id, current_tick, db)
+                status_info = _Cache.char_status(c.id)
                 faction_info = ""
                 if c.faction_id:
-                    faction = db.get(Faction, c.faction_id)
+                    faction = _Cache.get_faction(c.faction_id)
                     if faction:
                         faction_info = f" | 🏛️ {faction.name}"
                         if c.faction_role:
@@ -2536,7 +2669,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return "\n".join(lines)
 
         if ph == "characters_inactive":
-            chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+            chars = _Cache.all_chars()
             # Only truly retired AND not always_context
             inactive = [c for c in chars if not c.is_active and not c.is_always_context]
             if not inactive:
@@ -2552,7 +2685,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return "\n".join(lines)
 
         if ph == "characters_full_detail":
-            chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+            chars = _Cache.all_chars()
             if not chars:
                 return "【当前系统内暂无任何人物档案，等待创建中】"
             lines = []
@@ -2570,7 +2703,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return "\n".join(lines)
 
         if ph == "locations_list":
-            locs = db.scalars(select(Location).where(Location.novel_id == novel_id)).all()
+            locs = _Cache.all_locs()
             if not locs:
                 return "(无地点)"
             lines = ["## 地点列表 (含ID与层级)"]
@@ -2581,7 +2714,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return "\n".join(lines)
 
         if ph == "locations_full_detail":
-            locs = db.scalars(select(Location).where(Location.novel_id == novel_id)).all()
+            locs = _Cache.all_locs()
             by_parent: dict = {}
             for lc in locs:
                 by_parent.setdefault(lc.parent_id, []).append(lc)
@@ -2725,12 +2858,13 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             return _outline_tree_by_cat("剧情大纲")
 
         if ph == "factions_list":
-            factions = db.query(Faction).filter(Faction.novel_id == novel_id).all()
+            _Cache._ensure_factions()
+            factions = list(_Cache._factions.values()) if _Cache._factions else []
             if not factions:
                 return "(无势力数据)"
             res = []
             for f in factions:
-                members = db.query(Character).filter(Character.faction_id == f.id).all()
+                members = _Cache.faction_members_of(f.id)
                 mem_strs = [f"{m.name}({m.faction_role})" for m in members if m.faction_role]
                 mem_info = f"成员: {', '.join(mem_strs)}" if mem_strs else "暂无成员"
                 base_info = f"驻地ID:{f.base_location_id}" if f.base_location_id else "无固定驻地"
@@ -2743,8 +2877,8 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 return "(无关系连线)"
             res = []
             for r in relations:
-                src = db.get(Character, r.source_id)
-                tgt = db.get(Character, r.target_id)
+                src = _Cache.get_char(r.source_id)
+                tgt = _Cache.get_char(r.target_id)
                 if src and tgt:
                     weight_desc = ""
                     if r.weight >= 80:
@@ -2762,7 +2896,7 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
         m = re.match(r"character:(.+)$", ph)
         if m:
             name = m.group(1).strip()
-            chars = db.scalars(select(Character).where(Character.novel_id == novel_id)).all()
+            chars = _Cache.all_chars()
             for c in chars:
                 if c.name == name or name in (c.aliases or ""):
                     info = [f"## 人物: {c.name}"]
@@ -2772,13 +2906,14 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                         info.append(f"描述: {c.description}")
                     info.append(f"状态: {c.status}")
                     info.append(f"活跃: {'是' if c.is_active else '否（已退场）'}")
-                    status = get_character_current_status(c.id, current_tick, db)
+                    status = _Cache.char_status(c.id)
                     info.append(f"📍 当前时空坐标: 位于【{status['location_name']}】({status['desc']})")
-                    routines = db.query(CharacterRoutine).filter_by(character_id=c.id).all()
+                    _Cache._ensure_routines()
+                    routines = _Cache._routines.get(c.id, []) if _Cache._routines else []
                     if routines:
                         info.append("📅 日常作息规律:")
                         for r in routines:
-                            r_loc = db.get(Location, r.location_id)
+                            r_loc = _Cache.get_loc(r.location_id)
                             r_loc_name = r_loc.name if r_loc else "未知"
                             info.append(f"  - [{r.cycle_type}{r.cycle_value}] 在 {r_loc_name} ({r.activity})")
                     if c.attributes and isinstance(c.attributes, dict):
@@ -2802,14 +2937,15 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
         m = re.match(r"location:(.+)$", ph)
         if m:
             name = m.group(1).strip()
-            locs = db.scalars(select(Location).where(Location.novel_id == novel_id, Location.name == name)).all()
+            _Cache._ensure_locs()
+            locs = [loc for loc in _Cache.all_locs() if loc.name == name]
             if locs:
                 lc = locs[0]
                 sc = lc.scale.value if hasattr(lc.scale, "value") else str(lc.scale)
                 info = [f"## 地点: {lc.name}", f"尺度: {sc}"]
                 if lc.description:
                     info.append(f"描述: {lc.description}")
-                comp = get_computed_attributes(lc.id, db)
+                comp = _Cache.computed_attrs(lc.id)
                 if comp:
                     for k, v in comp.items():
                         if v:

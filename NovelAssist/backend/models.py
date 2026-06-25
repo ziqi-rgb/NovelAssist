@@ -405,21 +405,6 @@ DEFAULT_PROMPT_TEMPLATES = {
         "{content}\n\n"
         "推演指令：{instruction}"
     ),
-    "import_data": (
-        "【全维世界重构引擎】（⚠️你必须且只能高频调用 manage_world_element 工具录入数据）\n"
-        "用户导入的设定原件如下：\n{instruction}\n\n"
-        "系统当前配置属性模板如下：\n人物自定义属性模板：{character_template}\n\n"
-        "【最高指令】：\n"
-        "你的职责是深度解析并重构上述设定文本，将其100%拆解并落子在数据库中。由于原始文本可能极为庞大，你必须遵循以下【创世优先级顺序天条】，有逻辑、不留死角地推进创建：\n"
-        "1. 🌟【世界观与能力体系】：提炼最宏观的世界底层运行法则、超凡晋升路线。调用 manage_world_element (etype: outline) 写入世界观或能力体系设定分类。\n"
-        "2. 📍【物理地理】：提取文中所有出现的大陆、国家、城池、险地名录。理顺父子级嵌套，调用 manage_world_element (etype: location) 进行位置落点，分配合理的 scale_level 与 (x,y) 坐标。\n"
-        "3. 🏛️【割据势力】：提取割据的社会组织。调用 manage_world_element 写入为势力大纲条目，或关联到新建的地标上。\n"
-        "4. 👤【群像人物】：提取登场人物，对照属性模板，调用 manage_world_element (etype: character) 创建人物卡，属性字典 attributes 必须严丝合缝、饱满真实。\n"
-        "5. 📖【主线大纲】：将故事情节、起承转合，按 [卷/第一卷] -> [章/第一章] -> [幕/第一幕] 递归嵌套创建为剧情大纲条目，parent_name 必须通过'第一卷/第一章'这种斜杠级联路径精确绑定父级。\n\n"
-        "【特别规范】：\n"
-        "- 写入大纲（outline）的 description 必须包含生动丰富的描述，且必须使用 Markdown 格式（二级标题、无序列表、引用）进行极致的美化。\n"
-        "你必须边分析、边疯狂调取 manage_world_element 写入，将这个宇宙饱满地复现在系统沙盘中！"
-    ),
     "extract_outline": (
         "【小说正文超凡提炼机】（⚠️你必须且只能高频调用 manage_world_element 工具录入数据）\n"
         "小说正文文本：\n{instruction}\n\n"
@@ -432,16 +417,6 @@ DEFAULT_PROMPT_TEMPLATES = {
         "4. 👤【提炼登场人设】：将出场人物在对话、战斗中暴露的性格、境界、功法、弱点，转化为极其饱满的人物卡，调用 manage_world_element (etype: character) 归档。\n"
         "5. 📖【提炼本章梗概】：将本章正文所描述的发生冲突、起承转合、伏笔铺垫，提炼为精简的剧情大纲节点，写入到'剧情大纲'分类下（category: 剧情大纲，使用 parent_name 指明其归属卷章，如'第一卷/第一章'）。\n\n"
         "【执行守则】：逆向提炼时，写入的所有 description 必须是精美的 Markdown 排版（列表、加粗、引用块等）。开始执行创世落子！"
-    ),
-    "intent_classifier": (
-        "你是一个意图分类器。必须仅返回以下五个单词之一，不要有任何其他字符：\n"
-        "chat, map_assist, outline_assist, character_assist, import_data。\n\n"
-        "分类规则：\n"
-        "- 分析或排查地理/地图：map_assist\n"
-        "- 分析大纲/剧情：outline_assist\n"
-        "- 分析人物/角色：character_assist\n"
-        "- 长篇设定导入解析：import_data\n"
-        "- 其他日常对话或直接下达的新增/修改指令：chat"
     ),
     "map_gen": (
         "【地图自动化生成模式】\n用户下令生成地图。你必须：\n"
