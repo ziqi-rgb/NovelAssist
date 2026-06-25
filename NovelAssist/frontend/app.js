@@ -986,18 +986,33 @@ function onMapCellClick(e, loc, x, y) {
         document.addEventListener("click", closeContextMenu, { once: true });
         e.stopPropagation();
     } else {
-        const breadcrumbScale = mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level || "";
-        const name = prompt(`在此创建新地点（当前标尺: ${breadcrumbScale}）:`, "");
+        const parentScale = mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level || "建筑";
+        const name = prompt(`在此创建新地点（标尺: ${parentScale}，可自由输入自定义标尺）:`, "");
         if (!name) return;
-        createMapLocation(name, x, y);
+        // Allow inline scale override: "地点名@标尺名"
+        const atIdx = name.lastIndexOf("@");
+        let scaleLevel = parentScale;
+        let finalName = name;
+        if (atIdx > 0) {
+            finalName = name.substring(0, atIdx).trim();
+            scaleLevel = name.substring(atIdx + 1).trim() || parentScale;
+        }
+        createMapLocation(finalName, x, y, scaleLevel);
     }
 }
 
-async function createMapLocation(name, x, y) {
-    const defaultScale = (mapBreadcrumbs.length > 1 && mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level)
-        ? mapBreadcrumbs[mapBreadcrumbs.length - 1].scale_level : "建筑";
-    const scaleLevel = prompt(`设置标尺级别（预设: ${DEFAULT_SCALES.join("/")}，也支持自定义）:`, defaultScale) || defaultScale;
-    await fetch("/api/locations" + nidQ(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, scale_level: scaleLevel, parent_id: mapParentId, grid_x: x, grid_y: y }) });
+async function createMapLocation(name, x, y, scaleLevel) {
+    try {
+        const res = await fetch("/api/locations" + nidQ(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, scale_level: scaleLevel, parent_id: mapParentId, grid_x: x, grid_y: y }) });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert("创建失败: " + (err.detail || res.statusText));
+            return;
+        }
+    } catch (e) {
+        alert("创建失败: 网络错误");
+        return;
+    }
     await loadLocationTree();
     renderMapGrid();
 }
