@@ -1121,18 +1121,49 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                     )
                 )
                 new_idx = (max_idx or 0) + 1
-                evt_desc = f"📍 [{evt.get('location', '未知')}] ({evt.get('characters', '群像')}) {evt.get('event', '')}"
+                # Extract structured fields
+                evt_title = str(evt.get("title", "")).strip()
+                evt_category = str(evt.get("category", "其他")).strip()
+                evt_location = str(evt.get("location", "")).strip()
+                evt_desc = str(evt.get("event", "")).strip()
+                # Parse character_names: accept both list and comma-string
+                raw_chars = evt.get("characters", [])
+                if isinstance(raw_chars, str):
+                    char_names = [c.strip() for c in raw_chars.split(",") if c.strip()]
+                elif isinstance(raw_chars, list):
+                    char_names = [str(c).strip() for c in raw_chars if str(c).strip()]
+                else:
+                    char_names = []
+                char_ids = _resolve_character_ids(db, ch.novel_id, [], char_names)
+                # Resolve location name → ID
+                rel_loc_id = None
+                if evt_location and evt_location != "未知":
+                    loc_obj = db.query(Location).filter(
+                        Location.novel_id == ch.novel_id, Location.name == evt_location
+                    ).first()
+                    if loc_obj:
+                        rel_loc_id = loc_obj.id
+                # Build content as readable summary
+                content_str = evt_desc
+                if evt_location and evt_location != "未知":
+                    content_str = f"📍 [{evt_location}] {content_str}"
+                if char_names:
+                    content_str = f"({', '.join(char_names)}) {content_str}"
                 te = TimelineEvent(
                     novel_id=ch.novel_id,
                     event_type=TimelineEventType.MAIN_STORY.name,
                     timeline_index=new_idx,
+                    title=evt_title,
                     time_label=cal_time,
-                    content=evt_desc,
+                    category=evt_category,
+                    character_ids=char_ids,
+                    content=content_str,
                     absolute_tick=(novel.current_tick if novel else 0) + tick_increment,
+                    related_location_id=rel_loc_id,
                 )
                 pending_timeline_events.append(te)
                 timeline_added = True
-                timeline_events_added.append(f"[{cal_time}] {evt_desc}")
+                timeline_events_added.append(f"[{cal_time}] {evt_title or content_str[:40]}")
     except HTTPException:
         raise
     except Exception as e:
