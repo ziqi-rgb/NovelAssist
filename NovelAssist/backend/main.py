@@ -1050,6 +1050,8 @@ def update_chapter(chapter_id: int, body: ChapterCreate, db: Session = Depends(g
 
 class ArchiveRequest(BaseModel):
     text_to_archive: str
+    selection_start: int = 0
+    selection_end: int = 0
     api_key: str = ""
     base_url: str = ""
     model: str = "gpt-3.5-turbo"
@@ -1068,8 +1070,11 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     base_url = req.base_url or LLM_BASE_URL
     model = req.model or LLM_MODEL
 
-    # 1. Move text
-    remaining = ch.content.replace(text, "", 1).strip()
+    # 1. Move text — prefer position-based removal, fall back to str.replace
+    if req.selection_start < req.selection_end and ch.content[req.selection_start:req.selection_end] == text:
+        remaining = (ch.content[:req.selection_start] + ch.content[req.selection_end:]).strip()
+    else:
+        remaining = ch.content.replace(text, "", 1).strip()
     if ch.archived_content:
         ch.archived_content += "\n\n" + text
     else:
@@ -1103,7 +1108,10 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
             raw_clean = mj.group(1).strip()
         else:
             raw_clean = raw_tl
-        parsed_tl = json.loads(raw_clean)
+        try:
+            parsed_tl = json.loads(raw_clean)
+        except json.JSONDecodeError:
+            raise HTTPException(422, f"归档时间线JSON解析失败。LLM原始输出:\n{raw_tl[:300]}")
         if isinstance(parsed_tl, dict):
             elapsed_years = int(parsed_tl.get("elapsed_years", 0))
             elapsed_months = int(parsed_tl.get("elapsed_months", 0))
@@ -1135,6 +1143,8 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                 db.add(te)
                 timeline_added = True
                 timeline_events_added.append(f"[{cal_time}] {evt_desc}")
+    except HTTPException:
+        raise
     except Exception as e:
         timeline_error = str(e)
 
@@ -1166,7 +1176,10 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
             m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", raw, re.DOTALL)
             if m:
                 raw = m.group(1).strip()
-            parsed = json.loads(raw)
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                raise HTTPException(422, f"归档人物JSON解析失败。LLM原始输出:\n{raw[:300]}")
             if isinstance(parsed, list):
                 for upd in parsed:
                     is_new = upd.get("is_new", False)
@@ -1273,6 +1286,8 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
 
                         if not is_new:
                             updated_names.append(name)
+    except HTTPException:
+        raise
     except Exception as e:
         character_error = str(e)
 

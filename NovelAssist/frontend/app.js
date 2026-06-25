@@ -483,6 +483,9 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
     if (!currentChapterId) { showToast("请先选中一个章节"); return; }
     const sel = contentInput.value.substring(contentInput.selectionStart, contentInput.selectionEnd).trim();
     if (!sel) { showToast("请先在正文中选中要归档的文字"); return; }
+    // Confirmation with preview
+    const preview = sel.length > 200 ? sel.slice(0, 200) + "…" : sel;
+    if (!confirm(`确认归档以下内容到只读区？\n\n--- 预览 ---\n${preview}\n---\n共 ${sel.length} 字\n\n归档后将调用 AI 提取时间线和人物变更。`)) return;
     const s = getSettings();
     if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
     showArchiveOverlay();
@@ -490,7 +493,7 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
     if (window.autoSaveTimer) { clearTimeout(window.autoSaveTimer); window.autoSaveTimer = null; }
     contentInput.disabled = true;
     try {
-        const res = await fetch(`/api/chapters/${currentChapterId}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text_to_archive: sel, api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
+        const res = await fetch(`/api/chapters/${currentChapterId}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text_to_archive: sel, selection_start: contentInput.selectionStart, selection_end: contentInput.selectionEnd, api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
         const data = await res.json();
         if (!res.ok) { showToast("归档失败: " + (data.detail || "HTTP " + res.status)); return; }
         // refresh UI
@@ -527,7 +530,10 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
                 report += "  • " + evt + "\n";
             });
         }
-        alert(report);
+        // Show report in AI chat area instead of alert
+        const reportB = document.createElement("div"); reportB.className = "copilot-bubble ai";
+        reportB.innerHTML = `<div class="cp-label">📦 归档报告</div><pre style="font-size:.75rem;white-space:pre-wrap;margin:4px 0;">${e(report)}</pre>`;
+        copilotHistory.appendChild(reportB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
         showToast("🌎 归档万年历时钟推进、地理轨迹智能匹配成功！");
         await saveCurrentChapter();
         await loadCharacters();
