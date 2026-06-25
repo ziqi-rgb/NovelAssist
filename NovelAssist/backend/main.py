@@ -3272,6 +3272,7 @@ def reset_prompt_templates(db: Session = Depends(get_db)):
 class CopilotRequest(BaseModel):
     novel_id: int
     current_chapter_content: str = ""
+    archived_content: str = ""
     selected_text: str = ""
     instruction: str = ""
     api_key: str = ""
@@ -3294,7 +3295,13 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
         system_content = resolve_placeholders(system_tmpl, req.novel_id, db)
 
         # Split chapter at nearest period (。) to midpoint
-        text = req.current_chapter_content
+        # Combine archived + current for full context
+        full_text = req.archived_content.strip()
+        if full_text and req.current_chapter_content.strip():
+            full_text += "\n\n" + req.current_chapter_content.strip()
+        elif not full_text:
+            full_text = req.current_chapter_content.strip()
+        text = full_text
         if len(text) > 60:
             mid = len(text) // 2
             left = text.rfind("。", 0, mid)
