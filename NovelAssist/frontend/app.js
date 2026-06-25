@@ -13,6 +13,12 @@ let mdViewing = false;
 const SCALES = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"];
 const OUTLINE_CATEGORIES = ["世界观", "世界势力", "地理", "人物设定", "能力体系设定", "剧情大纲"];
 const ELEMENT_TYPES = ["outline", "location", "timeline", "faction", "relation", "character", "volume", "character_template"];
+const SYSTEM_CHAIN_TITLES = {
+    MAP:    "🗺️ 蓝图规划与逐层搭建流",
+    CHAR:   "👤 严谨人设与模板质检流",
+    OUTLINE:"📖 全维世界观与大纲流水线",
+};
+const SYSTEM_CHAIN_TITLE_LIST = Object.values(SYSTEM_CHAIN_TITLES);
 
 let isGenesisRunning = false;
 let genesisPaused = false;              // 暂停标志：优雅停止，保存进度
@@ -1963,9 +1969,9 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
         var chains = await chainsRes.json();
 
-        var chainOutline = chains.find(function(c) { return c.title === "📖 全维世界观与大纲流水线"; });
-        var chainMap = chains.find(function(c) { return c.title === "🗺️ 蓝图规划与逐层搭建流"; });
-        var chainChar = chains.find(function(c) { return c.title === "👤 严谨人设与模板质检流"; });
+        var chainOutline = chains.find(function(c) { return c.title === SYSTEM_CHAIN_TITLES.OUTLINE; });
+        var chainMap = chains.find(function(c) { return c.title === SYSTEM_CHAIN_TITLES.MAP; });
+        var chainChar = chains.find(function(c) { return c.title === SYSTEM_CHAIN_TITLES.CHAR; });
 
         if (!chainOutline || !chainMap || !chainChar) {
             throw new Error("系统缺失预设的 3 大创世推理方案，请点击顶部的 [恢复默认] 按钮初始化方案！");
@@ -2172,9 +2178,9 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     var chains = await chainsRes.json();
 
     var chainDefs = [
-        { key: "character", title: "👤 严谨人设与模板质检流", stepId: "step-char", label: "👤 人设" },
-        { key: "map", title: "🗺️ 蓝图规划与逐层搭建流", stepId: "step-map", label: "🗺️ 地图" },
-        { key: "outline", title: "📖 全维世界观与大纲流水线", stepId: "step-outline", label: "📖 大纲" },
+        { key: "character", title: SYSTEM_CHAIN_TITLES.CHAR, stepId: "step-char", label: "👤 人设" },
+        { key: "map", title: SYSTEM_CHAIN_TITLES.MAP, stepId: "step-map", label: "🗺️ 地图" },
+        { key: "outline", title: SYSTEM_CHAIN_TITLES.OUTLINE, stepId: "step-outline", label: "📖 大纲" },
     ];
 
     // 解析链 ID
@@ -3183,7 +3189,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
 /* ═══════════ Prompt Settings ═══════════ */
 const promptModal = document.getElementById("prompt-modal");
 const promptTpl = document.getElementById("prompt-templates");
-const promptLabels = { system_agent: "系统代理神谕", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", extract_outline: "正文逆向提炼", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", outline_assist: "大纲助手", map_assist: "地图助手", character_assist: "人物助手", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "场景沙盘" };
+const promptLabels = { system_agent: "系统代理神谕", chat: "自由对话", map_gen: "地图自动生成", char_gen: "角色自动生成", outline_gen: "大纲自动生成", continue: "续写", polish: "润色", review: "评价", chain_write: "推演链生成正文", archive_timeline: "归档-时间线提取", archive_character: "归档-人物更新", sandbox_sim: "场景沙盘" };
 
 function getCopilotScene() {
     return "auto";
@@ -3462,8 +3468,7 @@ async function loadGraph() {
     const res = await fetch(`/api/reasoning_chains/${currentChainId}?novel_id=${currentNovelId}`);
     if (!res.ok) return;
     currentChain = await res.json();
-    var systemChains = ["🗺️ 蓝图规划与逐层搭建流","👤 严谨人设与模板质检流","📖 全维世界观与大纲流水线"];
-    var isSys = systemChains.indexOf(currentChain.title) >= 0;
+    var isSys = SYSTEM_CHAIN_TITLE_LIST.indexOf(currentChain.title) >= 0;
     var rbtn = document.getElementById("chain-restore-btn");
     if (rbtn) rbtn.classList.toggle("hidden", !isSys);
     var ti = document.getElementById("cs-title");
@@ -3477,8 +3482,7 @@ function renderAllNodes() {
     const canvas = document.getElementById("chain-canvas");
     canvas.querySelectorAll(".node-card").forEach(n => n.remove());
     var nodes = currentChain.nodes || [];
-    var sysTitles = ["🗺️ 蓝图规划与逐层搭建流","👤 严谨人设与模板质检流","📖 全维世界观与大纲流水线"];
-    var isSys = sysTitles.indexOf((currentChain && currentChain.title) || "") >= 0;
+    var isSys = SYSTEM_CHAIN_TITLE_LIST.indexOf((currentChain && currentChain.title) || "") >= 0;
     for (var idx = 0; idx < nodes.length; idx++) {
         var node = nodes[idx];
         try {

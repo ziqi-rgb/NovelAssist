@@ -3046,20 +3046,21 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     tmpl = templates.get(req.scene, templates.get("chat", "{instruction}"))
 
     prompt = tmpl.replace("{content}", req.current_chapter_content).replace("{selection}", req.selected_text).replace("{instruction}", req.instruction).replace("{chain_data}", req.chain_data)
-    prompt = resolve_placeholders(prompt, req.novel_id, db)
 
-    messages = [
-        {"role": "system", "content": resolve_placeholders(
-            templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"]),
-            req.novel_id, db)},
-    ]
+    # Merge system + user prompt so resolve_placeholders runs once (halves DB queries)
+    _SEP = "\n\x1eSYSTEM_USER_SEP\x1e\n"
+    combined = templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"]) + _SEP + prompt
+    resolved = resolve_placeholders(combined, req.novel_id, db)
+    system_content, _, user_content = resolved.partition(_SEP)
+
+    messages: list[dict] = [{"role": "system", "content": system_content}]
 
     if req.history:
         for msg in req.history[-10:]:
             if isinstance(msg, dict) and "role" in msg and "content" in msg:
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": user_content})
     return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, novel_id=req.novel_id, db=db)
 
 
