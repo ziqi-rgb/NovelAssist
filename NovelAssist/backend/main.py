@@ -217,6 +217,25 @@ AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "continue_writing",
+            "description": (
+                "调用DeepSeek对话前缀续写引擎续写正文。模型应自行提炼与当前情节相关的设定"
+                "作为system_context传入（不要照搬整个设定集，只放对续写有用的信息——如当前场景的"
+                "人物属性、地点描述、近期时间线事件、相关大纲）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_content": {"type": "string", "description": "当前章节的完整正文文本"},
+                    "system_context": {"type": "string", "description": "注入system提示词的设定上下文（由模型自行从lore中提炼与当前情节相关的部分，如人物当前状态、所在场景、近期事件）"},
+                },
+                "required": ["chapter_content", "system_context"],
+            },
+        },
+    },
 ]
 
 # SYSTEM_CHAIN_NAMES imported from constants.py (line 213 area kept for reference but unused)
@@ -2383,7 +2402,7 @@ class ReasoningExecuteRequest(BaseModel):
 
 async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None) -> StreamingResponse:
 
-    def _execute_readonly_tool(tool_name: str, arguments: dict) -> str:
+    async def _execute_readonly_tool(tool_name: str, arguments: dict) -> str:
         if tool_name == "query_world_state" and novel_id and db:
             qtype = arguments.get("query_type", "all")
             filt = (arguments.get("filter") or "").strip()
@@ -2505,9 +2524,50 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                 else:
                     result["outline"] = "(无)"
             return "查询结果:\n" + "\n\n".join(f"--- {k} ---\n{v}" for k,v in result.items())
-        return "工具不可用"
+        if tool_name == "continue_writing" and novel_id:
+            chapter_content = str(arguments.get("chapter_content", ""))
+            system_context = str(arguments.get("system_context", ""))
+            if not chapter_content.strip():
+                return "错误：chapter_content 为空，无法续写"
+            # Split at nearest period to midpoint
+            text = chapter_content
+            if len(text) > 60:
+                mid = len(text) // 2
+                left = text.rfind("。", 0, mid)
+                right = text.find("。", mid)
+                if left >= 0 and (right < 0 or (mid - left) <= (right - mid)):
+                    split_at = left + 1
+                elif right >= 0:
+                    split_at = right + 1
+                else:
+                    split_at = mid
+                first_half = text[:split_at].rstrip()
+                second_half = text[split_at:].lstrip()
+            else:
+                first_half = "请续写下文"
+                second_half = text
+            import random, time
+            nonce = f"{random.randint(100000,999999)}-{int(time.time()*1000)%1000000}"
+            msgs = [
+                {"role": "system", "content": system_context},
+                {"role": "user", "content": f"[#{nonce}] 请续写下文\n\n{first_half}"},
+                {"role": "assistant", "content": second_half, "prefix": True},
+            ]
+            api_key = LLM_API_KEY
+            beta_url = LLM_BASE_URL.rstrip("/").replace("/v1", "") + "/beta"
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    f"{beta_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={"model": LLM_MODEL, "messages": msgs, "temperature": 0.8, "stream": False},
+                )
+                if resp.status_code != 200:
+                    return f"续写引擎返回错误 [{resp.status_code}]: {resp.text[:500]}"
+                data = resp.json()
+                content = data["choices"][0]["message"].get("content", "")
+                return f"续写结果:\n{content}"
 
-    READONLY_TOOLS = {"query_world_state"}
+    READONLY_TOOLS = {"query_world_state", "continue_writing"}
 
     async def gen():
         nonlocal messages
@@ -2579,7 +2639,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
             for tc_data in ro_calls:
                 try: cargs = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
                 except json.JSONDecodeError: cargs = {}
-                result_str = _execute_readonly_tool(tc_data["name"], cargs)
+                result_str = await _execute_readonly_tool(tc_data["name"], cargs)
                 messages.append({"role": "tool", "tool_call_id": tc_data["id"], "content": result_str})
 
             # 继续循环 → 模型基于工具结果继续生成
