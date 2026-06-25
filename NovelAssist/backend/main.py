@@ -214,6 +214,10 @@ AGENT_TOOLS = [
 # SYSTEM_CHAIN_NAMES imported from constants.py (line 213 area kept for reference but unused)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTO-GENERATED node definitions — edit via backend/_gen_chains.js, not by hand.
+# To regenerate:  node backend/_gen_chains.js  →  paste the output below.
+# ═══════════════════════════════════════════════════════════════════════════════
 def _get_system_chain_nodes(title: str) -> list[dict]:
     if title == "🗺️ 蓝图规划与逐层搭建流":
         stages = [
@@ -2403,6 +2407,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
+    """Replace all {placeholder} patterns with database content."""
     def find_outline_title(outlines: list[Outline], oid: int | None) -> str:
         if oid is None:
             return "?"
@@ -2410,7 +2415,6 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             if o.id == oid:
                 return o.title
         return "?"
-    """Replace all {placeholder} patterns with database content."""
     novel = db.get(Novel, novel_id)
     current_tick = novel.current_tick if novel else 0
 
@@ -2631,6 +2635,25 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 parts.append("\n".join(lines))
         return "\n\n".join(parts) if parts else "(无上下文)"
 
+    def _outline_tree_by_cat(cat_name: str) -> str:
+        items = db.scalars(select(Outline).where(
+            Outline.novel_id == novel_id, Outline.category == cat_name,
+        ).order_by(Outline.order_index)).all()
+        by_parent2: dict = {}
+        for it in items:
+            by_parent2.setdefault(it.parent_id, []).append(it)
+        def render_ol_tree(pid, depth):
+            parts2: list[str] = []
+            for it in by_parent2.get(pid, []):
+                indent = "  " * depth
+                parts2.append(f"{indent}- **{it.title}**")
+                if it.description:
+                    for line in it.description.splitlines():
+                        parts2.append(f"{indent}  {line}")
+                parts2.extend(render_ol_tree(it.id, depth + 1))
+            return parts2
+        return "\n".join(render_ol_tree(None, 0)) or f"【当前分类 {cat_name} 暂无大纲数据】"
+
     def _rep(match):
         ph = match.group(1)
 
@@ -2827,24 +2850,6 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     parts.append(f"{g_name}: [{', '.join(fields)}]")
             return " ; ".join(parts) if parts else "(无字段)"
 
-        def _outline_tree_by_cat(cat_name: str) -> str:
-            items = db.scalars(select(Outline).where(
-                Outline.novel_id == novel_id, Outline.category == cat_name,
-            ).order_by(Outline.order_index)).all()
-            by_parent2: dict = {}
-            for it in items:
-                by_parent2.setdefault(it.parent_id, []).append(it)
-            def render_ol_tree(pid, depth):
-                parts2: list[str] = []
-                for it in by_parent2.get(pid, []):
-                    indent = "  " * depth
-                    parts2.append(f"{indent}- **{it.title}**")
-                    if it.description:
-                        for line in it.description.splitlines():
-                            parts2.append(f"{indent}  {line}")
-                    parts2.extend(render_ol_tree(it.id, depth + 1))
-                return parts2
-            return "\n".join(render_ol_tree(None, 0)) or f"【当前分类 {cat_name} 暂无大纲数据】"
 
         if ph == "outline_cat_world":
             return _outline_tree_by_cat("世界观")
@@ -3045,13 +3050,18 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
 
     tmpl = templates.get(req.scene, templates.get("chat", "{instruction}"))
 
-    prompt = tmpl.replace("{content}", req.current_chapter_content).replace("{selection}", req.selected_text).replace("{instruction}", req.instruction).replace("{chain_data}", req.chain_data)
-
     # Merge system + user prompt so resolve_placeholders runs once (halves DB queries)
     _SEP = "\n\x1eSYSTEM_USER_SEP\x1e\n"
-    combined = templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"]) + _SEP + prompt
+    combined = templates.get("system_agent", DEFAULT_PROMPT_TEMPLATES["system_agent"]) + _SEP + tmpl
     resolved = resolve_placeholders(combined, req.novel_id, db)
     system_content, _, user_content = resolved.partition(_SEP)
+
+    # Replace user-content placeholders AFTER DB resolution (prevents leakage
+    # of unresolved {content} etc. from DB-stored text into the final prompt)
+    user_content = user_content.replace("{content}", req.current_chapter_content) \
+                               .replace("{selection}", req.selected_text) \
+                               .replace("{instruction}", req.instruction) \
+                               .replace("{chain_data}", req.chain_data)
 
     messages: list[dict] = [{"role": "system", "content": system_content}]
 
