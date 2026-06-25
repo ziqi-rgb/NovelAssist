@@ -732,6 +732,7 @@ class TimelineCreate(BaseModel):
     time_label: str = ""
     content: str = ""
     related_location_id: Optional[int] = None
+    related_location_name: Optional[str] = None
 
 class TimelineOut(BaseModel):
     id: int
@@ -1747,12 +1748,20 @@ def create_timeline(body: TimelineCreate, novel_id: int = Query(default=NOVEL_ID
             TimelineEvent.event_type == body.event_type,
         )
     )
+    # Resolve location name if provided
+    rel_loc_id = body.related_location_id
+    if not rel_loc_id and body.related_location_name:
+        loc_obj = db.query(Location).filter(
+            Location.novel_id == novel_id, Location.name == body.related_location_name
+        ).first()
+        if loc_obj:
+            rel_loc_id = loc_obj.id
     t = TimelineEvent(
         event_type=body.event_type,  # type: ignore[arg-type]
         title=body.title,
         time_label=body.time_label, content=body.content,
         timeline_index=(max_idx or 0) + 1,
-        related_location_id=body.related_location_id, novel_id=novel_id,
+        related_location_id=rel_loc_id, novel_id=novel_id,
     )
     db.add(t)
     db.commit()
@@ -1771,6 +1780,12 @@ def update_timeline(event_id: int, body: TimelineCreate, db: Session = Depends(g
     t.event_type = body.event_type  # type: ignore[arg-type]
     if body.related_location_id is not None:
         t.related_location_id = body.related_location_id
+    elif body.related_location_name is not None:
+        loc_obj = db.query(Location).filter(
+            Location.novel_id == t.novel_id, Location.name == body.related_location_name
+        ).first()
+        if loc_obj:
+            t.related_location_id = loc_obj.id
     db.commit()
     db.refresh(t)
     return t

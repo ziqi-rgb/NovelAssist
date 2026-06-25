@@ -217,17 +217,60 @@ async function loadTimeline() {
     list.innerHTML = ""; if (!items.length) { list.innerHTML = '<p class="placeholder">暂无事件</p>'; return; }
     items.forEach(it => {
         const d = document.createElement("div"); d.className = "timeline-item";
-        d.innerHTML = `<div class="tl-label">${e(it.time_label)}</div><div class="tl-content">${e(it.content)}</div>`;
+        d.style.cursor = "pointer";
+        d.innerHTML = `<span class="tl-index">#${it.timeline_index || '?'}</span> <span class="tl-time">${e(it.time_label)}</span> <span class="tl-title">${e(it.title || '(无标题)')}</span>`;
+        d.addEventListener("click", () => openTimelineDetail(it));
         const del = document.createElement("button"); del.className = "tl-del"; del.innerHTML = "&#128465;";
-        del.addEventListener("click", async () => { if (!confirm("删除？")) return; await apiDel("/api/timeline", it.id); loadTimeline(); });
+        del.addEventListener("click", async (ev) => { ev.stopPropagation(); if (!confirm("删除？")) return; await apiDel("/api/timeline", it.id); loadTimeline(); });
         d.appendChild(del); list.appendChild(d);
     });
 }
 document.getElementById("tl-add-btn").addEventListener("click", async () => {
-    const label = document.getElementById("tl-time-label").value.trim(), content = document.getElementById("tl-content").value.trim();
-    if (!content) return;
-    await fetch(`/api/timeline?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event_type: currentTimelineType, time_label: label, content }) });
-    document.getElementById("tl-time-label").value = ""; document.getElementById("tl-content").value = "";
+    const title = document.getElementById("tl-title").value.trim();
+    const label = document.getElementById("tl-time-label").value.trim();
+    const content = document.getElementById("tl-content").value.trim();
+    if (!content && !title) return;
+    await fetch(`/api/timeline?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event_type: currentTimelineType, title, time_label: label, content }) });
+    document.getElementById("tl-title").value = ""; document.getElementById("tl-time-label").value = ""; document.getElementById("tl-content").value = "";
+    loadTimeline();
+});
+
+// ═══════ Timeline Detail / Edit Modal ═══════
+let _tlEditId = null;
+function openTimelineDetail(it) {
+    _tlEditId = it.id;
+    document.getElementById("tl-detail-index").textContent = `#${it.timeline_index || '?'}`;
+    document.getElementById("tl-detail-title").value = it.title || '';
+    document.getElementById("tl-detail-label").value = it.time_label || '';
+    document.getElementById("tl-detail-type").value = it.event_type || currentTimelineType.toLowerCase();
+    document.getElementById("tl-detail-location").value = '';
+    document.getElementById("tl-detail-content").value = it.content || '';
+    document.getElementById("tl-detail-modal").classList.remove("hidden");
+}
+document.getElementById("tl-detail-cancel").addEventListener("click", () => {
+    document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
+});
+document.getElementById("tl-detail-modal").querySelector(".modal-backdrop").addEventListener("click", () => {
+    document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
+});
+document.getElementById("tl-detail-save").addEventListener("click", async () => {
+    if (!_tlEditId) return;
+    const body = {
+        event_type: document.getElementById("tl-detail-type").value,
+        title: document.getElementById("tl-detail-title").value.trim(),
+        time_label: document.getElementById("tl-detail-label").value.trim(),
+        content: document.getElementById("tl-detail-content").value.trim(),
+        related_location_name: document.getElementById("tl-detail-location").value.trim() || null,
+    };
+    await fetch(`/api/timeline/${_tlEditId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
+    loadTimeline();
+});
+document.getElementById("tl-detail-delete").addEventListener("click", async () => {
+    if (!_tlEditId) return;
+    if (!confirm("确定删除此事件？")) return;
+    await apiDel("/api/timeline", _tlEditId);
+    document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
     loadTimeline();
 });
 

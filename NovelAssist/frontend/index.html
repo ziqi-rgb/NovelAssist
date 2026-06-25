@@ -464,7 +464,35 @@
                 <div id="tab-characters" class="tab-content"><button id="new-character-btn">+ 新建人物</button><div id="character-list"></div></div>
                 <div id="tab-timeline" class="tab-content hidden">
                     <div class="timeline-header" id="timeline-title">时间线</div><div id="timeline-list"></div>
-                    <div class="timeline-form"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
+                    <div class="timeline-form"><input type="text" id="tl-title" placeholder="事件名称"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
+                </div>
+                <!-- 时间线详情/编辑弹窗 -->
+                <div id="tl-detail-modal" class="modal hidden">
+                    <div class="modal-backdrop"></div>
+                    <div class="modal-box" style="width:420px;">
+                        <h3>📅 时间线事件</h3>
+                        <label>序号</label>
+                        <span id="tl-detail-index" style="font-size:.85rem;color:var(--text-muted);">—</span>
+                        <label>事件名称</label>
+                        <input type="text" id="tl-detail-title" placeholder="事件名称">
+                        <label>时间标签</label>
+                        <input type="text" id="tl-detail-label" placeholder="如：大陆历前1200年">
+                        <label>事件类型</label>
+                        <select id="tl-detail-type" style="width:100%;padding:7px 8px;font-size:.85rem;border:1px solid var(--border);border-radius:4px;">
+                            <option value="main_story">正文时间线</option>
+                            <option value="history">历史时间线</option>
+                            <option value="world">世界时间线</option>
+                        </select>
+                        <label>关联地点</label>
+                        <input type="text" id="tl-detail-location" placeholder="可选">
+                        <label>事件详情</label>
+                        <textarea id="tl-detail-content" style="width:100%;min-height:100px;resize:vertical;font-size:.85rem;padding:7px 8px;border:1px solid var(--border);border-radius:4px;"></textarea>
+                        <div class="modal-actions">
+                            <button id="tl-detail-delete" class="sys-btn sys-btn-danger" style="margin-right:auto;">🗑 删除</button>
+                            <button id="tl-detail-cancel">取消</button>
+                            <button id="tl-detail-save" class="btn-primary">💾 保存</button>
+                        </div>
+                    </div>
                 </div>
                 <div id="tab-ai" class="tab-content hidden">
                     <div class="agent-ctl-bar">
