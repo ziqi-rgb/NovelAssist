@@ -467,11 +467,11 @@ async def lifespan(app: FastAPI):
             db0.add(default_novel)
             db0.commit()
             print("[Seed] 已创建默认小说项目")
-    # Data healing: normalize timeline_events event_type to uppercase
+    # Data healing: normalize timeline_events event_type to enum names (MAIN_STORY/HISTORY/WORLD)
     with SessionLocal() as db:
-        db.execute(text("UPDATE timeline_events SET event_type = 'MAIN_STORY' WHERE event_type = 'main_story'"))
-        db.execute(text("UPDATE timeline_events SET event_type = 'HISTORY' WHERE event_type = 'history'"))
-        db.execute(text("UPDATE timeline_events SET event_type = 'WORLD' WHERE event_type = 'world'"))
+        db.execute(text("UPDATE timeline_events SET event_type = 'MAIN_STORY' WHERE UPPER(event_type) = 'MAIN_STORY' AND event_type != 'MAIN_STORY'"))
+        db.execute(text("UPDATE timeline_events SET event_type = 'HISTORY' WHERE UPPER(event_type) = 'HISTORY' AND event_type != 'HISTORY'"))
+        db.execute(text("UPDATE timeline_events SET event_type = 'WORLD' WHERE UPPER(event_type) = 'WORLD' AND event_type != 'WORLD'"))
         db.commit()
         # Auto-heal coordinate conflicts across all locations
         _auto_heal_all_coord_conflicts(db)
@@ -733,6 +733,16 @@ class TimelineCreate(BaseModel):
     content: str = ""
     related_location_id: Optional[int] = None
     related_location_name: Optional[str] = None
+
+
+def _normalize_timeline_type(raw: str) -> TimelineEventType:
+    """Convert any case variant of event_type string to TimelineEventType enum."""
+    upper = raw.strip().upper()
+    if upper in ("HISTORY",):
+        return TimelineEventType.HISTORY
+    if upper in ("WORLD",):
+        return TimelineEventType.WORLD
+    return TimelineEventType.MAIN_STORY
 
 class TimelineOut(BaseModel):
     id: int
@@ -1741,11 +1751,12 @@ def list_timeline(
 
 @app.post("/api/timeline", response_model=TimelineOut)
 def create_timeline(body: TimelineCreate, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    evt_type = _normalize_timeline_type(body.event_type)
     # Auto-assign timeline_index: max + 1 per novel × event_type
     max_idx = db.scalar(
         select(func.max(TimelineEvent.timeline_index)).where(
             TimelineEvent.novel_id == novel_id,
-            TimelineEvent.event_type == body.event_type,
+            TimelineEvent.event_type == evt_type,
         )
     )
     # Resolve location name if provided
@@ -1757,7 +1768,7 @@ def create_timeline(body: TimelineCreate, novel_id: int = Query(default=NOVEL_ID
         if loc_obj:
             rel_loc_id = loc_obj.id
     t = TimelineEvent(
-        event_type=body.event_type,  # type: ignore[arg-type]
+        event_type=evt_type,
         title=body.title,
         time_label=body.time_label, content=body.content,
         timeline_index=(max_idx or 0) + 1,
@@ -1774,10 +1785,10 @@ def update_timeline(event_id: int, body: TimelineCreate, db: Session = Depends(g
     t = db.get(TimelineEvent, event_id)
     if not t:
         raise HTTPException(404, "事件不存在")
+    t.event_type = _normalize_timeline_type(body.event_type)
     t.title = body.title
     t.time_label = body.time_label
     t.content = body.content
-    t.event_type = body.event_type  # type: ignore[arg-type]
     if body.related_location_id is not None:
         t.related_location_id = body.related_location_id
     elif body.related_location_name is not None:
@@ -1786,6 +1797,9 @@ def update_timeline(event_id: int, body: TimelineCreate, db: Session = Depends(g
         ).first()
         if loc_obj:
             t.related_location_id = loc_obj.id
+    db.commit()
+    db.refresh(t)
+    return t
     db.commit()
     db.refresh(t)
     return t
