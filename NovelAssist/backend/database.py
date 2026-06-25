@@ -95,8 +95,8 @@ def run_migration() -> None:
         if "updated_at" not in te_cols2:
             db.execute(text("ALTER TABLE timeline_events ADD COLUMN updated_at TIMESTAMP"))
             db.commit()
-        if "character_names" not in te_cols2:
-            db.execute(text("ALTER TABLE timeline_events ADD COLUMN character_names JSON DEFAULT '[]'"))
+        if "character_ids" not in te_cols2:
+            db.execute(text("ALTER TABLE timeline_events ADD COLUMN character_ids JSON DEFAULT '[]'"))
             db.commit()
         if "category" not in te_cols2:
             db.execute(text("ALTER TABLE timeline_events ADD COLUMN category TEXT DEFAULT '其他'"))

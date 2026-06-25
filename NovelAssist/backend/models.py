@@ -209,7 +209,7 @@ class TimelineEvent(Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     time_label: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="其他")
-    character_names: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     absolute_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     related_location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)

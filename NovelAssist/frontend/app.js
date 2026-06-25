@@ -206,12 +206,19 @@ document.querySelectorAll(".nav-btn[data-module]").forEach(b => {
 /* ═══════════ Timeline ═══════════ */
 const tlMap = { writing: "MAIN_STORY", outline: "HISTORY", map: "WORLD", reasoning: "MAIN_STORY" };
 let currentTimelineType = tlMap.writing;
+let _charNameCache = {};  // id → name
 function swTimeline() {
     currentTimelineType = tlMap[currentModule] || "MAIN_STORY";
     document.getElementById("timeline-title").textContent = { HISTORY: "历史时间线", MAIN_STORY: "正文时间线", WORLD: "世界时间线" }[currentTimelineType] || "时间线";
     loadTimeline();
 }
 async function loadTimeline() {
+    // Refresh character name cache
+    try {
+        const chars = await (await fetch(`/api/characters?novel_id=${currentNovelId}`)).json();
+        _charNameCache = {};
+        chars.forEach(c => { _charNameCache[c.id] = c.name; });
+    } catch (e) { /* ignore */ }
     const list = document.getElementById("timeline-list");
     const items = await (await fetch(`/api/timeline?novel_id=${currentNovelId}&event_type=${currentTimelineType}`)).json();
     list.innerHTML = ""; if (!items.length) { list.innerHTML = '<p class="placeholder">暂无事件</p>'; return; }
@@ -220,7 +227,10 @@ async function loadTimeline() {
         d.style.cursor = "pointer";
         const catEmoji = { "地形变动":"🏔","人物生死":"💀","政治事件":"🏛","宝物现世":"💎","生物异动":"🐉","自然演变":"🌿","其他":"📋" };
         const catBadge = `<span class="tl-cat">${catEmoji[it.category]||'📋'} ${e(it.category||'其他')}</span>`;
-        const charPills = (it.character_names || []).map(c => `<span class="tl-char-pill">${e(c)}</span>`).join('');
+        const charPills = (it.character_ids || []).map(cid => {
+            const name = _charNameCache[cid] || `ID:${cid}`;
+            return `<span class="tl-char-pill">${e(name)}</span>`;
+        }).join('');
         d.innerHTML = `<span class="tl-index">#${it.timeline_index || '?'}</span> ${catBadge} <span class="tl-time">${e(it.time_label)}</span> <span class="tl-title">${e(it.title || '(无标题)')}</span>${charPills}`;
         d.addEventListener("click", () => openTimelineDetail(it));
         const del = document.createElement("button"); del.className = "tl-del"; del.innerHTML = "&#128465;";
@@ -240,15 +250,83 @@ document.getElementById("tl-add-btn").addEventListener("click", async () => {
 
 // ═══════ Timeline Detail / Edit Modal ═══════
 let _tlEditId = null;
+let _tlCharIds = [];  // character_ids currently in the editor
+
+async function populateCharSelect() {
+    const sel = document.getElementById("tl-detail-char-select");
+    sel.innerHTML = '<option value="">— 选择人物 —</option>';
+    try {
+        const chars = await (await fetch(`/api/characters?novel_id=${currentNovelId}`)).json();
+        chars.forEach(c => {
+            _charNameCache[c.id] = c.name;
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.name;
+            sel.appendChild(opt);
+        });
+    } catch (e) { /* ignore */ }
+}
+async function populateLocationSelect() {
+    const sel = document.getElementById("tl-detail-location");
+    sel.innerHTML = '<option value="">— 不关联 —</option>';
+    try {
+        const locs = await (await fetch(`/api/locations?novel_id=${currentNovelId}`)).json();
+        locs.forEach(l => {
+            const opt = document.createElement("option");
+            opt.value = l.id;
+            opt.textContent = l.name + (l.scale_level ? ` [${l.scale_level}]` : '');
+            sel.appendChild(opt);
+        });
+    } catch (e) { /* ignore */ }
+}
+function renderCharPills() {
+    const container = document.getElementById("tl-detail-char-pills");
+    if (!_tlCharIds.length) { container.innerHTML = ''; return; }
+    container.innerHTML = _tlCharIds.map(cid => {
+        const opt = document.getElementById("tl-detail-char-select").querySelector(`option[value="${cid}"]`);
+        const name = opt ? opt.textContent : `ID:${cid}`;
+        return `<span class="tl-char-pill">${e(name)} <button class="rel-pill-del" data-cid="${cid}">×</button></span>`;
+    }).join('');
+    container.querySelectorAll(".rel-pill-del").forEach(btn => {
+        btn.addEventListener("click", () => {
+            _tlCharIds = _tlCharIds.filter(cid => cid !== parseInt(btn.dataset.cid));
+            renderCharPills();
+        });
+    });
+}
+document.getElementById("tl-detail-char-add").addEventListener("click", () => {
+    const sel = document.getElementById("tl-detail-char-select");
+    const cid = parseInt(sel.value);
+    if (!cid || _tlCharIds.includes(cid)) return;
+    _tlCharIds.push(cid);
+    renderCharPills();
+    sel.value = '';
+});
+document.getElementById("tl-detail-time-now").addEventListener("click", async () => {
+    try {
+        const novel = await (await fetch(`/api/novels/${currentNovelId}`)).json();
+        if (novel && novel.current_tick !== undefined) {
+            // Use calendar endpoint to get formatted time
+            const cal = await (await fetch(`/api/calendar/format?tick=${novel.current_tick}&novel_id=${currentNovelId}`)).json();
+            document.getElementById("tl-detail-label").value = cal.formatted || '';
+        }
+    } catch (e) { /* ignore */ }
+});
+
 async function openTimelineDetail(it) {
     _tlEditId = it.id;
+    _tlCharIds = [...(it.character_ids || [])];
     document.getElementById("tl-detail-index").textContent = `#${it.timeline_index || '?'}`;
     document.getElementById("tl-detail-title").value = it.title || '';
     document.getElementById("tl-detail-label").value = it.time_label || '';
     document.getElementById("tl-detail-type").value = it.event_type || currentTimelineType.toLowerCase();
     document.getElementById("tl-detail-category").value = it.category || '其他';
-    document.getElementById("tl-detail-chars").value = (it.character_names || []).join(', ');
-    document.getElementById("tl-detail-location").value = '';
+    await populateCharSelect();
+    renderCharPills();
+    await populateLocationSelect();
+    if (it.related_location_id) {
+        document.getElementById("tl-detail-location").value = it.related_location_id;
+    }
     document.getElementById("tl-detail-content").value = it.content || '';
     document.getElementById("tl-detail-modal").classList.remove("hidden");
     loadEventRelations(it.id);
@@ -277,7 +355,6 @@ document.getElementById("tl-rel-add-btn").addEventListener("click", async () => 
     const idx = parseInt(document.getElementById("tl-rel-index").value);
     if (isNaN(idx)) return;
     const label = document.getElementById("tl-rel-label").value;
-    // Find the target event by timeline_index
     const items = await (await fetch(`/api/timeline?novel_id=${currentNovelId}`)).json();
     const tgt = items.find(x => x.timeline_index === idx);
     if (!tgt) { alert(`未找到序号为 ${idx} 的事件`); return; }
@@ -296,15 +373,15 @@ document.getElementById("tl-detail-modal").querySelector(".modal-backdrop").addE
 });
 document.getElementById("tl-detail-save").addEventListener("click", async () => {
     if (!_tlEditId) return;
-    const charStr = document.getElementById("tl-detail-chars").value.trim();
+    const locVal = document.getElementById("tl-detail-location").value;
     const body = {
         event_type: document.getElementById("tl-detail-type").value,
         title: document.getElementById("tl-detail-title").value.trim(),
         time_label: document.getElementById("tl-detail-label").value.trim(),
         category: document.getElementById("tl-detail-category").value,
-        character_names: charStr ? charStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+        character_ids: _tlCharIds,
         content: document.getElementById("tl-detail-content").value.trim(),
-        related_location_name: document.getElementById("tl-detail-location").value.trim() || null,
+        related_location_id: locVal ? parseInt(locVal) : null,
     };
     await fetch(`/api/timeline/${_tlEditId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;

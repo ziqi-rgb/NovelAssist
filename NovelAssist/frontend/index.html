@@ -475,7 +475,9 @@
                         <span id="tl-detail-index" style="font-size:.85rem;color:var(--text-muted);">—</span>
                         <label>事件名称</label>
                         <input type="text" id="tl-detail-title" placeholder="事件名称">
-                        <label>时间标签</label>
+                        <label>时间标签
+                            <button id="tl-detail-time-now" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:1px 6px;margin-left:6px;" title="填入当前世界历法时间">📅 现在</button>
+                        </label>
                         <input type="text" id="tl-detail-label" placeholder="如：大陆历前1200年">
                         <label>事件类型</label>
                         <select id="tl-detail-type" style="width:100%;padding:7px 8px;font-size:.85rem;border:1px solid var(--border);border-radius:4px;">
@@ -493,10 +495,18 @@
                             <option value="自然演变">🌿 自然演变</option>
                             <option value="其他">📋 其他</option>
                         </select>
-                        <label>参与人物 <span style="font-weight:400;color:var(--text-muted);">(逗号分隔，可空)</span></label>
-                        <input type="text" id="tl-detail-chars" placeholder="魔神王, 创世神">
+                        <label>参与人物 <span style="font-weight:400;color:var(--text-muted);">(从人物库选择，可空)</span></label>
+                        <div style="display:flex;gap:4px;">
+                            <select id="tl-detail-char-select" style="flex:1;padding:6px;font-size:.78rem;border:1px solid var(--border);border-radius:4px;">
+                                <option value="">— 选择人物 —</option>
+                            </select>
+                            <button id="tl-detail-char-add" class="sys-btn sys-btn-primary" style="padding:4px 10px;font-size:.75rem;">+</button>
+                        </div>
+                        <div id="tl-detail-char-pills" style="margin-top:4px;"></div>
                         <label>关联地点</label>
-                        <input type="text" id="tl-detail-location" placeholder="可选">
+                        <select id="tl-detail-location" style="width:100%;padding:7px 8px;font-size:.85rem;border:1px solid var(--border);border-radius:4px;">
+                            <option value="">— 不关联 —</option>
+                        </select>
                         <label>事件详情</label>
                         <textarea id="tl-detail-content" style="width:100%;min-height:100px;resize:vertical;font-size:.85rem;padding:7px 8px;border:1px solid var(--border);border-radius:4px;"></textarea>
                         <label style="margin-top:12px;">🔗 因果关系</label>
