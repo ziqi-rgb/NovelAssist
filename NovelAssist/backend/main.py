@@ -88,7 +88,7 @@ AGENT_TOOLS = [
                     "element_id": {"type": "integer", "description": "更新或删除时必填"},
                     "data": {
                         "type": "object",
-                        "description": "⚠️【强制格式】：必须是标准的嵌套 JSON 对象(Object)，绝对不能是转义的字符串！新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区,建筑中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。\ntimeline: title(事件名称)/time_label(时间标签)/category(分类：地形变动/人物生死/政治事件/宝物现世/生物异动/自然演变/其他)/character_ids(参与人物ID列表,如[1,3])/content(事件详情)/event_type(history|main_story|world)/related_location_name(关联地点名)。",
+                        "description": "⚠️【强制格式】：必须是标准的嵌套 JSON 对象(Object)，绝对不能是转义的字符串！新增/更新数据。\noutline: title/description/category/parent_name(父大纲标题)/order_index。\nlocation: name/description/scale(必须从大千世界,宇宙,星球,大陆,国家,城池,街区,建筑中选)/parent_id/parent_name(父地点名)/grid_x/grid_y(0-24整数的相对坐标)。\ncharacter: name/description/status/is_active(布尔)/faction_name(势力名)/faction_role/attributes(必须以嵌套字典结构传入,外层key为分组名如'基础信息',内层为具体属性键值对,可直接自创新分组)。\nvolume: title/order_index。\nfaction: name/description/base_location_name(驻地地点名)。\nrelation: source_name/target_name(人物名)/label/weight(-100~100)。\ntimeline: title(事件名称)/time_label(时间标签)/category(分类：地形变动/人物生死/政治事件/宝物现世/生物异动/自然演变/其他)/character_names(参与人物名称列表,如[\"张三\",\"李四\"],后端自动解析为ID)/content(事件详情)/event_type(history|main_story|world)/related_location_name(关联地点名)。",
                         "additionalProperties": True,
                     },
                 },
@@ -732,6 +732,7 @@ class TimelineCreate(BaseModel):
     time_label: str = ""
     category: str = "其他"
     character_ids: list[int] = []
+    character_names: list[str] = []  # resolved to IDs if character_ids is empty
     content: str = ""
     related_location_id: Optional[int] = None
     related_location_name: Optional[str] = None
@@ -745,6 +746,22 @@ def _normalize_timeline_type(raw: str) -> TimelineEventType:
     if upper in ("WORLD",):
         return TimelineEventType.WORLD
     return TimelineEventType.MAIN_STORY
+
+
+def _resolve_character_ids(db: Session, novel_id: int, ids: list[int] | None, names: list[str] | None) -> list[int]:
+    """Resolve character references to IDs. Names take priority if ids is empty."""
+    if ids:
+        return ids
+    if not names:
+        return []
+    result: list[int] = []
+    for name in names:
+        ch = db.query(Character).filter(
+            Character.novel_id == novel_id, Character.name == name.strip()
+        ).first()
+        if ch:
+            result.append(ch.id)
+    return result
 
 class TimelineOut(BaseModel):
     id: int
@@ -1794,7 +1811,7 @@ def create_timeline(body: TimelineCreate, novel_id: int = Query(default=NOVEL_ID
         title=body.title,
         time_label=body.time_label,
         category=body.category,
-        character_ids=body.character_ids,
+        character_ids=_resolve_character_ids(db, novel_id, body.character_ids, body.character_names),
         content=body.content,
         timeline_index=(max_idx or 0) + 1,
         related_location_id=rel_loc_id, novel_id=novel_id,
@@ -1814,8 +1831,8 @@ def update_timeline(event_id: int, body: TimelineCreate, db: Session = Depends(g
     t.title = body.title
     t.time_label = body.time_label
     t.category = body.category
-    if body.character_ids is not None:
-        t.character_ids = body.character_ids
+    if body.character_ids or body.character_names:
+        t.character_ids = _resolve_character_ids(db, t.novel_id, body.character_ids, body.character_names)
     t.content = body.content
     if body.related_location_id is not None:
         t.related_location_id = body.related_location_id
@@ -3763,7 +3780,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     title=data.get("title", ""),
                     time_label=data.get("time_label", data.get("time_str", "")),
                     category=data.get("category", "其他"),
-                    character_ids=data.get("character_ids", []),
+                    character_ids=_resolve_character_ids(db, novel_id, data.get("character_ids", []), data.get("character_names", [])),
                     content=data.get("content", data.get("event_desc", "")),
                     absolute_tick=novel.current_tick if novel else 0,
                     timeline_index=(max_idx or 0) + 1,
@@ -3778,8 +3795,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.time_label = data.get("time_label", data.get("time_str", item.time_label))
                     if "category" in data:
                         item.category = data["category"]
-                    if "character_ids" in data:
-                        item.character_ids = data["character_ids"]
+                    if "character_ids" in data or "character_names" in data:
+                        item.character_ids = _resolve_character_ids(db, novel_id, data.get("character_ids", []), data.get("character_names", []))
                     if "content" in data or "event_desc" in data:
                         item.content = data.get("content", data.get("event_desc", item.content))
                     if "event_type" in data:
