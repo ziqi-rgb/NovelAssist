@@ -2813,9 +2813,10 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             parts.append("\n".join(lines))
         locs = _Cache.all_locs()
         if locs:
-            lines = ["## 地点列表"]
-            for lc in locs:
-                lines.append(_fmt_loc(lc))
+            lines = ["## 地点列表 (索引 — 用 query_world_state(locations) 获取详情)"]
+            for idx, lc in enumerate(locs, 1):
+                sc = lc.scale.value if hasattr(lc.scale, "value") else str(lc.scale)
+                lines.append(f"{idx}. {lc.name} [{sc}]")
             parts.append("\n".join(lines))
         for et, label in [("history", "历史时间线"), ("world", "世界时间线")]:
             events = db.scalars(select(TimelineEvent).where(
