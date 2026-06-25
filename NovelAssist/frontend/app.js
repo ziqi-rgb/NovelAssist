@@ -2634,10 +2634,7 @@ async function executeGenesisFromResume(state) {
 }
 
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
-document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => {
-    const cmd = b.dataset.cmd;
-    copilotChat(cmd, null, cmd === "续写下文" ? "prefix" : "chat");
-}));
+document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
 
 function renderToolProposal(parentBubble, proposal, autoExecute) {
     var argsText = JSON.stringify(proposal.arguments || {}, null, 2);
@@ -3586,10 +3583,34 @@ function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || 
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
 continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
-    try { const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: "请根据前文顺着语气直接续写约200字正文，不要输出任何解释，不要换行分段，紧接上文。", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, mode: "prefix" }) });
-        for await (const msg of parseSSEStream(res)) { if (msg.type === "chunk") { contentInput.value += msg.content; contentInput.scrollTop = contentInput.scrollHeight; } }
-        contentInput.dispatchEvent(new Event("input")); await saveCurrentChapter(); }
-    catch (e) { contentInput.value += `\n\n[出错: ${e.message}]`; } finally { continueBtn.disabled = false; continueBtn.textContent = "\u2728 续写"; } });
+    // Show in AI chat area
+    const userB = document.createElement("div"); userB.className = "copilot-bubble user";
+    userB.innerHTML = `<div class="cp-label">你</div>续写<div style="text-align:right;margin-top:6px;"><span class="undo-capsule" onclick="truncateChat(this)">✕ 撤回</span></div>`;
+    copilotHistory.appendChild(userB);
+    const aiB = document.createElement("div"); aiB.className = "copilot-bubble ai streaming";
+    aiB.innerHTML = '<div class="cp-label">AI</div>';
+    copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
+    try {
+        var currentAiResponse = "";
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, mode: "prefix" }) });
+        for await (const msg of parseSSEStream(res)) {
+            if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
+            else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
+            else if (msg.type === "done") {
+                currentAiResponse = currentAiResponse.trim();
+                if (!currentAiResponse) { aiB.appendChild(document.createTextNode("(模型未返回内容 — 请确认已使用 DeepSeek Beta 端点)")); break; }
+                const row = document.createElement("div"); row.className = "cp-action-row";
+                const insBtn = document.createElement("button"); insBtn.className = "cp-insert-btn";
+                insBtn.textContent = "\u2B05 插入到当前光标处";
+                insBtn.addEventListener("click", () => { insertTextAtCursor(currentAiResponse); });
+                const repBtn = document.createElement("button"); repBtn.className = "cp-replace-btn";
+                repBtn.textContent = "\uD83D\uDD04 替换当前文本";
+                repBtn.addEventListener("click", () => { contentInput.value = currentAiResponse; contentInput.dispatchEvent(new Event("input")); saveCurrentChapter(); });
+                row.appendChild(insBtn); row.appendChild(repBtn); aiB.appendChild(row);
+            }
+        }
+        copilotHistory.scrollTop = copilotHistory.scrollHeight;
+    } catch (e) { aiB.appendChild(document.createTextNode(`\n[出错: ${e.message}]`)); } finally { continueBtn.disabled = false; continueBtn.textContent = "\u2728 续写"; aiB.classList.remove("streaming"); } });
 
 /* ═══════════ Reasoning 2D Graph ═══════════ */
 let currentChainId = null;
