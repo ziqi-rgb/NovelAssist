@@ -196,14 +196,19 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "query_world_state",
-            "description": "查询当前世界的实时状态数据。可查询人物、势力、关系图谱、地点、时间线。当需要了解世界当前局面、角色关系、势力分布时调用。",
+            "description": (
+                "查询当前世界的实时状态数据。可查询人物、势力、关系图谱、地点、时间线、大纲。"
+                "当需要了解世界当前局面、角色关系、势力分布、剧情规划时调用。\n"
+                "【重要】大纲(outline)内容为初期规划，仅供参考。实际创作方向必须以用户的实时指令和当前正文内容为准，"
+                "不可机械照搬大纲。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query_type": {
                         "type": "string",
-                        "enum": ["characters", "factions", "relations", "locations", "timeline", "all"],
-                        "description": "数据类型：characters(人物列表含势力归属), factions(势力目录含成员), relations(关系有向图谱), locations(地点列表), timeline(时间线), all(全部)",
+                        "enum": ["characters", "factions", "relations", "locations", "timeline", "outline", "all"],
+                        "description": "数据类型：characters(人物列表含势力归属), factions(势力目录含成员), relations(关系有向图谱), locations(地点列表), timeline(时间线), outline(大纲规划), all(全部)",
                     },
                     "filter": {"type": "string", "description": "可选的名称过滤关键词"},
                     "event_index": {"type": "integer", "description": "仅对 timeline 有效：指定要检索的时间线事件序号(timeline_index)，返回该事件的完整详情(title/time_label/content/event_type/absolute_tick/关联地点)。不填则返回全部事件。"},
@@ -2465,6 +2470,40 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                 else:
                     lines = [f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}" for e in evts if not filt or (_m(e.time_label) or _m(e.content) or _m(e.title))]
                     result["timeline"] = "\n".join(lines) if lines else "(无)"
+            if qtype in ("outline","all"):
+                outlines = db.query(Outline).filter(Outline.novel_id==novel_id).order_by(Outline.order_index).all()
+                if filt:
+                    outlines = [o for o in outlines if _m(o.title) or _m(o.description) or _m(o.category)]
+                if outlines:
+                    # Build tree grouped by category
+                    o_by_cat: dict[str, list[Outline]] = {}
+                    for o in outlines:
+                        o_by_cat.setdefault(o.category, []).append(o)
+                    blocks: list[str] = []
+                    for (cat, items) in o_by_cat.items():
+                        lines = [f"## {cat}"]
+                        # Build parent-child tree
+                        p_map: dict[int, list[Outline]] = {}
+                        top: list[Outline] = []
+                        for o in items:
+                            pid = o.parent_id if o.parent_id else 0
+                            p_map.setdefault(pid, []).append(o)
+                        def _render_outline(pid: int, depth: int) -> list[str]:
+                            result_lines: list[str] = []
+                            children = p_map.get(pid, [])
+                            for o in sorted(children, key=lambda x: x.order_index):
+                                prefix = "  " * depth + ("├─" if depth > 0 else "•")
+                                result_lines.append(f"{prefix} {o.title}{' [常驻]' if o.is_always_context else ''}")
+                                if o.description:
+                                    desc_preview = o.description[:80] + "..." if len(o.description) > 80 else o.description
+                                    result_lines.append(f"{'  ' * (depth+1)}{desc_preview}")
+                                result_lines.extend(_render_outline(o.id, depth+1))
+                            return result_lines
+                        lines.extend(_render_outline(0, 0))
+                        blocks.append("\n".join(lines))
+                    result["outline"] = "\n\n".join(blocks)
+                else:
+                    result["outline"] = "(无)"
             return "查询结果:\n" + "\n\n".join(f"--- {k} ---\n{v}" for k,v in result.items())
         return "工具不可用"
 
