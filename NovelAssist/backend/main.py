@@ -1390,6 +1390,32 @@ def get_computed_attributes(location_id: int, db: Session, _depth: int = 0) -> d
     return merged
 
 
+def _resolve_coord_conflict(db: Session, novel_id: int, parent_id: int | None, grid_x: int, grid_y: int, exclude_id: int | None = None) -> tuple[int, int]:
+    """Auto-shift coordinates if another location with the same parent already uses (grid_x, grid_y)."""
+    MAX_ATTEMPTS = 625  # 25×25 grid
+    for _ in range(MAX_ATTEMPTS):
+        q = db.query(Location).filter(
+            Location.novel_id == novel_id,
+            Location.grid_x == grid_x,
+            Location.grid_y == grid_y,
+        )
+        if parent_id is None:
+            q = q.filter(Location.parent_id.is_(None))
+        else:
+            q = q.filter(Location.parent_id == parent_id)
+        if exclude_id is not None:
+            q = q.filter(Location.id != exclude_id)
+        if q.first() is None:
+            break  # No conflict
+        # Shift: x+1, wrap at 24
+        if grid_x >= 24:
+            grid_x = 0
+            grid_y += 1
+        else:
+            grid_x += 1
+    return grid_x, grid_y
+
+
 def _sync_attrs_to_templates(db: Session, novel_id: int, scale_level: str, attrs: dict) -> None:
     """Sync new attribute keys into the novel's location_templates under an「AI 创建」group."""
     if not attrs or not scale_level:
@@ -3060,6 +3086,8 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             if action == "add":
                 final_x = data.get("grid_x") if data.get("grid_x") is not None else data.get("map_x")
                 final_y = data.get("grid_y") if data.get("grid_y") is not None else data.get("map_y")
+                if final_x is not None and final_y is not None:
+                    final_x, final_y = _resolve_coord_conflict(db, novel_id, parent_id, int(final_x), int(final_y))
                 map_x_val = data.get("map_x") if data.get("map_x") is not None else final_x
                 map_y_val = data.get("map_y") if data.get("map_y") is not None else final_y
                 db.add(Location(
@@ -3104,6 +3132,12 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         item.map_x = int(data["map_x"])
                     if "map_y" in data:
                         item.map_y = int(data["map_y"])
+                    # Auto-resolve coordinate conflicts
+                    if item.grid_x is not None and item.grid_y is not None:
+                        item.grid_x, item.grid_y = _resolve_coord_conflict(
+                            db, novel_id, item.parent_id, item.grid_x, item.grid_y, exclude_id=item.id
+                        )
+                        item.map_x, item.map_y = item.grid_x, item.grid_y
                     if "attributes" in data and isinstance(data["attributes"], dict):
                         item.attributes = {**item.attributes, **data["attributes"]}
                         _sync_attrs_to_templates(db, novel_id, item.scale_level or "", data["attributes"])
