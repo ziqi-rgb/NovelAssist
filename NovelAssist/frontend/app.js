@@ -8,6 +8,12 @@ let currentLocationId = null;
 let currentModule = "writing";
 let currentOutlineCat = "世界观";
 let mdViewing = false;
+
+/* ═══════════ Domain Constants (keep in sync with backend/constants.py) ═══════════ */
+const SCALES = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"];
+const OUTLINE_CATEGORIES = ["世界观", "世界势力", "地理", "人物设定", "能力体系设定", "剧情大纲"];
+const ELEMENT_TYPES = ["outline", "location", "timeline", "faction", "relation", "character", "volume", "character_template"];
+
 let isGenesisRunning = false;
 let genesisPaused = false;              // 暂停标志：优雅停止，保存进度
 let genesisAborted = false;             // 中断标志：立即停止，不保存
@@ -168,16 +174,28 @@ document.querySelectorAll(".nav-btn[data-module]").forEach(b => {
 });
 
 /* ═══════════ Category nav (outline) ═══════════ */
-document.querySelectorAll("#outline-category-nav li").forEach(li => {
-    li.addEventListener("click", () => {
-        document.querySelectorAll("#outline-category-nav li").forEach(x => x.classList.remove("active"));
-        li.classList.add("active"); currentOutlineCat = li.dataset.cat;
-        currentNoteId = null; outlineTitle.value = ""; outlineContent.value = ""; outlineCtxToggle.checked = false;
-        document.getElementById("outline-pane-title").textContent = currentOutlineCat;
-        document.getElementById("new-outline-child-btn").classList.remove("hidden");
-        loadOutlineNotes();
+(function initOutlineNav() {
+    var nav = document.getElementById("outline-category-nav");
+    if (!nav) return;
+    nav.innerHTML = "";
+    OUTLINE_CATEGORIES.forEach(function(cat) {
+        var li = document.createElement("li");
+        li.textContent = cat;
+        li.dataset.cat = cat;
+        if (cat === currentOutlineCat) li.classList.add("active");
+        li.addEventListener("click", function() {
+            document.querySelectorAll("#outline-category-nav li").forEach(function(x) { x.classList.remove("active"); });
+            li.classList.add("active");
+            currentOutlineCat = li.dataset.cat;
+            currentNoteId = null; outlineTitle.value = ""; outlineContent.value = ""; outlineCtxToggle.checked = false;
+            document.getElementById("outline-pane-title").textContent = currentOutlineCat;
+            document.getElementById("new-outline-child-btn").classList.remove("hidden");
+            loadOutlineNotes();
+        });
+        nav.appendChild(li);
     });
-});
+})();
+
 
 /* ═══════════ Timeline ═══════════ */
 const tlMap = { writing: "MAIN_STORY", outline: "HISTORY", map: "WORLD", reasoning: "MAIN_STORY" };
@@ -360,7 +378,7 @@ async function loadOutlineNotes() {
     const notes = await (await fetch("/api/outlines" + nidQ())).json();
     const filtered = notes.filter(n => n.category === currentOutlineCat);
     outlineNoteList.innerHTML = "";
-    if (currentOutlineCat === "剧情大纲") {
+    if (currentOutlineCat === OUTLINE_CATEGORIES[5] /* 剧情大纲 */) {
         const tree = buildTree(filtered);
         renderTree(tree, 0, outlineNoteList);
     } else {
@@ -848,7 +866,7 @@ document.getElementById("restore-snapshot-btn").addEventListener("click", async 
     loadCharactersModule();
 });
 /* ═══════════ Map — Grid 25x25 ═══════════ */
-const DEFAULT_SCALES = ["大千世界", "宇宙", "星球", "大陆", "国家", "城池", "街区", "建筑"];
+const DEFAULT_SCALES = SCALES;  // alias kept for backward compat, defined in constants block above
 
 function refreshScaleDatalists() {
     // Collect all known scale levels: defaults + template keys
@@ -865,7 +883,7 @@ function refreshScaleDatalists() {
 
 let mapMode = "list";
 let mapParentId = null;
-let mapBreadcrumbs = [{ id: null, name: "大千世界", scale_level: "大千世界" }];
+let mapBreadcrumbs = [{ id: null, name: SCALES[0], scale_level: SCALES[0] }];
 
 document.getElementById("map-list-btn").addEventListener("click", () => {
     mapMode = "list";
@@ -881,7 +899,7 @@ document.getElementById("map-grid-btn").addEventListener("click", () => {
     document.getElementById("map-list-mode").classList.add("hidden");
     document.getElementById("map-grid-mode").classList.remove("hidden");
     mapParentId = null;
-    mapBreadcrumbs = [{ id: null, name: "大千世界", scale_level: "大千世界" }];
+    mapBreadcrumbs = [{ id: null, name: SCALES[0], scale_level: SCALES[0] }];
     renderMapGrid();
 });
 
@@ -893,7 +911,7 @@ function enterLocationGrid(loc) {
     document.getElementById("map-grid-mode").classList.remove("hidden");
     mapParentId = loc.id;
     mapBreadcrumbs = [
-        { id: null, name: "大千世界", scale_level: "大千世界" },
+        { id: null, name: SCALES[0], scale_level: SCALES[0] },
         { id: loc.id, name: loc.name, scale_level: loc.scale_level || "" },
     ];
     renderMapGrid();
@@ -1469,6 +1487,16 @@ async function copilotChat(instruction, forceScene) {
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
+            else if (msg.type === "tool_query") {
+                var qLabel = msg.tool_name === "query_world_state" ? "🔍 查询世界状态" : "🔧 " + msg.tool_name;
+                var qCard = document.createElement("div");
+                qCard.className = "tool-proposal tp-executed";
+                qCard.innerHTML = '<div class="tp-title">📋 ' + e(qLabel) + '</div>'
+                    + '<div class="tp-args">' + e(JSON.stringify(msg.arguments || {}, null, 2)) + '</div>'
+                    + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 已自动查询</span></div>';
+                aiB.appendChild(qCard);
+                copilotHistory.scrollTop = copilotHistory.scrollHeight;
+            }
             else if (msg.type === "tool_proposal") {
                 var autoExec = document.getElementById("agent-auto-execute").checked;
                 renderToolProposal(aiB, msg, autoExec);
@@ -2440,9 +2468,23 @@ document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("clic
 function renderToolProposal(parentBubble, proposal, autoExecute) {
     var argsText = JSON.stringify(proposal.arguments || {}, null, 2);
     var toolLabel = proposal.tool_name === "advance_world_time" ? "🌏 推进世界时间" :
-                    proposal.tool_name === "manage_world_element" ? "⚙️ 元素操作" : "🔧 " + proposal.tool_name;
+                    proposal.tool_name === "manage_world_element" ? "⚙️ 元素操作" :
+                    proposal.tool_name === "query_world_state" ? "🔍 查询世界状态" : "🔧 " + proposal.tool_name;
+    var isReadOnly = proposal.tool_name === "query_world_state";
     var tp = document.createElement("div");
     tp.className = "tool-proposal";
+
+    if (isReadOnly) {
+        // 只读工具静默批准
+        tp.innerHTML = '<div class="tp-title">📋 系统查询: ' + toolLabel + '</div>' +
+            '<div class="tp-args">参数: ' + e(argsText) + '</div>' +
+            '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 自动查询中...</span></div>';
+        parentBubble.appendChild(tp);
+        copilotHistory.scrollTop = copilotHistory.scrollHeight;
+        executeTool(proposal.tool_name, proposal.arguments, tp);
+        return;
+    }
+
     tp.innerHTML = '<div class="tp-title">📋 提议操作: ' + toolLabel + '</div>' +
         '<div class="tp-args">参数: ' + e(argsText) + '</div>' +
         '<div class="tp-actions">' +
@@ -2478,7 +2520,18 @@ async function executeTool(toolName, args, card) {
         var result = await res.json();
         if (result.status === "success") {
             card.classList.add("tp-executed");
-            card.querySelector(".tp-title").textContent = "✅ 已执行: " + result.msg;
+            if (toolName === "query_world_state" && result.data) {
+                var summary = Object.keys(result.data).filter(function(k) { return result.data[k] && result.data[k] !== "(无匹配"; }).length;
+                card.querySelector(".tp-title").textContent = "✅ 已查询: " + summary + " 类数据已获取";
+                var detailDiv = document.createElement("div");
+                detailDiv.style.cssText = "font-size:.68rem;color:var(--text-muted);margin-top:4px;max-height:200px;overflow-y:auto;";
+                detailDiv.innerHTML = Object.entries(result.data).map(function(e2) {
+                    return "<b>" + e2[0] + ":</b><br>" + e(e2[1]).replace(/\n/g, "<br>");
+                }).join("<br><br>");
+                card.appendChild(detailDiv);
+            } else {
+                card.querySelector(".tp-title").textContent = "✅ 已执行: " + (result.msg || "完成");
+            }
             if (typeof loadNovelTime === "function") loadNovelTime();
             if (currentModule === "characters" && typeof loadCharacters === "function") loadCharacters(currentNovelId);
             if (toolName === "manage_world_element") {
@@ -3003,6 +3056,30 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             txt += msg.content;
                             if (bubbleEl) { bubbleEl.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
                         } else if (msg.type === "tool_proposal") {
+                            // 🛡️ 删除操作门禁：弹窗确认，暂停链执行
+                            var isDelete = msg.arguments && msg.arguments.action === "delete";
+                            if (isDelete) {
+                                var deleteConfirmed = confirm(
+                                    "⚠️ AI 请求删除数据！\n\n" +
+                                    "类型: " + (msg.arguments.element_type || "未知") + "\n" +
+                                    "ID: " + (msg.arguments.element_id || "未指定") + "\n" +
+                                    "数据: " + JSON.stringify(msg.arguments.data || {}, null, 2) + "\n\n" +
+                                    "确定要执行删除吗？"
+                                );
+                                if (!deleteConfirmed) {
+                                    if (bubbleEl) {
+                                        var rejectedCard = document.createElement("div");
+                                        rejectedCard.className = "tool-proposal tp-rejected";
+                                        rejectedCard.innerHTML = '<div class="tp-title">🚫 已拒绝: ' + e(msg.tool_name) + '</div>'
+                                            + '<div class="tp-actions"><span style="font-size:.7rem;color:#ef4444;">⛔ 用户取消了删除操作</span></div>';
+                                        bubbleEl.appendChild(rejectedCard);
+                                        copilotHistory.scrollTop = copilotHistory.scrollHeight;
+                                    }
+                                    if (onLogCallback) onLogCallback("\n⛔ 用户拒绝了删除 [" + (msg.arguments.element_type || "") + "] 的请求\n", "error");
+                                    nodeToolCalls += "\n[⛔ 用户拒绝了删除操作]";
+                                    continue;
+                                }
+                            }
                             if (bubbleEl) {
                                 var card = document.createElement("div");
                                 card.className = "tool-proposal";
@@ -3241,6 +3318,20 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
                 var msg = chunkResult.value;
                 if (msg.type === "chunk") txt += msg.content;
                 else if (msg.type === "tool_proposal") {
+                    // 🛡️ 删除操作门禁
+                    var isDelete2 = msg.arguments && msg.arguments.action === "delete";
+                    if (isDelete2) {
+                        var delConfirmed = confirm(
+                            "⚠️ AI 请求删除数据！\n\n" +
+                            "类型: " + (msg.arguments.element_type || "未知") + "\n" +
+                            "ID: " + (msg.arguments.element_id || "未指定") + "\n\n" +
+                            "确定要执行删除吗？"
+                        );
+                        if (!delConfirmed) {
+                            txt += "\n[⛔ 用户拒绝了删除操作]";
+                            continue;
+                        }
+                    }
                     await fetch("/api/agent/execute/" + currentNovelId, {
                         method: "POST", headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null, chain_id: currentChainId || null }),
@@ -3304,6 +3395,13 @@ chainGenBtn.addEventListener("click", async () => {
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { aiB.appendChild(document.createTextNode(msg.content)); aiB.scrollIntoView(false); }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
+            else if (msg.type === "tool_query") {
+                var ql = msg.tool_name === "query_world_state" ? "🔍 查询世界状态" : "🔧 " + msg.tool_name;
+                var qc = document.createElement("div");
+                qc.className = "tool-proposal tp-executed";
+                qc.innerHTML = '<div class="tp-title">📋 ' + e(ql) + '</div><div class="tp-args">' + e(JSON.stringify(msg.arguments||{},null,2)) + '</div><div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 已自动查询</span></div>';
+                aiB.appendChild(qc);
+            }
             else if (msg.type === "tool_proposal") { renderToolProposal(aiB, msg, false); }
             else if (msg.type === "done") {
                 const txt = aiB.textContent.replace(/^AI/, "").trim();
@@ -3833,7 +3931,7 @@ function buildWriteToHTML(node) {
     if (entity === "character" && field === "attributes") {
         subInput = '<input class="write-sub" value="' + e(sub) + '" placeholder="如: 能力数据.当前境界" style="width:100px;">';
     } else if (entity === "outline" && field === "category") {
-        var cats = ["世界观","世界势力","地理","人物设定","能力体系设定","剧情大纲"];
+        var cats = OUTLINE_CATEGORIES;
         subInput = '<select class="write-sub">';
         cats.forEach(function(c) { subInput += '<option value="' + c + '"' + (sub===c?" selected":"") + '>' + c + '</option>'; });
         subInput += '</select>';
@@ -4152,7 +4250,7 @@ function validateStructuredOutput(format, items, chainNodes, templateSnapshot) {
         }
     } else if (format === "outline") {
         if (!item.title || item.title.trim() === "") errors.push("title 为空");
-        var validCats = ["世界观","世界势力","地理","人物设定","能力体系设定","剧情大纲"];
+        var validCats = OUTLINE_CATEGORIES;
         if (item.category && validCats.indexOf(item.category) === -1) errors.push("category 不在有效值中: " + item.category);
         if (!item.description || item.description.trim().length < 3) errors.push("description 过短或缺失");
     }
@@ -4816,16 +4914,20 @@ function renderVisNetwork(chars, factions, rels) {
 
         var nodesArray = (chars || []).map(function(c) {
             var groupName = (c.faction_id && factionMap[c.faction_id]) ? factionMap[c.faction_id] : "散修/无势力";
-            var roleStr = c.faction_role ? "\n(" + c.faction_role + ")" : "";
+            var roleStr = c.faction_role ? "\n身份: " + c.faction_role : "";
             var cfg = {
                 id: String(c.id),
-                label: (c.name || "未知") + roleStr,
+                label: c.name || "未知",
                 group: groupName,
-                title: "状态: " + (c.status || "正常") + "\n阵营: " + groupName,
-                shape: "dot",
-                size: c.is_active ? 20 : 10,
+                title: "状态: " + (c.status || "正常") + "\n阵营: " + groupName + roleStr,
+                shape: "circle",
+                size: c.is_active ? 35 : 22,
+                font: { color: "#1e293b", size: 10, face: "system-ui, sans-serif" },
             };
-            if (!c.is_active) cfg.color = { background: "#ccc", border: "#999" };
+            if (!c.is_active) {
+                cfg.color = { background: "#ccc", border: "#999" };
+                cfg.font = { color: "#64748b", size: 9, face: "system-ui, sans-serif" };
+            }
             return cfg;
         });
 
@@ -4833,19 +4935,56 @@ function renderVisNetwork(chars, factions, rels) {
             return r && validCharIds.has(String(r.source_id)) && validCharIds.has(String(r.target_id));
         });
 
-        var edgesArray = validRels.map(function(r) {
-            var edgeColor = "#94a3b8";
-            if (r.weight < 0) edgeColor = "#ef4444";
-            if (r.weight > 50) edgeColor = "#10b981";
-            return {
-                from: String(r.source_id),
-                to: String(r.target_id),
-                label: r.label || "",
-                arrows: "to",
-                color: { color: edgeColor },
-                font: { size: 10, align: "middle" },
-                title: "好感度: " + (r.weight || 0) + "\n原因: " + (r.description || "无"),
-            };
+        var charsById = {};
+        (chars || []).forEach(function(c) { if (c && c.id != null) charsById[c.id] = c; });
+
+        var edgesArray = [];
+        var mergedIds = {};
+        validRels.forEach(function(r) {
+            if (mergedIds[r.id]) return;
+            var srcName = (charsById[r.source_id] || {}).name || "?";
+            var tgtName = (charsById[r.target_id] || {}).name || "?";
+            // 查找同标签的反向关系 → 合并为双向箭头
+            var reverse = validRels.find(function(r2) {
+                return !mergedIds[r2.id] && r2.id !== r.id
+                    && r2.source_id === r.target_id && r2.target_id === r.source_id
+                    && (r2.label || "") === (r.label || "");
+            });
+            if (reverse) {
+                mergedIds[r.id] = true;
+                mergedIds[reverse.id] = true;
+                var revSrcName = (charsById[reverse.source_id] || {}).name || "?";
+                var revTgtName = (charsById[reverse.target_id] || {}).name || "?";
+                var biColor = r.color || reverse.color || "#6366f1";
+                edgesArray.push({
+                    id: "bi_" + r.id + "_" + reverse.id,
+                    from: String(r.source_id),
+                    to: String(r.target_id),
+                    label: r.label || "",
+                    arrows: { to: { enabled: true }, from: { enabled: true } },
+                    color: { color: biColor },
+                    font: { size: 10, align: "middle", color: biColor },
+                    title: "⟷ " + (r.label || "关联") + "\n" + srcName + "→" + tgtName + ": " + (r.weight > 0 ? "+" : "") + (r.weight || 0) + "\n" + revSrcName + "→" + revTgtName + ": " + (reverse.weight > 0 ? "+" : "") + (reverse.weight || 0),
+                    _rel1: { id: r.id, source_id: r.source_id, target_id: r.target_id, label: r.label, weight: r.weight, description: r.description, color: r.color },
+                    _rel2: { id: reverse.id, source_id: reverse.source_id, target_id: reverse.target_id, label: reverse.label, weight: reverse.weight, description: reverse.description, color: reverse.color },
+                    _srcName: srcName, _tgtName: tgtName,
+                    _revSrcName: revSrcName, _revTgtName: revTgtName,
+                });
+            } else {
+                var edgeColor = r.color || (r.weight < 0 ? "#ef4444" : r.weight > 50 ? "#10b981" : "#94a3b8");
+                edgesArray.push({
+                    id: String(r.id),
+                    from: String(r.source_id),
+                    to: String(r.target_id),
+                    label: r.label || "",
+                    arrows: "to",
+                    color: { color: edgeColor },
+                    font: { size: 10, align: "middle" },
+                    title: srcName + "→" + tgtName + " (" + (r.label || "关联") + ")\n好感度: " + (r.weight > 0 ? "+" : "") + (r.weight || 0) + "\n原因: " + (r.description || "无"),
+                    _rel: { id: r.id, source_id: r.source_id, target_id: r.target_id, label: r.label, weight: r.weight, description: r.description, color: r.color },
+                    _srcName: srcName, _tgtName: tgtName,
+                });
+            }
         });
 
         var data = { nodes: new vis.DataSet(nodesArray), edges: new vis.DataSet(edgesArray) };
@@ -4853,7 +4992,7 @@ function renderVisNetwork(chars, factions, rels) {
         var options = {
             physics: {
                 solver: "repulsion",
-                repulsion: { nodeDistance: 200, springLength: 200 },
+                repulsion: { nodeDistance: 100, springLength: 100 },
             },
             groups: (function() {
                 var g = {};
@@ -4867,12 +5006,368 @@ function renderVisNetwork(chars, factions, rels) {
         if (window.relationsNetwork) window.relationsNetwork.destroy();
         window.relationsNetwork = new vis.Network(container, data, options);
 
+        window.relationsNetwork.on("click", function(params) {
+            if (params.nodes.length === 1) {
+                var charId = params.nodes[0];
+                var nodeData = data.nodes.get(charId);
+                if (nodeData && nodeData.group) openCharQuickEdit(charId);
+            }
+        });
+
+        window.relationsNetwork.on("initRedraw", syncQuickEditPanel);
+
+        window.relationsNetwork.on("doubleClick", function(params) {
+            if (params.edges.length === 1) {
+                var edgeData = data.edges.get(params.edges[0]);
+                if (edgeData) openEdgeEdit(edgeData);
+            }
+        });
+
     } catch (err) {
         console.error("Vis.js 渲染崩溃:", err);
         container.innerHTML = "<div style='color:red;padding:20px;font-size:14px;line-height:1.5;'><b>🚨 渲染引擎崩溃!</b><br><br>错误信息: " + (err.message || String(err)) + "</div>";
     }
 }
 document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRelationsGraph);
+
+/* ═══════════ Character Quick-Edit Panel (拓扑图点击触发，浮动面板，跟随缩放/平移) ═══════════ */
+let quickEditCharId = null;
+
+async function openCharQuickEdit(charId) {
+    quickEditCharId = charId;
+    var panel = document.getElementById("char-quick-edit-panel");
+
+    try {
+        // 确保 charTemplate 已加载
+        var novel = await (await fetch("/api/novels")).json();
+        var n = novel.find(function(x) { return x.id === currentNovelId; });
+        var tmpl = (n && n.character_template) ? n.character_template : [];
+        charTemplate = tmpl;
+
+        // 加载角色数据
+        var ch = await (await fetch("/api/characters/" + charId + "?novel_id=" + currentNovelId)).json();
+
+        // 标题
+        document.getElementById("quick-char-title").textContent = "📝 " + (ch.name || "角色");
+
+        // 填充基础字段
+        document.getElementById("quick-char-name").value = ch.name || "";
+        document.getElementById("quick-char-status").value = ch.status || "存活";
+
+        // 加载势力下拉
+        var sel = document.getElementById("quick-char-faction");
+        sel.innerHTML = '<option value="">-- 散修 / 无势力 --</option>';
+        var factions = await (await fetch("/api/factions?novel_id=" + currentNovelId)).json();
+        factions.forEach(function(f) {
+            sel.innerHTML += '<option value="' + f.id + '">' + e(f.name) + '</option>';
+        });
+        if (ch.faction_id) sel.value = ch.faction_id;
+        document.getElementById("quick-char-faction-role").value = ch.faction_role || "";
+
+        // 渲染模板字段
+        var tplContainer = document.getElementById("quick-char-template-fields");
+        tplContainer.innerHTML = "";
+        var attrs = ch.attributes || {};
+        if (tmpl.length) {
+            tmpl.forEach(function(grp) {
+                var fs = document.createElement("fieldset");
+                fs.className = "char-fieldset";
+                fs.innerHTML = "<legend>" + e(grp.group) + "</legend>";
+                if (grp.fields.length === 0) {
+                    var existing = attrs[grp.group] || {};
+                    var keys = Object.keys(existing);
+                    if (keys.length === 0) {
+                        var hint = document.createElement("div");
+                        hint.style.cssText = "font-size:.65rem;color:var(--text-muted);padding:2px 0;";
+                        hint.textContent = "（AI 自动填充）";
+                        fs.appendChild(hint);
+                    }
+                    keys.forEach(function(k) {
+                        var row = document.createElement("div");
+                        row.className = "char-field";
+                        row.innerHTML = "<label>" + e(k) + "</label><input type='text' data-group='" + e(grp.group) + "' data-field='" + e(k) + "' value='" + e(existing[k] || "") + "'>";
+                        fs.appendChild(row);
+                    });
+                } else {
+                    grp.fields.forEach(function(fld) {
+                        var val = (attrs[grp.group] && attrs[grp.group][fld]) ? attrs[grp.group][fld] : "";
+                        var row = document.createElement("div");
+                        row.className = "char-field";
+                        row.innerHTML = "<label>" + e(fld) + "</label><input type='text' data-group='" + e(grp.group) + "' data-field='" + e(fld) + "' value='" + e(val) + "'>";
+                        fs.appendChild(row);
+                    });
+                }
+                tplContainer.appendChild(fs);
+            });
+        }
+
+        // 加载关系连线
+        await loadQuickCharRelations();
+
+        // 展开关系连线区域
+        document.getElementById("quick-char-relations-body").classList.remove("hidden");
+        document.querySelector("#char-quick-edit-panel .toggle-arrow").textContent = "▼";
+
+        // 显示面板并初始定位
+        panel.classList.remove("hidden");
+        syncQuickEditPanel();
+    } catch (err) {
+        console.error("打开快捷编辑面板失败:", err);
+    }
+}
+
+function closeCharQuickEdit() {
+    document.getElementById("char-quick-edit-panel").classList.add("hidden");
+    quickEditCharId = null;
+}
+
+// 每帧同步浮窗位置/缩放，使其附着在角色球旁边
+// 锚定点 = 浮窗左上角，通过 transform-origin:0 0 与 transform:scale() 对齐
+function syncQuickEditPanel() {
+    var panel = document.getElementById("char-quick-edit-panel");
+    if (!panel || panel.classList.contains("hidden") || !quickEditCharId) return;
+    if (!window.relationsNetwork) return;
+
+    var network = window.relationsNetwork;
+    var container = document.getElementById("relation-network").parentElement;
+    var containerRect = container.getBoundingClientRect();
+    var scale = network.getScale();
+
+    // 获取角色节点在 canvas 空间的位置
+    var nodePos;
+    try { nodePos = network.getPosition(quickEditCharId); } catch(e) { return; }
+
+    // 锚点在节点右上方（canvas 空间偏移），作为浮窗左上角的附着点
+    var anchorCanvas = { x: nodePos.x + 40, y: nodePos.y - 20 };
+    var domPos = network.canvasToDOM(anchorCanvas);
+
+    // transform: scale(s) 是纯视觉缩放，元素盒模型不变
+    panel.style.transform = "scale(" + scale + ")";
+    panel.style.transformOrigin = "0 0";
+
+    // 视觉尺寸 = offsetWidth/Height × scale
+    var visualW = panel.offsetWidth * scale;
+    var visualH = panel.offsetHeight * scale;
+
+    // 范围保护：不超出容器
+    var maxLeft = containerRect.width - visualW - 5;
+    var maxTop = containerRect.height - visualH - 5;
+    var left = Math.max(5, Math.min(domPos.x, maxLeft));
+    var top = Math.max(5, Math.min(domPos.y, maxTop));
+
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+}
+
+// 加载快捷编辑面板中的关系连线
+async function loadQuickCharRelations() {
+    if (!quickEditCharId) return;
+    var listEl = document.getElementById("quick-char-relations-list");
+    var countEl = document.getElementById("quick-char-relations-count");
+    var targetSel = document.getElementById("quick-char-rel-target");
+    if (!listEl) return;
+    try {
+        var [rels, chars] = await Promise.all([
+            fetch("/api/character_relations?novel_id=" + currentNovelId).then(function(r){return r.json();}),
+            fetch("/api/characters?novel_id=" + currentNovelId).then(function(r){return r.json();}),
+        ]);
+        // 填充关联角色下拉
+        if (targetSel) {
+            targetSel.innerHTML = '<option value="">-- 关联角色 --</option>';
+            chars.forEach(function(c) {
+                if (c.id !== quickEditCharId) targetSel.innerHTML += '<option value="' + c.id + '">' + e(c.name) + '</option>';
+            });
+        }
+        // 过滤涉及当前角色的关系
+        var myRels = rels.filter(function(r) { return r.source_id === quickEditCharId || r.target_id === quickEditCharId; });
+        countEl.textContent = myRels.length ? "(" + myRels.length + ")" : "";
+        listEl.innerHTML = "";
+        myRels.forEach(function(r) {
+            var isSource = r.source_id === quickEditCharId;
+            var otherId = isSource ? r.target_id : r.source_id;
+            var other = chars.find(function(c) { return c.id === otherId; });
+            var otherName = other ? other.name : "未知#" + otherId;
+            var dir = isSource ? "→" : "←";
+            var color = r.weight < 0 ? "#ef4444" : (r.weight > 50 ? "#22c55e" : "#888");
+            var row = document.createElement("div");
+            row.style.cssText = "display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--border);font-size:.7rem;";
+            row.innerHTML = '<span style="color:' + color + ';font-weight:700;">' + dir + '</span>'
+                + '<span style="flex:1;">' + e(otherName) + ' <b>' + e(r.label || "关联") + '</b></span>'
+                + '<span style="font-size:.6rem;color:' + color + ';">' + (r.weight > 0 ? "+" : "") + r.weight + '</span>'
+                + '<button data-del-rel="' + r.id + '" style="font-size:.6rem;padding:0 3px;border:none;background:none;cursor:pointer;color:var(--text-muted);">✕</button>';
+            listEl.appendChild(row);
+        });
+        // 删除事件
+        listEl.querySelectorAll("[data-del-rel]").forEach(function(btn) {
+            btn.addEventListener("click", async function() {
+                var rid = parseInt(btn.dataset.delRel);
+                await fetch("/api/character_relations/" + rid, { method: "DELETE" });
+                await loadQuickCharRelations();
+                loadRelationsGraph(); // 刷新拓扑图连线
+            });
+        });
+    } catch(e) { /* 加载失败不阻塞 */ }
+}
+
+// 关闭按钮
+document.getElementById("quick-char-close-btn")?.addEventListener("click", closeCharQuickEdit);
+
+// 添加关系连线按钮
+document.getElementById("quick-char-rel-add-btn")?.addEventListener("click", async function() {
+    if (!quickEditCharId) return;
+    var targetId = parseInt(document.getElementById("quick-char-rel-target")?.value || "0");
+    if (!targetId) { alert("请选择关联角色"); return; }
+    var label = document.getElementById("quick-char-rel-label")?.value?.trim() || "关联";
+    var weight = parseInt(document.getElementById("quick-char-rel-weight")?.value || "0");
+    await fetch("/api/character_relations?novel_id=" + currentNovelId, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ source_id: quickEditCharId, target_id: targetId, label: label, weight: weight, description: "" }),
+    });
+    document.getElementById("quick-char-rel-label").value = "";
+    document.getElementById("quick-char-rel-weight").value = "0";
+    await loadQuickCharRelations();
+    loadRelationsGraph(); // 刷新拓扑图连线
+});
+
+// 保存按钮
+document.getElementById("quick-char-save-btn")?.addEventListener("click", async function() {
+    if (!quickEditCharId) return;
+    try {
+        var attrs = {};
+        document.querySelectorAll("#quick-char-template-fields input").forEach(function(inp) {
+            var g = inp.dataset.group, f = inp.dataset.field;
+            if (!attrs[g]) attrs[g] = {};
+            attrs[g][f] = inp.value;
+        });
+        var ch = await (await fetch("/api/characters/" + quickEditCharId + "?novel_id=" + currentNovelId)).json();
+        await fetch("/api/characters/" + quickEditCharId, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name: document.getElementById("quick-char-name").value,
+                aliases: ch.aliases,
+                description: ch.description,
+                status: document.getElementById("quick-char-status").value,
+                attributes: attrs,
+                is_always_context: ch.is_always_context,
+                faction_id: document.getElementById("quick-char-faction").value ? parseInt(document.getElementById("quick-char-faction").value) : null,
+                faction_role: document.getElementById("quick-char-faction-role").value || "",
+            })
+        });
+        closeCharQuickEdit();
+        loadRelationsGraph();
+    } catch (err) {
+        console.error("快捷保存角色失败:", err);
+        alert("保存失败: " + (err.message || String(err)));
+    }
+});
+
+/* ═══════════ Edge Edit Modal (拓扑图双击连线触发) ═══════════ */
+let editingEdgeData = null;
+
+function openEdgeEdit(edgeData) {
+    editingEdgeData = edgeData;
+    var isBi = !!edgeData._rel2;
+
+    document.getElementById("edge-edit-single").classList.toggle("hidden", isBi);
+    document.getElementById("edge-edit-bi").classList.toggle("hidden", !isBi);
+
+    if (isBi) {
+        document.getElementById("edge-edit-title").textContent = "✏️ 编辑双向关系";
+        document.getElementById("edge-edit-dir").textContent = edgeData._srcName + " ⟷ " + edgeData._tgtName;
+        document.getElementById("edge-edit-bi-label").value = edgeData._rel1.label || "";
+        document.getElementById("edge-edit-bi-w1").value = edgeData._rel1.weight || 0;
+        document.getElementById("edge-edit-bi-w2").value = edgeData._rel2.weight || 0;
+        document.getElementById("edge-edit-bi-l1").textContent = edgeData._srcName + "→" + edgeData._tgtName;
+        document.getElementById("edge-edit-bi-l2").textContent = edgeData._revSrcName + "→" + edgeData._revTgtName;
+        document.getElementById("edge-edit-bi-color").value = edgeData._rel1.color || edgeData._rel2.color || "#6366f1";
+    } else {
+        document.getElementById("edge-edit-title").textContent = "✏️ 编辑关系";
+        document.getElementById("edge-edit-dir").textContent = edgeData._srcName + " → " + edgeData._tgtName;
+        document.getElementById("edge-edit-label").value = edgeData._rel.label || "";
+        document.getElementById("edge-edit-weight").value = edgeData._rel.weight || 0;
+        document.getElementById("edge-edit-desc").value = edgeData._rel.description || "";
+        document.getElementById("edge-edit-color").value = edgeData._rel.color || "#94a3b8";
+    }
+    document.getElementById("edge-edit-modal").classList.remove("hidden");
+}
+
+function closeEdgeEdit() {
+    document.getElementById("edge-edit-modal").classList.add("hidden");
+    editingEdgeData = null;
+}
+
+document.querySelector("#edge-edit-modal .modal-backdrop")?.addEventListener("click", closeEdgeEdit);
+document.getElementById("edge-edit-cancel-btn")?.addEventListener("click", closeEdgeEdit);
+
+document.getElementById("edge-edit-save-btn")?.addEventListener("click", async function() {
+    if (!editingEdgeData) return;
+    var isBi = !!editingEdgeData._rel2;
+    try {
+        if (isBi) {
+            var color = document.getElementById("edge-edit-bi-color").value;
+            var label = document.getElementById("edge-edit-bi-label").value;
+            await Promise.all([
+                fetch("/api/character_relations/" + editingEdgeData._rel1.id, {
+                    method: "PUT", headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        source_id: editingEdgeData._rel1.source_id,
+                        target_id: editingEdgeData._rel1.target_id,
+                        label: label,
+                        weight: parseInt(document.getElementById("edge-edit-bi-w1").value) || 0,
+                        color: color,
+                    }),
+                }),
+                fetch("/api/character_relations/" + editingEdgeData._rel2.id, {
+                    method: "PUT", headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        source_id: editingEdgeData._rel2.source_id,
+                        target_id: editingEdgeData._rel2.target_id,
+                        label: label,
+                        weight: parseInt(document.getElementById("edge-edit-bi-w2").value) || 0,
+                        color: color,
+                    }),
+                }),
+            ]);
+        } else {
+            await fetch("/api/character_relations/" + editingEdgeData._rel.id, {
+                method: "PUT", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    source_id: editingEdgeData._rel.source_id,
+                    target_id: editingEdgeData._rel.target_id,
+                    label: document.getElementById("edge-edit-label").value,
+                    weight: parseInt(document.getElementById("edge-edit-weight").value) || 0,
+                    description: document.getElementById("edge-edit-desc").value,
+                    color: document.getElementById("edge-edit-color").value,
+                }),
+            });
+        }
+        closeEdgeEdit();
+        loadRelationsGraph();
+    } catch (err) {
+        console.error("保存关系失败:", err);
+        alert("保存失败: " + (err.message || String(err)));
+    }
+});
+
+document.getElementById("edge-edit-delete-btn")?.addEventListener("click", async function() {
+    if (!editingEdgeData) return;
+    if (!confirm("确定删除此关系连线？")) return;
+    var isBi = !!editingEdgeData._rel2;
+    try {
+        if (isBi) {
+            await fetch("/api/character_relations/" + editingEdgeData._rel1.id, { method: "DELETE" });
+            await fetch("/api/character_relations/" + editingEdgeData._rel2.id, { method: "DELETE" });
+        } else {
+            await fetch("/api/character_relations/" + editingEdgeData._rel.id, { method: "DELETE" });
+        }
+        closeEdgeEdit();
+        loadRelationsGraph();
+    } catch (err) {
+        console.error("删除关系失败:", err);
+        alert("删除失败: " + (err.message || String(err)));
+    }
+});
 
 /* ═══════════ Faction Modal CRUD ═══════════ */
 var activeFactionId = null;

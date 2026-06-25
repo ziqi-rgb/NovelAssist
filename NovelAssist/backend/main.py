@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import httpx
+import httpx
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query, Body
@@ -44,6 +44,7 @@ try:
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation,
     )
     from .world_calendar import CalendarEngine  # noqa: E402
+    from .constants import LocationScaleLevel, SYSTEM_CHAIN_NAMES  # noqa: E402
 except ImportError:
     from database import Base, engine, get_db, run_migration  # noqa: E402
     from models import (  # noqa: E402
@@ -53,6 +54,7 @@ except ImportError:
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation,
     )
     from world_calendar import CalendarEngine  # noqa: E402
+    from constants import LocationScaleLevel, SYSTEM_CHAIN_NAMES  # noqa: E402
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
@@ -189,13 +191,28 @@ AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_world_state",
+            "description": "查询当前世界的实时状态数据。可查询人物、势力、关系图谱、地点、时间线。当需要了解世界当前局面、角色关系、势力分布时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query_type": {
+                        "type": "string",
+                        "enum": ["characters", "factions", "relations", "locations", "timeline", "all"],
+                        "description": "数据类型：characters(人物列表含势力归属), factions(势力目录含成员), relations(关系有向图谱), locations(地点列表), timeline(时间线), all(全部)",
+                    },
+                    "filter": {"type": "string", "description": "可选的名称过滤关键词"},
+                },
+                "required": ["query_type"],
+            },
+        },
+    },
 ]
 
-SYSTEM_CHAIN_NAMES = [
-    "🗺️ 蓝图规划与逐层搭建流",
-    "👤 严谨人设与模板质检流",
-    "📖 全维世界观与大纲流水线",
-]
+# SYSTEM_CHAIN_NAMES imported from constants.py (line 213 area kept for reference but unused)
 
 
 def _get_system_chain_nodes(title: str) -> list[dict]:
@@ -1980,15 +1997,18 @@ def delete_character(char_id: int, db: Session = Depends(get_db)):
 
 class AIChatRequest(BaseModel):
     messages: list[dict[str, str]]
-    api_key: str
+    api_key: str = ""
     base_url: str = ""
     model: str = "gpt-3.5-turbo"
 
 @app.post("/api/ai/stream")
 async def ai_stream(req: AIChatRequest):
+    api_key = req.api_key or LLM_API_KEY
+    if not api_key:
+        raise HTTPException(400, "未配置 API Key，请在设置中配置或在 .env 中设置 LLM_API_KEY")
     async def gen():
         try:
-            client = AsyncOpenAI(api_key=req.api_key, base_url=req.base_url or None)
+            client = AsyncOpenAI(api_key=api_key, base_url=req.base_url or None)
             stream = await client.chat.completions.create(
                 model=req.model, messages=req.messages, stream=True,
             )
@@ -2044,18 +2064,21 @@ def get_world_lore(db: Session, novel_id: int) -> str:
 
 
 class AIReasoningRequest(BaseModel):
-    api_key: str
+    api_key: str = ""
     base_url: str = ""
     model: str = "gpt-3.5-turbo"
     content: str = ""
 
 @app.post("/api/ai/reasoning")
 async def ai_reasoning(req: AIReasoningRequest, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    api_key = req.api_key or LLM_API_KEY
+    if not api_key:
+        raise HTTPException(400, "未配置 API Key，请在设置中配置或在 .env 中设置 LLM_API_KEY")
     world_lore = get_world_lore(db, novel_id)
 
     async def gen():
         import json
-        client = AsyncOpenAI(api_key=req.api_key, base_url=req.base_url or None)
+        client = AsyncOpenAI(api_key=api_key, base_url=req.base_url or None)
         yield f"data: {json.dumps({'type':'status','message':'Step 1/2'})}\n\n"
 
         sp = (
@@ -2145,46 +2168,130 @@ async def get_llm_intent(instruction: str, api_key: str, base_url: str, model: s
     return "chat"
 
 
-async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None) -> StreamingResponse:
+async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None) -> StreamingResponse:
+
+    def _execute_readonly_tool(tool_name: str, arguments: dict) -> str:
+        if tool_name == "query_world_state" and novel_id and db:
+            qtype = arguments.get("query_type", "all")
+            filt = (arguments.get("filter") or "").strip()
+            result = {}
+            def _m(s): return not filt or filt.lower() in (s or "").lower()
+            if qtype in ("characters","all"):
+                chars = db.query(Character).filter(Character.novel_id==novel_id).all()
+                lines = []
+                for c in chars:
+                    if filt and not _m(c.name): continue
+                    f2 = db.get(Faction,c.faction_id) if c.faction_id else None
+                    fs = f" [势力: {f2.name} / {c.faction_role}]" if f2 and c.faction_role else ""
+                    lines.append(f"• {c.name}({c.status}){fs} — {c.description or ''}")
+                result["characters"] = "\n".join(lines) if lines else "(无)"
+            if qtype in ("factions","all"):
+                factions = db.query(Faction).filter(Faction.novel_id==novel_id).all()
+                lines = []
+                for f in factions:
+                    if filt and not _m(f.name): continue
+                    m2 = db.query(Character).filter(Character.faction_id==f.id).all()
+                    ms = ", ".join(f"{x.name}({x.faction_role})" for x in m2 if x.faction_role) or "暂无成员"
+                    lines.append(f"【{f.name}】{f.description or ''} | 成员: {ms}")
+                result["factions"] = "\n".join(lines) if lines else "(无)"
+            if qtype in ("relations","all"):
+                rels = db.query(CharacterRelation).filter(CharacterRelation.novel_id==novel_id).all()
+                lines = []
+                for r in rels:
+                    s2 = db.get(Character,r.source_id); t2 = db.get(Character,r.target_id)
+                    if not s2 or not t2: continue
+                    if filt and not (_m(s2.name) or _m(t2.name) or _m(r.label)): continue
+                    w = r.weight
+                    g = " [极度亲密]" if w>=80 else " [友好]" if w>=40 else " [不共戴天]" if w<=-80 else " [敌对]" if w<=-40 else ""
+                    lines.append(f"[{s2.name}]→<{r.label}>→[{t2.name}](好感:{w:+d}){g}")
+                result["relations"] = "\n".join(lines) if lines else "(无)"
+            if qtype in ("locations","all"):
+                locs = db.query(Location).filter(Location.novel_id==novel_id).all()
+                lines = [f"• {l.name}[{l.scale_level}] — {l.description or ''}" for l in locs if not filt or _m(l.name)]
+                result["locations"] = "\n".join(lines) if lines else "(无)"
+            if qtype in ("timeline","all"):
+                evts = db.query(TimelineEvent).filter(TimelineEvent.novel_id==novel_id).order_by(TimelineEvent.time_label).all()
+                lines = [f"• {e.time_label}: {e.content}" for e in evts if not filt or (_m(e.time_label) or _m(e.content))]
+                result["timeline"] = "\n".join(lines) if lines else "(无)"
+            return "查询结果:\n" + "\n\n".join(f"--- {k} ---\n{v}" for k,v in result.items())
+        return "工具不可用"
+
+    READONLY_TOOLS = {"query_world_state"}
+
     async def gen():
-        tool_calls_acc: dict[int, dict[str, str]] = {}
-        try:
-            client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
-            extra: dict = {}
-            if tools and not response_format:
-                extra["tools"] = tools
-                extra["tool_choice"] = "auto"
-            if response_format:
-                extra["response_format"] = response_format
-            stream = await client.chat.completions.create(
-                model=model, messages=messages, temperature=0.8, stream=True, **extra,
-            )
-            async for chunk in stream:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    yield f"data: {json.dumps({'type':'chunk','content':delta.content})}\n\n"
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                        acc = tool_calls_acc[idx]
-                        if tc.id:
-                            acc["id"] = tc.id
-                        if tc.function:
-                            if tc.function.name:
-                                acc["name"] += tc.function.name
-                            if tc.function.arguments:
-                                acc["arguments"] += tc.function.arguments
-        except Exception as e:
-            yield f"data: {json.dumps({'type':'error','message':str(e)})}\n\n"
-        for tc_data in tool_calls_acc.values():
-            if tc_data["name"]:
-                try:
-                    args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
-                except json.JSONDecodeError:
-                    args = {}
-                yield f"data: {json.dumps({'type':'tool_proposal','tool_name':tc_data['name'],'arguments':args,'tool_call_id':tc_data['id']})}\n\n"
+        nonlocal messages
+        max_loops = 3
+        for _ in range(max_loops):
+            tool_calls_acc: dict[int, dict[str, str]] = {}
+            try:
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+                extra: dict = {}
+                if tools and not response_format:
+                    extra["tools"] = tools
+                    extra["tool_choice"] = "auto"
+                if response_format:
+                    extra["response_format"] = response_format
+                stream = await client.chat.completions.create(
+                    model=model, messages=messages, temperature=0.8, stream=True, **extra,
+                )
+                has_content = False
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        has_content = True
+                        yield f"data: {json.dumps({'type':'chunk','content':delta.content})}\n\n"
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                            acc = tool_calls_acc[idx]
+                            if tc.id: acc["id"] = tc.id
+                            if tc.function:
+                                if tc.function.name: acc["name"] += tc.function.name
+                                if tc.function.arguments: acc["arguments"] += tc.function.arguments
+            except Exception as e:
+                yield f"data: {json.dumps({'type':'error','message':str(e)})}\n\n"
+                return
+
+            if not tool_calls_acc: break
+            tc_list = [v for v in tool_calls_acc.values() if v["name"]]
+            if not tc_list: break
+
+            ro_calls = [tc for tc in tc_list if tc["name"] in READONLY_TOOLS]
+            rw_calls = [tc for tc in tc_list if tc["name"] not in READONLY_TOOLS]
+
+            if rw_calls:
+                for tc_data in tc_list:
+                    try: args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                    except json.JSONDecodeError: args = {}
+                    yield f"data: {json.dumps({'type':'tool_proposal','tool_name':tc_data['name'],'arguments':args,'tool_call_id':tc_data['id']})}\n\n"
+                yield f"data: {json.dumps({'type':'done'})}\n\n"
+                return
+
+            # 只读工具 → 执行并闭环，前端仅展示
+            for tc_data in ro_calls:
+                try: args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                except json.JSONDecodeError: args = {}
+                yield f"data: {json.dumps({'type':'tool_query','tool_name':tc_data['name'],'arguments':args})}\n\n"
+
+            assistant_msg = {"role": "assistant", "content": None, "tool_calls": []}
+            for tc_data in ro_calls:
+                try: margs = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                except json.JSONDecodeError: margs = {}
+                assistant_msg["tool_calls"].append({
+                    "id": tc_data["id"], "type": "function",
+                    "function": {"name": tc_data["name"], "arguments": json.dumps(margs, ensure_ascii=False)},
+                })
+            messages.append(assistant_msg)
+
+            for tc_data in ro_calls:
+                try: cargs = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                except json.JSONDecodeError: cargs = {}
+                result_str = _execute_readonly_tool(tc_data["name"], cargs)
+                messages.append({"role": "tool", "tool_call_id": tc_data["id"], "content": result_str})
+
+            # 继续循环 → 模型基于工具结果继续生成
         yield f"data: {json.dumps({'type':'done'})}\n\n"
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -2817,7 +2924,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
     messages.append({"role": "user", "content": prompt})
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, novel_id=req.novel_id, db=db)
 
 
 # ═══════════ Agent Tool Execution ═══════════
@@ -2915,13 +3022,14 @@ class RelationCreate(BaseModel):
     label: str = ""
     weight: int = 0
     description: str = ""
+    color: str = ""
 
 
 @app.post("/api/character_relations", response_model=RelationCreate)
 def create_relation(body: RelationCreate, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
     rel = CharacterRelation(
         novel_id=novel_id, source_id=body.source_id, target_id=body.target_id,
-        label=body.label, weight=body.weight, description=body.description,
+        label=body.label, weight=body.weight, description=body.description, color=body.color,
     )
     db.add(rel)
     db.commit()
@@ -2938,6 +3046,7 @@ def update_relation(rel_id: int, body: RelationCreate, db: Session = Depends(get
     rel.label = body.label
     rel.weight = body.weight
     rel.description = body.description
+    rel.color = body.color
     db.commit()
     return {"ok": True}
 
@@ -2973,6 +3082,71 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         novel.current_tick += added_ticks
         db.commit()
         return {"status": "success", "msg": f"世界时间已推进 {days} 天 {hours} 小时"}
+
+    if req.tool_name == "query_world_state":
+        qtype = req.arguments.get("query_type", "all")
+        filt = (req.arguments.get("filter") or "").strip()
+        result = {}
+
+        def _match(s):
+            return not filt or filt.lower() in (s or "").lower()
+
+        if qtype in ("characters", "all"):
+            chars = db.query(Character).filter(Character.novel_id == novel_id).all()
+            lines = []
+            for c in chars:
+                if filt and not _match(c.name):
+                    continue
+                faction = db.get(Faction, c.faction_id) if c.faction_id else None
+                faction_str = f" [势力: {faction.name} / {c.faction_role}]" if faction and c.faction_role else ""
+                lines.append(f"• {c.name} ({c.status}){faction_str} — {c.description or '(无描述)'}")
+            result["characters"] = "\n".join(lines) if lines else "(无匹配人物)"
+
+        if qtype in ("factions", "all"):
+            factions = db.query(Faction).filter(Faction.novel_id == novel_id).all()
+            lines = []
+            for f in factions:
+                if filt and not _match(f.name):
+                    continue
+                members = db.query(Character).filter(Character.faction_id == f.id).all()
+                mem_str = ", ".join(f"{m.name}({m.faction_role})" for m in members if m.faction_role) or "暂无成员"
+                lines.append(f"【{f.name}】{f.description or ''} | 成员: {mem_str}")
+            result["factions"] = "\n".join(lines) if lines else "(无匹配势力)"
+
+        if qtype in ("relations", "all"):
+            rels = db.query(CharacterRelation).filter(CharacterRelation.novel_id == novel_id).all()
+            lines = []
+            for r in rels:
+                src = db.get(Character, r.source_id)
+                tgt = db.get(Character, r.target_id)
+                if not src or not tgt:
+                    continue
+                if filt and not (_match(src.name) or _match(tgt.name) or _match(r.label)):
+                    continue
+                w = r.weight
+                grade = " [极度亲密]" if w >= 80 else " [友好]" if w >= 40 else " [不共戴天]" if w <= -80 else " [敌对]" if w <= -40 else ""
+                lines.append(f"[{src.name}] →<{r.label}>→ [{tgt.name}] (好感: {w:+d}){grade}")
+            result["relations"] = "\n".join(lines) if lines else "(无匹配关系)"
+
+        if qtype in ("locations", "all"):
+            locs = db.query(Location).filter(Location.novel_id == novel_id).all()
+            lines = []
+            for l in locs:
+                if filt and not _match(l.name):
+                    continue
+                lines.append(f"• {l.name} [{l.scale_level}] — {l.description or '(无描述)'}")
+            result["locations"] = "\n".join(lines) if lines else "(无匹配地点)"
+
+        if qtype in ("timeline", "all"):
+            events = db.query(TimelineEvent).filter(TimelineEvent.novel_id == novel_id).order_by(TimelineEvent.time_label).all()
+            lines = []
+            for e in events:
+                if filt and not _match(e.time_label) and not _match(e.content):
+                    continue
+                lines.append(f"• {e.time_label}: {e.content}")
+            result["timeline"] = "\n".join(lines) if lines else "(无时间线事件)"
+
+        return {"status": "success", "query_type": qtype, "data": result}
 
     if req.tool_name == "manage_world_element":
         etype = req.arguments.get("element_type")
@@ -3079,26 +3253,15 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 db.query(Outline).filter(Outline.id == eid).delete()
 
         elif etype == "location":
-            # Scale fuzzy mapping (convenience, no rejection — custom scales pass through)
+            # Scale fuzzy mapping via LocationScaleLevel enum
             input_scale = data.get("scale", "")
             if input_scale:
-                s_lower = str(input_scale).lower()
-                if "大千世界" in s_lower:
-                    input_scale = "大千世界"
-                elif "世界" in s_lower or "宇宙" in s_lower or "universe" in s_lower:
-                    input_scale = "宇宙"
-                elif "星球" in s_lower or "planet" in s_lower:
-                    input_scale = "星球"
-                elif "大陆" in s_lower or "continent" in s_lower:
-                    input_scale = "大陆"
-                elif "国" in s_lower or "empire" in s_lower:
-                    input_scale = "国家"
-                elif "城" in s_lower or "镇" in s_lower or "city" in s_lower or "town" in s_lower:
-                    input_scale = "城池"
-                elif "村" in s_lower or "village" in s_lower or "街" in s_lower or "建筑" in s_lower or "building" in s_lower:
-                    input_scale = "街区"
+                try:
+                    input_scale = LocationScaleLevel.fuzzy_match(str(input_scale)).value
+                except ValueError:
+                    input_scale = LocationScaleLevel.DISTRICT.value
             else:
-                input_scale = "街区"
+                input_scale = LocationScaleLevel.DISTRICT.value
             data["scale"] = input_scale
 
             # Upsert: check existing by name
@@ -3120,7 +3283,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 if not parent_loc:
                     parent_loc = Location(
                         novel_id=novel_id, name=data["parent_name"],
-                        scale_level="大千世界", description="AI 自动溯源创建",
+                        scale_level=LocationScaleLevel.GREAT_WORLD.value, description="AI 自动溯源创建",
                     )
                     db.add(parent_loc)
                     db.commit()

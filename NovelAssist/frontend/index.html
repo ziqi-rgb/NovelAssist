@@ -171,12 +171,7 @@
                         </div>
                     </div>
                     <ul id="outline-category-nav" class="category-nav">
-                        <li data-cat="世界观" class="active">世界观</li>
-                        <li data-cat="世界势力">世界势力</li>
-                        <li data-cat="地理">地理</li>
-                        <li data-cat="人物设定">人物设定</li>
-                        <li data-cat="能力体系设定">能力体系设定</li>
-                        <li data-cat="剧情大纲">剧情大纲</li>
+                        <!-- populated by JS from OUTLINE_CATEGORIES -->
                     </ul>
                 </div>
                 <!-- 人物模块 -->
@@ -403,6 +398,57 @@
                     </div>
                     <div style="flex:1;position:relative;width:100%;overflow:hidden;">
                         <div id="relation-network" style="position:absolute;top:0;left:0;right:0;bottom:0;background-color:#fafafa;"></div>
+                        <!-- 角色快捷编辑浮窗 (从拓扑图点击角色球触发) -->
+                        <div id="char-quick-edit-panel" class="quick-edit-panel hidden" style="position:absolute;z-index:20;width:340px;max-height:55vh;display:flex;flex-direction:column;background:var(--active-bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);font-size:.78rem;">
+                            <!-- 固定窗口条 -->
+                            <div class="quick-edit-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--border);border-radius:10px 10px 0 0;flex-shrink:0;">
+                                <span id="quick-char-title" style="font-weight:700;font-size:.9rem;">📝 快捷编辑</span>
+                                <button id="quick-char-close-btn" style="border:none;background:none;cursor:pointer;font-size:1.1rem;color:var(--text-muted);padding:0 4px;line-height:1;">✕</button>
+                            </div>
+                            <!-- 可滚动内容区：基本字段 + 模板字段 -->
+                            <div class="quick-edit-body" style="flex:1;min-height:0;overflow-y:auto;padding:10px 14px 8px;">
+                            <label>角色名称</label>
+                            <input type="text" id="quick-char-name" placeholder="角色名称" style="width:100%;padding:5px;margin-top:2px;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;font-size:.78rem;">
+                            <div style="margin-bottom:8px;">
+                                <label>状态</label>
+                                <select id="quick-char-status" style="width:100%;padding:5px;margin-top:2px;border:1px solid var(--border);border-radius:4px;background:var(--bg);box-sizing:border-box;font-size:.78rem;">
+                                    <option value="存活">存活</option><option value="死亡">死亡</option><option value="失踪">失踪</option><option value="飞升">飞升</option>
+                                </select>
+                            </div>
+                            <div id="quick-char-template-fields" style="margin-top:4px;"></div>
+                            </div><!-- /.quick-edit-body -->
+                            <!-- 固定底栏：势力 + 关系连线 + 保存 -->
+                            <div class="quick-edit-footer" style="flex-shrink:0;border-top:1px solid var(--border);background:var(--bg);border-radius:0 0 10px 10px;padding:8px 14px;">
+                                <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:6px;">
+                                    <div style="flex:1;"><label style="font-size:.7rem;">🏛️ 所属势力</label>
+                                    <select id="quick-char-faction" style="width:100%;padding:4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);box-sizing:border-box;font-size:.72rem;">
+                                        <option value="">-- 散修 / 无势力 --</option>
+                                    </select></div>
+                                    <div style="flex:1;"><label style="font-size:.7rem;">职位</label>
+                                    <input type="text" id="quick-char-faction-role" placeholder="如：宗主、长老" style="width:100%;padding:4px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;font-size:.72rem;"></div>
+                                </div>
+                                <!-- 关系连线（可折叠） -->
+                                <div style="border-top:1px solid var(--border);padding-top:5px;">
+                                    <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="var b=document.getElementById('quick-char-relations-body');b.classList.toggle('hidden');this.querySelector('.toggle-arrow').textContent=b.classList.contains('hidden')?'▶':'▼';">
+                                        <span class="toggle-arrow" style="font-size:.6rem;">▼</span>
+                                        <span style="font-weight:600;font-size:.72rem;color:var(--text-muted);">🔗 人物关系连线</span>
+                                        <span id="quick-char-relations-count" style="font-size:.7rem;color:var(--text-muted);"></span>
+                                    </div>
+                                    <div id="quick-char-relations-body">
+                                        <div id="quick-char-relations-list" style="max-height:120px;overflow-y:auto;margin-bottom:4px;"></div>
+                                        <div style="display:flex;gap:4px;align-items:center;">
+                                            <select id="quick-char-rel-target" style="flex:1;min-width:80px;padding:3px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);"><option value="">-- 关联角色 --</option></select>
+                                            <input id="quick-char-rel-label" type="text" placeholder="关系" style="width:48px;padding:3px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);">
+                                            <input id="quick-char-rel-weight" type="number" min="-100" max="100" value="0" style="width:42px;padding:3px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);" title="好感度">
+                                            <button id="quick-char-rel-add-btn" style="font-size:.62rem;padding:3px 6px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--active-bg);">+添加</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="text-align:right;margin-top:6px;">
+                                    <button id="quick-char-save-btn" style="padding:5px 16px;font-size:.75rem;font-weight:600;border-radius:4px;cursor:pointer;background:var(--accent);color:#fff;border:1px solid var(--accent);">保存</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -666,6 +712,40 @@
         .parallel-switch input:checked + .parallel-slider { background: #4f46e5; border-color: #6366f1; }
         .parallel-switch input:checked + .parallel-slider:before { transform: translateX(18px); background: #fff; }
     </style>
+
+    <div id="edge-edit-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:380px;">
+            <h3 id="edge-edit-title">✏️ 编辑关系</h3>
+            <div id="edge-edit-dir" style="font-size:.8rem;color:var(--accent);margin-bottom:8px;"></div>
+            <div id="edge-edit-single">
+                <label>关系标签</label>
+                <input type="text" id="edge-edit-label" placeholder="如：好友、师徒、敌对">
+                <label>好感度 (-100 ~ 100)</label>
+                <input type="number" id="edge-edit-weight" min="-100" max="100" value="0">
+                <label>原因描述</label>
+                <input type="text" id="edge-edit-desc" placeholder="简述关系缘由...">
+                <label>连线颜色</label>
+                <input type="color" id="edge-edit-color" value="#94a3b8" style="width:60px;height:30px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;">
+            </div>
+            <div id="edge-edit-bi" class="hidden">
+                <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:4px;">双向关系 — 双方共享同一标签和颜色</div>
+                <label>关系标签</label>
+                <input type="text" id="edge-edit-bi-label" placeholder="如：好友">
+                <div style="display:flex;gap:8px;margin-top:6px;">
+                    <div style="flex:1;"><label style="font-size:.7rem;" id="edge-edit-bi-l1">→ 好感度</label><input type="number" id="edge-edit-bi-w1" min="-100" max="100" value="0"></div>
+                    <div style="flex:1;"><label style="font-size:.7rem;" id="edge-edit-bi-l2">← 好感度</label><input type="number" id="edge-edit-bi-w2" min="-100" max="100" value="0"></div>
+                </div>
+                <label style="margin-top:8px;">连线颜色</label>
+                <input type="color" id="edge-edit-bi-color" value="#6366f1" style="width:60px;height:30px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;">
+            </div>
+            <div class="modal-actions">
+                <button id="edge-edit-delete-btn" style="background:#ef4444;color:white;border:1px solid #ef4444;">删除</button>
+                <button id="edge-edit-cancel-btn">取消</button>
+                <button id="edge-edit-save-btn" class="btn-primary">保存</button>
+            </div>
+        </div>
+    </div>
 
     <div id="faction-modal" class="modal hidden">
         <div class="modal-backdrop"></div>

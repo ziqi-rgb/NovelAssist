@@ -10,8 +10,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
     from .database import Base
+    from .constants import LocationScaleLevel, OutlineCategory
 except ImportError:
     from database import Base
+    from constants import LocationScaleLevel, OutlineCategory
 
 
 class EventType(enum.Enum):
@@ -94,7 +96,7 @@ class Outline(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    category: Mapped[str] = mapped_column(String(64), nullable=False, default="剧情")
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default=OutlineCategory.LEGACY_DEFAULT.value)
     is_always_context: Mapped[bool] = mapped_column(default=False)
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("outlines.id"), nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -148,7 +150,7 @@ class Location(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
-    scale_level: Mapped[str] = mapped_column(String(64), nullable=False, default="星球")
+    scale_level: Mapped[str] = mapped_column(String(64), nullable=False, default=LocationScaleLevel.PLANET.value)
     scale: Mapped[LocationScale] = mapped_column(
         SAEnum(LocationScale), nullable=False, default=LocationScale.REGION
     )
@@ -333,19 +335,19 @@ DEFAULT_PROMPT_TEMPLATES = {
         "- elapsed_days: 流逝的天数（若无则填0）\n"
         "- elapsed_hours: 流逝的小时/时辰数（若无则填0，一个时辰按2小时算）\n\n"
         "返回格式必须为干净的 JSON 对象，绝对不要包含任何 markdown 转义符号（不要 ```json 标记），直接输出以下结构的纯 JSON 字符串：\n"
-        "{{\n"
+        "{\n"
         "  \"elapsed_years\": 0,\n"
         "  \"elapsed_months\": 0,\n"
         "  \"elapsed_days\": 3,\n"
         "  \"elapsed_hours\": 4,\n"
         "  \"events\": [\n"
-        "    {{\n"
+        "    {\n"
         "      \"location\": \"发生地点（若有明确地名则写，无则写'未知'）\",\n"
         "      \"characters\": \"出场人物（多个用逗号隔开）\",\n"
         "      \"event\": \"事件摘要（用生动、凝练的语言概括，100字以内）\"\n"
-        "    }}\n"
+        "    }\n"
         "  ]\n"
-        "}}\n\n"
+        "}\n\n"
         "正文文本：\n{text}"
     ),
     "archive_character": (
@@ -369,32 +371,32 @@ DEFAULT_PROMPT_TEMPLATES = {
         "5. 移动轨迹：若明确提到移动或去往了另一个地点，\"move_to_location\" 填对应地名，否则留空。\n\n"
         "请仅返回干净的 JSON 数组（绝对不要包含 ```json 等标记，直接输出纯 JSON 数组）：\n"
         "[\n"
-        "  {{\n"
+        "  {\n"
         "    \"character_id\": 1,\n"
         "    \"is_new\": false,\n"
         "    \"name\": \"林枫\",\n"
-        "    \"updates\": {{\n"
-        "       \"能力数据\": {{ \"当前境界\": \"筑基中期\" }}\n"
-        "    }},\n"
+        "    \"updates\": {\n"
+        "       \"能力数据\": { \"当前境界\": \"筑基中期\" }\n"
+        "    },\n"
         "    \"status_change\": \"突破筑基中期，右臂骨折受轻伤\",\n"
         "    \"is_active\": true,\n"
         "    \"faction_change\": \"无\",\n"
         "    \"move_to_location\": \"埋骨荒原\"\n"
-        "  }},\n"
-        "  {{\n"
+        "  },\n"
+        "  {\n"
         "    \"character_id\": null,\n"
         "    \"is_new\": true,\n"
         "    \"name\": \"白发老者\",\n"
-        "    \"updates\": {{\n"
-        "       \"基本信息\": {{ \"姓名\": \"白发老者\", \"性别\": \"男\", \"身份\": \"世外高人\" }},\n"
-        "       \"性格特征\": {{ \"性格\": \"古怪, 孤傲\" }},\n"
-        "       \"能力数据\": {{ \"当前境界\": \"化神期\" }}\n"
-        "    }},\n"
+        "    \"updates\": {\n"
+        "       \"基本信息\": { \"姓名\": \"白发老者\", \"性别\": \"男\", \"身份\": \"世外高人\" },\n"
+        "       \"性格特征\": { \"性格\": \"古怪, 孤傲\" },\n"
+        "       \"能力数据\": { \"当前境界\": \"化神期\" }\n"
+        "    },\n"
         "    \"status_change\": \"初登场\",\n"
         "    \"is_active\": true,\n"
         "    \"faction_change\": \"无\",\n"
         "    \"move_to_location\": \"太荒深渊\"\n"
-        "  }}\n"
+        "  }\n"
         "]"
     ),
     "sandbox_sim": (
@@ -474,6 +476,7 @@ class CharacterRelation(Base):
     label: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    color: Mapped[str] = mapped_column(String(20), nullable=False, default="")
 
     novel: Mapped[Novel] = relationship(back_populates="character_relations")
     source: Mapped[Character] = relationship(foreign_keys=[source_id])

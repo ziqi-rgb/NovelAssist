@@ -2,6 +2,11 @@
 import os
 import sys
 
+try:
+    from .constants import LocationScaleLevel
+except ImportError:
+    from constants import LocationScaleLevel
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from collections.abc import Generator
@@ -61,7 +66,7 @@ def run_migration() -> None:
 
         loc_cols = [c["name"] for c in insp.get_columns("locations")]
         if "scale_level" not in loc_cols:
-            db.execute(text("ALTER TABLE locations ADD COLUMN scale_level TEXT DEFAULT '星球'"))
+            db.execute(text(f"ALTER TABLE locations ADD COLUMN scale_level TEXT DEFAULT '{LocationScaleLevel.PLANET.value}'"))
             db.commit()
         if "attributes" not in loc_cols:
             db.execute(text("ALTER TABLE locations ADD COLUMN attributes JSON DEFAULT '{}'"))
