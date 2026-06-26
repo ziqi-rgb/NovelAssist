@@ -2446,7 +2446,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     }
 }
 
-/* ═══════════ 并行建纲执行引擎 ═══════════ */
+/* ═══════════ 并行建纲执行引擎（两阶段：人设+地图 → 大纲） ═══════════ */
 async function executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop) {
     var text = initialState.inputText;
     var mode = initialState.mode;
@@ -2455,20 +2455,24 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     isGenesisRunning = true;
     genesisPaused = false;
 
-    logToConsole("[System] ⚡ 并行建纲模式启动 — 三条推理链将同时执行...\n", "step");
+    logToConsole("[System] ⚡ 并行建纲模式启动 — 阶段1：人设+地图并行，阶段2：大纲世界观\n", "step");
     logToConsole("[System] 正在寻址预设创世推理方案...\n", "step");
     var chainsRes = await fetch("/api/reasoning_chains?novel_id=" + currentNovelId);
     var chains = await chainsRes.json();
 
-    var chainDefs = [
+    // 分两阶段：Phase 1 = 人设+地图（并行），Phase 2 = 大纲（依赖 Phase 1 成果）
+    var phase1Defs = [
         { key: "character", title: SYSTEM_CHAIN_TITLES.CHAR, stepId: "step-char", label: "👤 人设" },
         { key: "map", title: SYSTEM_CHAIN_TITLES.MAP, stepId: "step-map", label: "🗺️ 地图" },
+    ];
+    var phase2Defs = [
         { key: "outline", title: SYSTEM_CHAIN_TITLES.OUTLINE, stepId: "step-outline", label: "📖 大纲" },
     ];
+    var allDefs = phase1Defs.concat(phase2Defs);
 
     // 解析链 ID
     var chainMap = {};
-    chainDefs.forEach(function(d) {
+    allDefs.forEach(function(d) {
         var found = chains.find(function(c) { return c.title === d.title; });
         if (found) chainMap[d.key] = found;
     });
@@ -2479,45 +2483,43 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     // 初始化/恢复 chainStates
     if (!initialState.chainStates) {
         initialState.chainStates = {};
-        chainDefs.forEach(function(d) {
-            var isCompleted = completedPhases && completedPhases[chainDefs.indexOf(d)];
+        allDefs.forEach(function(d) {
             initialState.chainStates[d.key] = {
                 chainId: chainMap[d.key].id,
                 currentNodeId: null,
                 fullChainContext: "",
                 executedNodeCount: 0,
-                completed: isCompleted || false,
+                completed: false,
             };
         });
     }
     state.chainStates = initialState.chainStates;
     state.parallel = true;
-    state.phase = 0; // 并行模式不使用 phase
+    state.phase = 0;
     saveGenesisState(state);
 
-    // 启动所有未完成的链的进度指示
-    chainDefs.forEach(function(d) {
+    // 启动进度指示（阶段1的链显示 active，阶段2的链保持 pending 直到阶段1完成）
+    allDefs.forEach(function(d) {
         var el = document.getElementById(d.stepId);
-        if (el && !state.chainStates[d.key].completed) {
-            el.className = "step-active";
-        } else if (el && state.chainStates[d.key].completed) {
+        var isPhase1 = (d.key === "character" || d.key === "map");
+        if (el && state.chainStates[d.key].completed) {
             el.className = "step-completed";
+        } else if (el && isPhase1 && !state.chainStates[d.key].completed) {
+            el.className = "step-active";
         }
+        // 阶段2的链在 Phase 1 期间保持默认样式，待阶段2启动时才设为 active
     });
 
-    // 为每条链创建带前缀的日志回调
-    function makeLogger(prefix, color) {
+    // 日志回调工厂
+    function makeLogger(prefix) {
         return function(txt, typ) {
             var prefixed = "[" + prefix + "] " + txt;
-            // 对于 chunk 类型（流式输出），只在行首加前缀
             if (typ === "chunk") {
-                // 流式块：检测是否为新行开始
                 if (txt.indexOf("\n") >= 0 && txt.indexOf("\n") < txt.length - 1) {
                     prefixed = txt.replace(/\n/g, "\n[" + prefix + "] ");
                 } else if (txt.indexOf("\n") === txt.length - 1) {
                     prefixed = txt.slice(0, -1) + "\n";
                 }
-                // 简单追加块（不加额外前缀）
                 prefixed = txt;
             }
             logToConsole(prefixed, typ);
@@ -2525,12 +2527,11 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
     }
 
     var loggers = {
-        outline: makeLogger("大纲", "#eab308"),
-        map: makeLogger("地图", "#38bdf8"),
-        character: makeLogger("人设", "#22c55e"),
+        outline: makeLogger("大纲"),
+        map: makeLogger("地图"),
+        character: makeLogger("人设"),
     };
 
-    // 为每条链准备 resume data
     function getResumeData(key) {
         var cs = state.chainStates[key];
         if (cs && cs.currentNodeId) {
@@ -2543,9 +2544,14 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
         return null;
     }
 
-    // 并行启动所有链
     var parallelFullLogs = {};
-    var promises = chainDefs.map(function(d) {
+
+    // ═══════════════════════════════════════════
+    // 阶段 1：人设 + 地图 并行执行
+    // ═══════════════════════════════════════════
+    logToConsole("[System] \n===== ⚡ 阶段 1: 人设 + 地图 并行启动 =====\n", "step");
+
+    var phase1Promises = phase1Defs.map(function(d) {
         var cs = state.chainStates[d.key];
         if (cs.completed) {
             logToConsole("[System] ⏭ " + d.label + " 链已完成，跳过。\n", "step");
@@ -2562,7 +2568,7 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
             },
             incCtx,
             resumeData,
-            d.key  // chainKey for state persistence
+            d.key
         ).then(function(result) {
             if (result.success) {
                 state.chainStates[d.key].completed = true;
@@ -2578,34 +2584,98 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
         });
     });
 
-    var results = await Promise.allSettled(promises);
-
-    // 提取实际结果（Promise.allSettled 包装了一层）
-    var outcomes = [];
-    for (var i = 0; i < results.length; i++) {
-        if (results[i].status === "fulfilled") {
-            outcomes.push(results[i].value);
+    var phase1Results = await Promise.allSettled(phase1Promises);
+    var phase1Outcomes = [];
+    for (var i = 0; i < phase1Results.length; i++) {
+        if (phase1Results[i].status === "fulfilled") {
+            phase1Outcomes.push(phase1Results[i].value);
         } else {
-            outcomes.push({ key: chainDefs[i].key, success: false, reason: results[i].reason });
+            phase1Outcomes.push({ key: phase1Defs[i].key, success: false, reason: phase1Results[i].reason });
         }
     }
 
-    // 检查暂停
+    // 阶段 1 完成后检查暂停/中断
     if (genesisPaused) {
         handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
         return;
     }
-    // 检查中断
     if (genesisAborted) {
         handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
         return;
     }
 
-    // 检查是否全部成功
-    var allOk = outcomes.every(function(o) { return o.success || o.skipped; });
+    // 检查阶段 1 是否全部成功
+    var phase1Ok = phase1Outcomes.every(function(o) { return o.success || o.skipped; });
+    if (!phase1Ok) {
+        var failed1 = phase1Outcomes.filter(function(o) { return !o.success && !o.skipped; });
+        var failedNames1 = failed1.map(function(o) { return o.key; }).join(", ");
+        throw new Error("并行建纲阶段1（人设+地图）失败: " + failedNames1);
+    }
 
-    // 保存各链日志到文件
-    for (var d of chainDefs) {
+    // ═══════════════════════════════════════════
+    // 阶段 2：大纲（注入阶段 1 产出的人设+地图数据）
+    // ═══════════════════════════════════════════
+    logToConsole("[System] \n===== 📖 阶段 2: 大纲世界观（基于人设+地图成果）=====\n", "step");
+
+    // 注入阶段 1 产出：从 API 获取最新的人设和地图数据
+    var outlineCtx = Object.keys(incCtx).length ? Object.assign({}, incCtx) : {};
+    try {
+        var olLocs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
+        outlineCtx.locations_full_detail = JSON.stringify(olLocs);
+        logToConsole("[System] 📍 已注入 " + olLocs.length + " 个地点数据到上下文\n", "step");
+    } catch(e) {}
+    try {
+        var olChars = await (await fetch("/api/characters?novel_id=" + currentNovelId)).json();
+        outlineCtx.characters_full_detail = JSON.stringify(olChars);
+        logToConsole("[System] 👤 已注入 " + olChars.length + " 个人物数据到上下文\n", "step");
+    } catch(e) {}
+
+    // 执行大纲链
+    var outlineDef = phase2Defs[0];
+    var outlineCs = state.chainStates[outlineDef.key];
+    if (outlineCs.completed) {
+        logToConsole("[System] ⏭ " + outlineDef.label + " 链已完成，跳过。\n", "step");
+    } else {
+        var outlineEl = document.getElementById(outlineDef.stepId);
+        if (outlineEl) outlineEl.className = "step-active";
+        logToConsole("[System] 🚀 " + outlineDef.label + " 链启动...\n", "step");
+        var outlineResumeData = getResumeData(outlineDef.key);
+
+        var outlineResult = await runHeadlessChain(
+            chainMap[outlineDef.key].id, text, null,
+            function(txt, typ) {
+                if (!parallelFullLogs[outlineDef.key]) parallelFullLogs[outlineDef.key] = "";
+                parallelFullLogs[outlineDef.key] += "[" + typ + "] " + txt + "\n";
+                if (typ !== "chunk") loggers[outlineDef.key](txt, typ);
+            },
+            outlineCtx,
+            outlineResumeData,
+            outlineDef.key
+        );
+
+        if (genesisPaused) {
+            handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop);
+            return;
+        }
+        if (genesisAborted) {
+            handleGenesisAborted(statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop);
+            return;
+        }
+
+        if (outlineResult.success) {
+            state.chainStates[outlineDef.key].completed = true;
+            saveGenesisState(state);
+            if (outlineEl) outlineEl.className = "step-completed";
+            logToConsole("[System] ✅ " + outlineDef.label + " 链执行完毕！\n", "tool");
+        } else {
+            throw new Error("并行建纲阶段2（大纲）失败: " + (outlineResult.reason || "未知错误"));
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // 全部完成：合并结果并保存日志
+    // ═══════════════════════════════════════════
+    for (var d of allDefs) {
         if (parallelFullLogs[d.key]) {
             try {
                 await fetch("/api/novels/" + currentNovelId + "/genesis/logs", {
@@ -2617,20 +2687,15 @@ async function executeGenesisParallel(initialState, startPhase, completedPhases,
         }
     }
 
-    if (allOk) {
-        clearGenesisState();
-        logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 三链并行建纲全部圆满成功！\n", "tool");
-        statusBadge.textContent = "创世圆满成功";
-        statusBadge.style.color = "#22c55e";
-        showToast("🌌 智能创世三链并行大重构圆满成功！");
-        if (typeof refreshAll === "function") await refreshAll();
-        if (typeof loadLocationsCache === "function") loadLocationsCache();
-        if (typeof loadLocationTree === "function") loadLocationTree();
-    } else {
-        var failed = outcomes.filter(function(o) { return !o.success && !o.skipped; });
-        var failedNames = failed.map(function(o) { return o.key; }).join(", ");
-        throw new Error("并行建纲部分失败: " + failedNames);
-    }
+    clearGenesisState();
+    logToConsole("[System] \n\n🎉🎉 [创世神迹已成] 两阶段并行建纲全部圆满成功！\n", "tool");
+    logToConsole("[System] 阶段1: 人设+地图 并行 → 阶段2: 大纲世界观（基于最新人设地图数据）\n", "tool");
+    statusBadge.textContent = "创世圆满成功";
+    statusBadge.style.color = "#22c55e";
+    showToast("🌌 智能创世两阶段并行大重构圆满成功！");
+    if (typeof refreshAll === "function") await refreshAll();
+    if (typeof loadLocationsCache === "function") loadLocationsCache();
+    if (typeof loadLocationTree === "function") loadLocationTree();
 }
 
 function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, textarea, backdrop) {
