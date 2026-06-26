@@ -4328,13 +4328,14 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
             # Upsert: check existing by name (增量覆盖：已存在则更新并保留快照)
             existing_char = None
-            if action == "add" and data.get("name") and str(data.get("name")).strip() not in ("", "未知"):
+            if data.get("name") and str(data.get("name")).strip() not in ("", "未知"):
                 existing_char = db.query(Character).filter(
                     Character.novel_id == novel_id,
                     Character.name == data["name"],
                 ).first()
                 if existing_char:
-                    action = "update"
+                    if action == "add":
+                        action = "update"
                     eid = existing_char.id
 
             if action == "add":
@@ -4353,6 +4354,43 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             elif action == "update" and eid:
                 char = db.get(Character, eid)
                 if char:
+                    # 检测是否有实质性数据变动，避免无变化时仍拍快照
+                    has_change = False
+                    if "name" in data and data["name"] != char.name:
+                        has_change = True
+                    if "aliases" in data and data["aliases"] != (char.aliases or ""):
+                        has_change = True
+                    if "description" in data and data["description"] != (char.description or ""):
+                        has_change = True
+                    if "status" in data and data["status"] != (char.status or ""):
+                        has_change = True
+                    if "is_active" in data and data["is_active"] != char.is_active:
+                        has_change = True
+                    if "faction_id" in data and faction_id != char.faction_id:
+                        has_change = True
+                    if "faction_name" in data and faction_id != char.faction_id:
+                        has_change = True
+                    if "faction_role" in data and data["faction_role"] != (char.faction_role or ""):
+                        has_change = True
+                    if "is_always_context" in data and bool(data["is_always_context"]) != bool(char.is_always_context):
+                        has_change = True
+                    if raw_attrs:
+                        current_attrs: dict = dict(char.attributes) if char.attributes else {}
+                        new_attrs: dict = dict(current_attrs)
+                        for g_name, fields_dict in normalized_attrs.items():
+                            if g_name not in new_attrs:
+                                new_attrs[g_name] = {}
+                            for f_name, f_val in fields_dict.items():
+                                new_attrs[g_name][f_name] = f_val
+                        if new_attrs != current_attrs:
+                            has_change = True
+
+                    if not has_change:
+                        # 无任何变动，跳过更新和快照
+                        db.commit()
+                        return {"status": "skipped", "msg": f"角色「{char.name}」数据无变化，已跳过更新。"}
+
+                    # 有变动：先拍快照，再更新
                     attrs_copy = copy.deepcopy(char.attributes)
                     attrs_copy["_status"] = char.status or ""
                     attrs_copy["_is_active"] = char.is_active
@@ -4380,13 +4418,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     if "is_always_context" in data:
                         char.is_always_context = bool(data["is_always_context"])
                     if raw_attrs:
-                        current_attrs: dict = dict(char.attributes) if char.attributes else {}
-                        for g_name, fields_dict in normalized_attrs.items():
-                            if g_name not in current_attrs:
-                                current_attrs[g_name] = {}
-                            for f_name, f_val in fields_dict.items():
-                                current_attrs[g_name][f_name] = f_val
-                        char.attributes = current_attrs
+                        char.attributes = new_attrs
                         flag_modified(char, "attributes")
                     loc_id = data.get("location_id")
                     if loc_id is not None:
