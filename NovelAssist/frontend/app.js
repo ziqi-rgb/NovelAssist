@@ -25,6 +25,7 @@ let genesisPaused = false;              // 暂停标志：优雅停止，保存�
 let genesisAborted = false;             // 中断标志：立即停止，不保存
 let genesisAbortController = null;      // AbortController 用于中断 fetch
 let genesisResumeState = null;          // 恢复状态快照（从 localStorage 加载）
+let genesisConsoleSnapshot = "";        // 控制台 HTML 快照（后台运行时关闭窗口后恢复用）
 
 /* ═══════════ Genesis State Persistence ═══════════ */
 const GENESIS_STATE_KEY = "genesis_state";
@@ -455,7 +456,9 @@ async function createNewChapter() {
 }
 async function saveCurrentChapter() { if (!currentChapterId) return;
     const archived = document.getElementById("archived-content-viewer").textContent || "";
-    await fetch(`/api/chapters/${currentChapterId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: titleInput.value, content: contentInput.value, archived_content: archived }) });
+    // Safety: strip any time markers that may have leaked into archived text
+    const cleanArchived = archived.replace(/【时间流逝[：:][^】]+】\s*/g, "").replace(/\n{3,}/g, "\n\n").trim();
+    await fetch(`/api/chapters/${currentChapterId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: titleInput.value, content: contentInput.value, archived_content: cleanArchived }) });
     saveBtn.textContent = "已保存"; setTimeout(() => saveBtn.textContent = "保存", 1000); await loadChapters(); }
 saveBtn.addEventListener("click", saveCurrentChapter);
 
@@ -469,7 +472,8 @@ contentInput.addEventListener("input", () => {
     autoSaveTimer = setTimeout(async () => {
         if (currentChapterId !== null) {
             const archived = document.getElementById("archived-content-viewer").textContent || "";
-            await fetch(`/api/chapters/${currentChapterId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: titleInput.value, content: contentInput.value, archived_content: archived }) });
+            const cleanArchived = archived.replace(/【时间流逝[：:][^】]+】\s*/g, "").replace(/\n{3,}/g, "\n\n").trim();
+            await fetch(`/api/chapters/${currentChapterId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: titleInput.value, content: contentInput.value, archived_content: cleanArchived }) });
             document.getElementById("save-status").textContent = "已保存";
         }
     }, 1000);
@@ -487,30 +491,31 @@ function showToast(msg) { const t = document.getElementById("archive-toast"); if
 
 document.getElementById("archive-selected-btn").addEventListener("click", async () => {
     if (!currentChapterId) { showToast("请先选中一个章节"); return; }
-    const sel = contentInput.value.substring(contentInput.selectionStart, contentInput.selectionEnd).trim();
-    if (!sel) { showToast("请先在正文中选中要归档的文字"); return; }
+    const fullText = contentInput.value.trim();
+    if (!fullText) { showToast("正文为空，无需归档"); return; }
     // Confirmation with preview
-    const preview = sel.length > 200 ? sel.slice(0, 200) + "…" : sel;
-    if (!confirm(`确认归档以下内容到只读区？\n\n--- 预览 ---\n${preview}\n---\n共 ${sel.length} 字\n\n归档后将调用 AI 提取时间线和人物变更。`)) return;
+    const preview = fullText.length > 200 ? fullText.slice(0, 200) + "…" : fullText;
+    if (!confirm(`确认归档全部正文到只读区？\n\n--- 预览 ---\n${preview}\n---\n共 ${fullText.length} 字\n\n归档后将调用 AI 提取时间线和人物变更，并清空编辑区。`)) return;
     const s = getSettings();
     if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
     showArchiveOverlay();
-    // Freeze auto-save during archive to prevent race conditions
     if (window.autoSaveTimer) { clearTimeout(window.autoSaveTimer); window.autoSaveTimer = null; }
     contentInput.disabled = true;
     try {
-        const res = await fetch(`/api/chapters/${currentChapterId}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text_to_archive: sel, selection_start: contentInput.selectionStart, selection_end: contentInput.selectionEnd, api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
+        const res = await fetch(`/api/chapters/${currentChapterId}/archive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text_to_archive: fullText, selection_start: 0, selection_end: fullText.length, api_key: s.apiKey, base_url: s.baseUrl, model: s.model }) });
         const data = await res.json();
         if (!res.ok) { showToast("归档失败: " + (data.detail || "HTTP " + res.status)); return; }
         // refresh UI
         const archivedViewer = document.getElementById("archived-content-viewer");
+        const cleanArchivedText = data.archived_text || fullText;
         if (archivedViewer.textContent && archivedViewer.textContent.trim()) {
-            archivedViewer.textContent += "\n\n" + sel;
+            archivedViewer.textContent += "\n\n" + cleanArchivedText;
         } else {
-            archivedViewer.textContent = sel;
+            archivedViewer.textContent = cleanArchivedText;
         }
         archivedViewer.classList.remove("hidden");
-        contentInput.value = contentInput.value.replace(sel, "");
+        // Clear editor since all text was archived
+        contentInput.value = "";
         contentInput.dispatchEvent(new Event("input"));
         // build detailed archive report
         let timeSkipStr = "";
@@ -519,24 +524,24 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
         if (data.elapsed_days) timeSkipStr += data.elapsed_days + " 日 ";
         if (data.elapsed_hours) timeSkipStr += data.elapsed_hours + " 小时";
         if (!timeSkipStr) timeSkipStr = "无时间流逝";
-        let report = "📦 【世界归档大成报告】\n";
+        let report = "📦 【归档报告】\n";
         report += "-------------------------------------------\n";
-        report += "⏰ 世界历时钟流逝：+ " + timeSkipStr + "\n";
+        report += "⏰ 时间流逝：+ " + timeSkipStr + "\n";
         if (data.updated_characters && data.updated_characters.length > 0) {
-            report += "\n👤 创世人设同步与生命体征反馈：\n";
+            report += "\n👤 人物变动：\n";
             data.updated_characters.forEach(function(line) {
-                report += "  • " + line + "\n";
+                report += "  " + line + "\n";
             });
         } else {
-            report += "\n👤 角色状态在本次归档中无更新。\n";
+            report += "\n👤 人物变动：无\n";
         }
         if (data.timeline_events && data.timeline_events.length > 0) {
-            report += "\n📅 生成的历史时间线印记：\n";
+            report += "\n📅 时间线变动：\n";
             data.timeline_events.forEach(function(evt) {
                 report += "  • " + evt + "\n";
             });
         }
-        // Show report in AI chat area instead of alert
+        // Show report in AI chat area
         const reportB = document.createElement("div"); reportB.className = "copilot-bubble ai";
         reportB.innerHTML = `<div class="cp-label">📦 归档报告</div><pre style="font-size:.75rem;white-space:pre-wrap;margin:4px 0;">${e(report)}</pre>`;
         copilotHistory.appendChild(reportB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
@@ -1751,11 +1756,19 @@ document.getElementById("outline-export-btn")?.addEventListener("click", async f
     } catch (e2) { console.error(e2); }
 });
 document.getElementById("import-close-btn")?.addEventListener("click", function() {
-    if (isGenesisRunning) return;  // 运行中由中断按钮处理
+    // 运行中关闭窗口：建纲继续后台运行，保存控制台快照以便恢复
+    if (isGenesisRunning) {
+        genesisConsoleSnapshot = document.getElementById("genesis-console").innerHTML;
+        showToast("🔽 建纲正在后台继续运行，可随时重新打开智能建纲查看进度");
+    }
     document.getElementById("import-modal").classList.add("hidden");
 });
 document.getElementById("genesis-backdrop")?.addEventListener("click", function() {
-    if (isGenesisRunning) return;  // 运行中禁止遮罩关闭
+    // 运行中关闭窗口：建纲继续后台运行，保存控制台快照以便恢复
+    if (isGenesisRunning) {
+        genesisConsoleSnapshot = document.getElementById("genesis-console").innerHTML;
+        showToast("🔽 建纲正在后台继续运行，可随时重新打开智能建纲查看进度");
+    }
     document.getElementById("import-modal").classList.add("hidden");
 });
 
@@ -1763,7 +1776,10 @@ document.addEventListener("keydown", function(e) {
     if (e.key === "Escape" && isGenesisRunning) {
         e.preventDefault();
         e.stopPropagation();
-        triggerGenesisPause();  // ESC 触发暂停（安全行为）
+        // 运行中按 ESC：关闭窗口但建纲继续后台运行
+        genesisConsoleSnapshot = document.getElementById("genesis-console").innerHTML;
+        showToast("🔽 建纲正在后台继续运行，可随时重新打开智能建纲查看进度");
+        document.getElementById("import-modal").classList.add("hidden");
     }
 });
 
@@ -1909,8 +1925,9 @@ function restoreProgressFromState(state) {
             var cs = state.chainStates[key];
             if (cs && cs.completed) {
                 el.className = "step-completed";
-            } else if (state.status === "interrupted") {
-                el.className = "step-interrupted";
+            } else if (state.status === "interrupted" || state.status === "running") {
+                // 运行中或暂停中：未完成的链显示为 active（运行中）或 interrupted（暂停中）
+                el.className = state.status === "interrupted" ? "step-interrupted" : "step-active";
             } else {
                 el.className = "";
             }
@@ -1923,8 +1940,9 @@ function restoreProgressFromState(state) {
         var phaseIdx = idx + 1;
         if (state.completedPhases && state.completedPhases[idx]) {
             el.className = "step-completed";
-        } else if (state.phase === phaseIdx && state.status === "interrupted") {
-            el.className = "step-interrupted";
+        } else if (state.phase === phaseIdx && (state.status === "interrupted" || state.status === "running")) {
+            // 当前阶段显示为 active（运行中）或 interrupted（暂停中）
+            el.className = state.status === "interrupted" ? "step-interrupted" : "step-active";
         } else {
             el.className = "";
         }
@@ -1934,6 +1952,14 @@ function restoreProgressFromState(state) {
 /* ═══════════ 🌌 智能创世大重构引擎 ═══════════ */
 document.getElementById("outline-genesis-btn")?.addEventListener("click", function() {
     var modal = document.getElementById("import-modal");
+
+    // 🔄 建纲正在后台运行：恢复运行态 UI，不清空表单
+    if (isGenesisRunning) {
+        restoreRunningGenesisUI();
+        modal.classList.remove("hidden");
+        return;
+    }
+
     document.getElementById("import-textarea").value = "";
     document.getElementById("genesis-status-badge").textContent = "待命中";
     document.getElementById("genesis-status-badge").style.color = "var(--text-muted)";
@@ -1944,9 +1970,19 @@ document.getElementById("outline-genesis-btn")?.addEventListener("click", functi
     document.getElementById("genesis-console").textContent = "[System] 创世核心就绪。请输入文字指令并启动...\n";
     document.getElementById("import-textarea").disabled = false;
     document.getElementById("genesis-submit-btn").disabled = false;
+    document.getElementById("genesis-submit-btn").style.display = "";
     document.getElementById("import-close-btn").disabled = false;
+    document.getElementById("import-close-btn").textContent = "关闭窗口";
+    document.getElementById("import-close-btn").title = "";
     document.getElementById("genesis-pause-btn").style.display = "none";
     document.getElementById("genesis-abort-btn").style.display = "none";
+    // 恢复触发按钮样式
+    var genesisTriggerBtn = document.getElementById("outline-genesis-btn");
+    if (genesisTriggerBtn) {
+        genesisTriggerBtn.textContent = "🌌智能建纲";
+        genesisTriggerBtn.style.background = "linear-gradient(135deg, #4f46e5, #9333ea)";
+        genesisTriggerBtn.style.animation = "";
+    }
     updateGenesisSubmitLabel();
     // 重置模式选择为完整建纲
     document.querySelectorAll(".genesis-mode-btn").forEach(function(l) { l.classList.remove("active"); });
@@ -1957,6 +1993,56 @@ document.getElementById("outline-genesis-btn")?.addEventListener("click", functi
     checkAndShowResume();
     modal.classList.remove("hidden");
 });
+
+/* ═══════════ 后台运行态 UI 恢复 ═══════════ */
+function restoreRunningGenesisUI() {
+    // 恢复控制台内容
+    var consoleEl = document.getElementById("genesis-console");
+    if (consoleEl) {
+        // 如果控制台当前内容为空或是初始状态，尝试从快照恢复
+        var currentText = (consoleEl.textContent || "").trim();
+        var isInitialState = currentText.indexOf("[System] 创世核心就绪") >= 0 || currentText === "";
+        if (isInitialState && genesisConsoleSnapshot) {
+            consoleEl.innerHTML = genesisConsoleSnapshot;
+        }
+        // 否则保留当前 DOM 内容（后台运行时 logToConsole 仍在更新隐藏的 DOM）
+    }
+
+    // 恢复按钮状态
+    var submitBtn = document.getElementById("genesis-submit-btn");
+    var closeBtn = document.getElementById("import-close-btn");
+    var pauseBtn = document.getElementById("genesis-pause-btn");
+    var abortBtn = document.getElementById("genesis-abort-btn");
+    var textarea = document.getElementById("import-textarea");
+    var backdrop = document.getElementById("genesis-backdrop");
+    var statusBadge = document.getElementById("genesis-status-badge");
+
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.style.display = "none"; }
+    if (closeBtn) { closeBtn.disabled = false; closeBtn.textContent = "🔽 后台运行"; closeBtn.title = "关闭窗口但保持建纲在后台继续执行"; }
+    if (pauseBtn) { pauseBtn.style.display = "inline-block"; pauseBtn.disabled = false; pauseBtn.textContent = "⏸ 暂停建纲"; }
+    if (abortBtn) { abortBtn.style.display = "inline-block"; abortBtn.disabled = false; abortBtn.textContent = "⏹ 中断建纲"; }
+    if (textarea) { textarea.disabled = true; }
+    if (backdrop) { backdrop.classList.add("genesis-running-indicator"); }
+    if (statusBadge) { statusBadge.textContent = "创世大重构执行中..."; statusBadge.style.color = "#38bdf8"; }
+
+    // 隐藏断点恢复横幅（运行中不需要）
+    var resumeBanner = document.getElementById("genesis-resume-banner");
+    if (resumeBanner) resumeBanner.style.display = "none";
+
+    // 恢复进度条：从 localStorage 读取当前状态
+    var state = loadGenesisState();
+    if (state) {
+        restoreProgressFromState(state);
+    }
+
+    // 更新触发按钮样式以指示后台运行状态
+    var genesisTriggerBtn = document.getElementById("outline-genesis-btn");
+    if (genesisTriggerBtn) {
+        genesisTriggerBtn.textContent = "⏳ 建纲运行中...";
+        genesisTriggerBtn.style.background = "linear-gradient(135deg, #1e3a5f, #3b82f6)";
+        genesisTriggerBtn.style.animation = "genesis-pulse 1.5s infinite";
+    }
+}
 
 /* ═══════════ 文件拖拽导入 ═══════════ */
 (function setupFileImport() {
@@ -2042,10 +2128,12 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     var consoleEl = document.getElementById("genesis-console");
     var statusBadge = document.getElementById("genesis-status-badge");
 
-    // UI 锁定
+    // UI 锁定（关闭按钮保持可用，允许后台运行）
     submitBtn.disabled = true;
     submitBtn.style.display = "none";
-    closeBtn.disabled = true;
+    closeBtn.disabled = false;  // 允许关闭窗口，建纲继续后台运行
+    closeBtn.textContent = "🔽 后台运行";
+    closeBtn.title = "关闭窗口但保持建纲在后台继续执行";
     pauseBtn.style.display = "inline-block";
     pauseBtn.disabled = false;
     pauseBtn.textContent = "⏸ 暂停建纲";
@@ -2053,8 +2141,16 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
     abortBtn.disabled = false;
     abortBtn.textContent = "⏹ 中断建纲";
     textarea.disabled = true;
-    backdrop.classList.add("genesis-running-backdrop");
+    // 移除遮罩阻断类，改用运行指示
+    backdrop.classList.add("genesis-running-indicator");
     document.getElementById("genesis-resume-banner").style.display = "none";
+    // 更新触发按钮样式以指示后台运行状态
+    var genesisTriggerBtn = document.getElementById("outline-genesis-btn");
+    if (genesisTriggerBtn) {
+        genesisTriggerBtn.textContent = "⏳ 建纲运行中...";
+        genesisTriggerBtn.style.background = "linear-gradient(135deg, #1e3a5f, #3b82f6)";
+        genesisTriggerBtn.style.animation = "genesis-pulse 1.5s infinite";
+    }
 
     var state = {
         phase: startPhase,
@@ -2596,14 +2692,24 @@ function genesisFinishedCleanup(submitBtn, closeBtn, pauseBtn, textarea, backdro
     isGenesisRunning = false;
     genesisPaused = false;
     genesisAborted = false;
+    genesisConsoleSnapshot = "";  // 清除控制台快照
     submitBtn.disabled = false;
     submitBtn.style.display = "";
     closeBtn.disabled = false;
+    closeBtn.textContent = "关闭窗口";
+    closeBtn.title = "";
     if (pauseBtn) pauseBtn.style.display = "none";
     var abortBtn = document.getElementById("genesis-abort-btn");
     if (abortBtn) abortBtn.style.display = "none";
     textarea.disabled = false;
-    backdrop.classList.remove("genesis-running-backdrop");
+    backdrop.classList.remove("genesis-running-indicator");
+    // 恢复触发按钮样式
+    var genesisTriggerBtn = document.getElementById("outline-genesis-btn");
+    if (genesisTriggerBtn) {
+        genesisTriggerBtn.textContent = "🌌智能建纲";
+        genesisTriggerBtn.style.background = "linear-gradient(135deg, #4f46e5, #9333ea)";
+        genesisTriggerBtn.style.animation = "";
+    }
 
     var chatInput = document.getElementById("copilot-input");
     if (chatInput) {
@@ -3777,7 +3883,7 @@ chainGenBtn.addEventListener("click", async () => {
 } // end if(chainSelect)
 
 /* ═══════════ AI Settings ═══════════ */
-function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false", agentMaxLoops: parseInt(localStorage.getItem("agent_max_loops") || "5") || 5 }; }
+function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false", agentMaxLoops: parseInt(localStorage.getItem("agent_max_loops") || "5") || 5, markerShortcut: localStorage.getItem("marker_shortcut") || "" }; }
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
 continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
@@ -5103,10 +5209,10 @@ document.getElementById("chain-restore-btn")?.addEventListener("click", async fu
 
 /* ═══════════ Settings ═══════════ */
 const sm = document.getElementById("settings-modal");
-document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; document.getElementById("settings-agent-loops").value = s.agentMaxLoops; sm.classList.remove("hidden"); });
+document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; document.getElementById("settings-agent-loops").value = s.agentMaxLoops; document.getElementById("settings-marker-shortcut").value = s.markerShortcut; sm.classList.remove("hidden"); });
 document.getElementById("settings-cancel").addEventListener("click", () => sm.classList.add("hidden"));
 sm.querySelector(".modal-backdrop").addEventListener("click", () => sm.classList.add("hidden"));
-document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); localStorage.setItem("agent_max_loops", String(parseInt(document.getElementById("settings-agent-loops").value) || 5)); sm.classList.add("hidden"); });
+document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); localStorage.setItem("agent_max_loops", String(parseInt(document.getElementById("settings-agent-loops").value) || 5)); var shortcutVal = document.getElementById("settings-marker-shortcut").value.trim(); localStorage.setItem("marker_shortcut", shortcutVal); sm.classList.add("hidden"); document.dispatchEvent(new CustomEvent("settings-updated", { detail: { markerShortcut: shortcutVal } })); });
 
 /* ═══════════ Cheat Sheet ═══════════ */
 function showCheatSheet() { document.getElementById("cheat-sheet-modal").classList.remove("hidden"); }
@@ -5831,6 +5937,324 @@ document.getElementById("export-btn").addEventListener("click", async () => {
     showToast("导出完成: " + title + "_设定与正文.md");
 });
 
+/* ═══════════ ContentEditable Editor Polyfill ═══════════
+   Makes the contenteditable div behave like a textarea:
+   - .value getter/setter (plain text with 【时间流逝：...】 syntax)
+   - .selectionStart / .selectionEnd (character offsets in plain text)
+   - Renders time markers as inline capsule cards
+   - Auto-strips capsules on value extraction
+   - Delete button on each capsule
+   ======================================================== */
+(function initContentEditor() {
+    var editor = document.getElementById("content-input");
+    if (!editor || editor.tagName !== "DIV") return; // not a div = old textarea, skip
+
+    var MARKER_RE = /【时间流逝[：:]([^】]+)】/g;
+    var observer = null; // MutationObserver for tracking changes
+
+    /* ── Convert plain text → HTML with capsule spans ── */
+    function textToHtml(text) {
+        if (!text) return "";
+        var html = text;
+        // Escape HTML first
+        html = html.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        // Replace newlines with <br> (contenteditable uses <br> for line breaks)
+        html = html.replace(/\n/g, "<br>");
+        // Replace marker syntax with capsule spans
+        html = html.replace(/【时间流逝[：:]([^】]+)】/g, function(match, expr) {
+            return '<span class="time-capsule" contenteditable="false" data-marker="' + 
+                   expr.replace(/"/g, "&quot;") + '">' + expr + 
+                   '<span class="tm-inline-del" data-action="delete-marker">×</span></span>';
+        });
+        return html;
+    }
+
+    /* ── Convert HTML → plain text with marker syntax ── */
+    function htmlToText(html) {
+        if (!html) return "";
+        var text = html;
+        // Replace <br> with newlines
+        text = text.replace(/<br\s*\/?>/gi, "\n");
+        // Handle <div> and <p> as line breaks (browsers wrap lines in these)
+        text = text.replace(/<div[^>]*>/gi, "\n").replace(/<\/div>/gi, "");
+        text = text.replace(/<p[^>]*>/gi, "\n").replace(/<\/p>/gi, "");
+        // Replace capsule spans with marker syntax (handle double-quoted attributes)
+        text = text.replace(/<span[^>]*class="[^"]*time-capsule[^"]*"[^>]*data-marker="([^"]*)"[^>]*>[\s\S]*?<\/span>/gi, function(m, expr) {
+            return "【时间流逝：" + expr + "】";
+        });
+        // Also handle single-quoted attributes
+        text = text.replace(/<span[^>]*class='[^']*time-capsule[^']*'[^>]*data-marker='([^']*)'[^>]*>[\s\S]*?<\/span>/gi, function(m, expr) {
+            return "【时间流逝：" + expr + "】";
+        });
+        // Remove any remaining HTML tags
+        text = text.replace(/<[^>]*>/g, "");
+        // Decode HTML entities
+        text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"");
+        // Clean up: collapse multiple newlines (but keep intentional ones)
+        // and trim leading/trailing whitespace
+        return text.replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n");
+    }
+
+    /* ── Get current selection offsets in plain text ── */
+    function getSelectionOffsets() {
+        var sel = window.getSelection();
+        if (!sel.rangeCount) return { start: 0, end: 0 };
+        var range = sel.getRangeAt(0);
+        if (!editor.contains(range.commonAncestorContainer)) return { start: 0, end: 0 };
+
+        // Walk DOM from editor start to a given (node, offset) point,
+        // counting plain-text characters. Capsule spans count as their
+        // full 【时间流逝：...】 syntax length. <br> counts as 1 (\n).
+        function computeOffset(targetNode, targetOffset) {
+            var count = 0;
+            var done = false;
+
+            function countNode(node) {
+                if (done) return;
+                if (node.nodeType === 3) { // text node
+                    count += node.textContent.length;
+                    return;
+                }
+                if (node.nodeType === 1) {
+                    if (node.classList && node.classList.contains("time-capsule")) {
+                        var expr = node.getAttribute("data-marker") || "";
+                        count += ("【时间流逝：" + expr + "】").length;
+                        return;
+                    }
+                    if (node.tagName === "BR") {
+                        count += 1; // newline
+                        return;
+                    }
+                    for (var i = 0; i < node.childNodes.length; i++) {
+                        countNode(node.childNodes[i]);
+                    }
+                }
+            }
+
+            function walk(node) {
+                if (done) return;
+                if (node === targetNode) {
+                    if (node.nodeType === 3) { // text node
+                        count += targetOffset;
+                    } else if (node.nodeType === 1) {
+                        // targetOffset is child index; count children before it
+                        for (var i = 0; i < targetOffset && i < node.childNodes.length; i++) {
+                            countNode(node.childNodes[i]);
+                        }
+                    }
+                    done = true;
+                    return;
+                }
+                countNode(node);
+            }
+
+            walk(editor);
+            return count;
+        }
+
+        var start = computeOffset(range.startContainer, range.startOffset);
+        var end = computeOffset(range.endContainer, range.endOffset);
+        return { start: start, end: end };
+    }
+
+    /* ── Set selection from character offsets ── */
+    function setSelectionOffsets(start, end) {
+        var text = editorValueGet();
+        if (start < 0) start = 0;
+        if (end < 0) end = 0;
+        if (start > text.length) start = text.length;
+        if (end > text.length) end = text.length;
+
+        // Walk through editor DOM to find position
+        var sel = window.getSelection();
+        var range = document.createRange();
+        
+        function traverseNodes(node, offsetObj) {
+            if (node.nodeType === 3) { // Text node
+                var len = node.textContent.length;
+                if (offsetObj.remaining <= len) {
+                    range.setStart(node, offsetObj.remaining);
+                    range.collapse(true);
+                    return true;
+                }
+                offsetObj.remaining -= len;
+                return false;
+            }
+            // Skip capsule spans (they don't count in plain text)
+            if (node.nodeType === 1 && (node.classList.contains("time-capsule") || node.classList.contains("tm-inline-del"))) {
+                // Capsules count as their marker text length
+                var markerExpr = node.getAttribute("data-marker") || node.parentElement?.getAttribute("data-marker") || "";
+                if (markerExpr && node.classList.contains("time-capsule")) {
+                    var markerLen = ("【时间流逝：" + markerExpr + "】").length;
+                    if (offsetObj.remaining <= markerLen) {
+                        // Place cursor before the capsule
+                        if (range.collapsed) {
+                            range.setStartBefore(node);
+                            range.collapse(true);
+                        }
+                        return true;
+                    }
+                    offsetObj.remaining -= markerLen;
+                }
+                return false;
+            }
+            if (node.nodeType === 1 && node.tagName === "BR") {
+                if (offsetObj.remaining <= 1) {
+                    range.setStartBefore(node);
+                    range.collapse(true);
+                    return true;
+                }
+                offsetObj.remaining -= 1; // newline
+                return false;
+            }
+            for (var i = 0; i < node.childNodes.length; i++) {
+                if (traverseNodes(node.childNodes[i], offsetObj)) return true;
+            }
+            return false;
+        }
+
+        if (start === end) {
+            var obj = { remaining: start };
+            traverseNodes(editor, obj);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else {
+            // For simplicity, just set cursor at start
+            var obj2 = { remaining: start };
+            traverseNodes(editor, obj2);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+    }
+
+    /* ── Value getter ── */
+    function editorValueGet() {
+        return htmlToText(editor.innerHTML);
+    }
+
+    /* ── Value setter ── */
+    function editorValueSet(text) {
+        editor.innerHTML = textToHtml(text || "");
+        updatePlaceholder();
+    }
+
+    /* ── Patch the editor element ── */
+    Object.defineProperty(editor, "value", {
+        get: editorValueGet,
+        set: editorValueSet,
+        configurable: true
+    });
+
+    Object.defineProperty(editor, "selectionStart", {
+        get: function() {
+            // Use cached blur selection when editor doesn't have focus
+            if (document.activeElement !== editor && typeof contentSelectionStart !== "undefined") {
+                return contentSelectionStart;
+            }
+            return getSelectionOffsets().start;
+        },
+        set: function(v) { var cur = getSelectionOffsets(); setSelectionOffsets(v, cur.end); },
+        configurable: true
+    });
+
+    Object.defineProperty(editor, "selectionEnd", {
+        get: function() {
+            if (document.activeElement !== editor && typeof contentSelectionEnd !== "undefined") {
+                return contentSelectionEnd;
+            }
+            return getSelectionOffsets().end;
+        },
+        set: function(v) { var cur = getSelectionOffsets(); setSelectionOffsets(cur.start, v); },
+        configurable: true
+    });
+
+    // disabled property
+    var _disabled = false;
+    Object.defineProperty(editor, "disabled", {
+        get: function() { return _disabled; },
+        set: function(v) { 
+            _disabled = v;
+            editor.contentEditable = v ? "false" : "true";
+            editor.style.opacity = v ? "0.6" : "";
+        },
+        configurable: true
+    });
+
+    /* ── Handle capsule delete button clicks ── */
+    editor.addEventListener("click", function(e) {
+        var delBtn = e.target.closest(".tm-inline-del");
+        if (delBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            var capsule = delBtn.closest(".time-capsule");
+            if (capsule) {
+                // Remove the capsule and any adjacent <br> that would leave an empty line
+                var prev = capsule.previousSibling;
+                var next = capsule.nextSibling;
+                if (prev && prev.nodeType === 3 && prev.textContent.endsWith("\n")) {
+                    prev.textContent = prev.textContent.slice(0, -1);
+                }
+                capsule.remove();
+                // Dispatch input event so listeners update
+                editor.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+        }
+    });
+
+    /* ── Prevent editing inside capsules ── */
+    editor.addEventListener("keydown", function(e) {
+        var sel = window.getSelection();
+        if (sel.rangeCount) {
+            var node = sel.getRangeAt(0).startContainer;
+            if (node && node.nodeType === 1 && (node.classList.contains("time-capsule") || node.closest(".time-capsule"))) {
+                // If backspace/delete, remove the whole capsule
+                if (e.key === "Backspace" || e.key === "Delete") {
+                    e.preventDefault();
+                    var capsule = node.closest(".time-capsule");
+                    if (capsule) {
+                        capsule.remove();
+                        editor.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                }
+                // Other keys: prevent editing inside
+                if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                }
+            }
+        }
+    });
+
+    /* ── Sync placeholder visibility ── */
+    function updatePlaceholder() {
+        var text = editor.textContent || "";
+        if (text.trim() === "" && !editor.querySelector(".time-capsule")) {
+            editor.setAttribute("data-empty", "true");
+        } else {
+            editor.removeAttribute("data-empty");
+        }
+    }
+    // Use CSS :empty pseudo-class (but contenteditable divs have <br> tags so we use a data attribute)
+    editor.addEventListener("input", function() {
+        updatePlaceholder();
+    });
+    updatePlaceholder();
+
+    /* ── Cache selection on change (for blur persistence) ── */
+    document.addEventListener("selectionchange", function() {
+        if (document.activeElement === editor) {
+            var off = getSelectionOffsets();
+            contentSelectionStart = off.start;
+            contentSelectionEnd = off.end;
+        }
+    });
+
+    /* ── Fire input events for external listeners ── */
+    // The editor's native input event fires correctly. Our custom dispatchEvent in delete
+    // handlers also fires. No additional setup needed.
+
+    console.log("[ContentEditor] Rich text editor initialized with inline capsule support");
+})();
+
 /* ═══════════ Utils + Init ═══════════ */
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveCurrentChapter(); } });
 function e(t) { const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
@@ -5892,6 +6316,175 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("time-settings-modal").classList.add("hidden");
     });
 });
+
+/* ═══════════ Time Marker Modal ═══════════ */
+(function setupTimeMarker() {
+    var modal = document.getElementById("time-marker-modal");
+    var ctxMenu = document.getElementById("editor-context-menu");
+    var textarea = document.getElementById("content-input");
+    if (!modal || !textarea) return;
+
+    var state = { year: 0, month: 0, day: 0, hour: 0 };
+
+    /* ── Modal UI helpers ── */
+    function updateUI() {
+        document.getElementById("tm-year-val").textContent = state.year;
+        document.getElementById("tm-month-val").textContent = state.month;
+        document.getElementById("tm-day-val").textContent = state.day;
+        document.getElementById("tm-hour-val").textContent = state.hour;
+
+        ["year","month","day","hour"].forEach(function(u) {
+            var el = document.getElementById("tm-"+u+"-val");
+            if (state[u] > 0) el.classList.add("nonzero");
+            else el.classList.remove("nonzero");
+        });
+
+        var parts = [];
+        if (state.year > 0) parts.push(state.year + "年");
+        if (state.month > 0) parts.push(state.month + "月");
+        if (state.day > 0) parts.push(state.day + "天");
+        if (state.hour > 0) parts.push(state.hour + "小时");
+        var preview = parts.length > 0 ? "【时间流逝：" + parts.join("") + "】" : "【时间流逝：】";
+        var previewEl = document.getElementById("tm-preview-text");
+        previewEl.textContent = preview;
+        if (parts.length === 0) previewEl.classList.add("empty");
+        else previewEl.classList.remove("empty");
+    }
+
+    function buildMarkerText() {
+        var parts = [];
+        if (state.year > 0) parts.push(state.year + "年");
+        if (state.month > 0) parts.push(state.month + "月");
+        if (state.day > 0) parts.push(state.day + "天");
+        if (state.hour > 0) parts.push(state.hour + "小时");
+        return parts.length > 0 ? "【时间流逝：" + parts.join("") + "】" : "";
+    }
+
+    function insertAtCursor(text) {
+        // Always append at the end of the current text (authors place markers
+        // at the end of a paragraph/section, not at arbitrary cursor positions).
+        var current = textarea.value;
+        var prefix = (current.length > 0 && current.charAt(current.length-1) !== "\n") ? "\n" : "";
+        textarea.value = current + prefix + text + "\n";
+        var newPos = textarea.value.length;
+        textarea.selectionStart = newPos;
+        textarea.selectionEnd = newPos;
+        textarea.focus();
+        textarea.dispatchEvent(new Event("input"));
+    }
+
+    function resetState() {
+        state.year = 0; state.month = 0; state.day = 0; state.hour = 0;
+        updateUI();
+    }
+
+    function showModal() {
+        resetState();
+        modal.classList.remove("hidden");
+    }
+
+    function hideModal() {
+        modal.classList.add("hidden");
+    }
+
+    // Modal +/- buttons
+    modal.querySelectorAll(".tm-inc").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var unit = btn.getAttribute("data-unit");
+            state[unit] = (state[unit] || 0) + 1;
+            updateUI();
+        });
+    });
+    modal.querySelectorAll(".tm-dec").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var unit = btn.getAttribute("data-unit");
+            state[unit] = Math.max(0, (state[unit] || 0) - 1);
+            updateUI();
+        });
+    });
+
+    // Modal insert button
+    document.getElementById("time-marker-insert").addEventListener("click", function() {
+        var marker = buildMarkerText();
+        if (!marker) return;
+        insertAtCursor(marker);
+        hideModal();
+    });
+
+    // Modal cancel & backdrop
+    document.getElementById("time-marker-cancel").addEventListener("click", hideModal);
+    modal.querySelector(".modal-backdrop").addEventListener("click", hideModal);
+
+    // Dynamic keyboard shortcut (from settings, empty by default)
+    var shortcutHandler = null;
+    function registerShortcut(shortcutStr) {
+        if (shortcutHandler) {
+            document.removeEventListener("keydown", shortcutHandler);
+            shortcutHandler = null;
+        }
+        if (!shortcutStr || !shortcutStr.trim()) return;
+
+        var parts = shortcutStr.trim().split("+").map(function(s) { return s.trim(); });
+        var key = parts.pop();
+        if (!key) return;
+        var ctrl = parts.indexOf("Ctrl") !== -1 || parts.indexOf("ctrl") !== -1;
+        var shift = parts.indexOf("Shift") !== -1 || parts.indexOf("shift") !== -1;
+        var alt = parts.indexOf("Alt") !== -1 || parts.indexOf("alt") !== -1;
+        var meta = parts.indexOf("Meta") !== -1 || parts.indexOf("meta") !== -1 || parts.indexOf("Cmd") !== -1;
+
+        shortcutHandler = function(e) {
+            if (e.target.tagName === "INPUT" && e.target.id !== "content-input") return;
+            if (e.target.tagName === "TEXTAREA" && e.target.id !== "content-input") return;
+            if (e.target.isContentEditable && e.target.id !== "content-input") return;
+
+            var ctrlOk = ctrl ? (e.ctrlKey || e.metaKey) : (!e.ctrlKey && !e.metaKey);
+            var shiftOk = shift ? e.shiftKey : !e.shiftKey;
+            var altOk = alt ? e.altKey : !e.altKey;
+
+            if (ctrlOk && shiftOk && altOk && e.key === key) {
+                e.preventDefault();
+                showModal();
+            }
+        };
+        document.addEventListener("keydown", shortcutHandler);
+    }
+
+    var settings = getSettings();
+    registerShortcut(settings.markerShortcut || "");
+
+    document.addEventListener("settings-updated", function(e) {
+        if (e.detail && typeof e.detail.markerShortcut !== "undefined") {
+            registerShortcut(e.detail.markerShortcut || "");
+        }
+    });
+
+    /* ── Right-click context menu ── */
+    if (ctxMenu) {
+        textarea.addEventListener("contextmenu", function(e) {
+            e.preventDefault();
+            ctxMenu.style.left = e.clientX + "px";
+            ctxMenu.style.top = e.clientY + "px";
+            ctxMenu.classList.remove("hidden");
+
+            function hideCtx(e2) {
+                if (!ctxMenu.contains(e2.target)) {
+                    ctxMenu.classList.add("hidden");
+                    document.removeEventListener("click", hideCtx);
+                    document.removeEventListener("contextmenu", hideCtx);
+                }
+            }
+            setTimeout(function() {
+                document.addEventListener("click", hideCtx);
+                document.addEventListener("contextmenu", hideCtx);
+            }, 0);
+        });
+
+        ctxMenu.querySelector('.ctx-item[data-action="add-marker"]').addEventListener("click", function() {
+            ctxMenu.classList.add("hidden");
+            showModal();
+        });
+    }
+})();
 
 /* ═══════════ Canvas Pan & Zoom ═══════════ */
 (function setupCanvasPanZoom() {

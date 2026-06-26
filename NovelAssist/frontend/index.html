@@ -82,7 +82,51 @@
             </label>
             <label style="margin-top:10px;">Agent 最大工具调用轮数 <span class="hint">(默认5)</span></label>
             <input type="number" id="settings-agent-loops" min="1" max="20" value="5" style="width:80px;">
+            <label style="margin-top:10px;">时间标记快捷键 <span class="hint">(留空则不启用，如 Ctrl+Shift+M)</span></label>
+            <input type="text" id="settings-marker-shortcut" placeholder="例如：Ctrl+Shift+M" style="width:200px;">
             <div class="modal-actions"><button id="settings-save" class="btn-primary">保存</button><button id="settings-cancel">取消</button></div>
+        </div>
+    </div>
+
+    <!-- 时间流逝标记添加弹窗 -->
+    <div id="time-marker-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box time-marker-box">
+            <h3>⏰ 添加时间流逝标记</h3>
+            <div class="time-marker-capsules">
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="year">−</button>
+                    <div class="tm-capsule" id="tm-year-val">0</div>
+                    <span class="tm-unit-label">年</span>
+                    <button class="tm-btn tm-inc" data-unit="year">+</button>
+                </div>
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="month">−</button>
+                    <div class="tm-capsule" id="tm-month-val">0</div>
+                    <span class="tm-unit-label">月</span>
+                    <button class="tm-btn tm-inc" data-unit="month">+</button>
+                </div>
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="day">−</button>
+                    <div class="tm-capsule" id="tm-day-val">0</div>
+                    <span class="tm-unit-label">天</span>
+                    <button class="tm-btn tm-inc" data-unit="day">+</button>
+                </div>
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="hour">−</button>
+                    <div class="tm-capsule" id="tm-hour-val">0</div>
+                    <span class="tm-unit-label">小时</span>
+                    <button class="tm-btn tm-inc" data-unit="hour">+</button>
+                </div>
+            </div>
+            <div class="tm-preview">
+                <span class="tm-preview-label">预览：</span>
+                <span class="tm-preview-text" id="tm-preview-text">【时间流逝：】</span>
+            </div>
+            <div class="modal-actions">
+                <button id="time-marker-cancel">取消</button>
+                <button id="time-marker-insert" class="btn-primary">✨ 插入标记</button>
+            </div>
         </div>
     </div>
 
@@ -223,8 +267,8 @@
                         <div class="editor-toolbar"><span class="info">Ctrl+S 保存</span><div class="toolbar-actions"><button id="continue-btn" class="sys-btn sys-btn-primary">&#10024; 续写</button><button id="save-btn" class="sys-btn sys-btn-primary">保存</button></div></div>
                         <input type="text" id="title-input" placeholder="章节标题...">
                         <div id="archived-content-viewer" class="readonly-text hidden"></div>
-                        <textarea id="content-input" placeholder="开始写作..."></textarea>
-                        <div class="editor-status">字数: <span id="word-count">0</span> | 状态: <span id="save-status">未保存</span><button id="archive-selected-btn" class="archive-btn sys-btn sys-btn-primary" title="选中正文后点击归档">📦 归档选中正文</button></div>
+                        <div id="content-input" contenteditable="true" class="content-editor" placeholder="开始写作..."></div>
+                        <div class="editor-status">字数: <span id="word-count">0</span> | 状态: <span id="save-status">未保存</span><button id="archive-selected-btn" class="archive-btn sys-btn sys-btn-primary" title="归档全部正文">📦 归档当前正文</button></div>
                     </div>
                 </div>
 
@@ -636,7 +680,7 @@
 
     <!-- 🌌 宇宙级智能创世大重构模态框 -->
     <div id="import-modal" class="modal hidden">
-        <!-- 遮罩层 (在运行中会被赋予 genesis-running 类来阻断一切外部点击) -->
+        <!-- 遮罩层（运行中显示指示状态，不再阻断点击，允许关闭窗口后台运行） -->
         <div class="modal-backdrop" id="genesis-backdrop"></div>
         <div class="modal-box" style="width:720px; max-height:92vh; overflow-y:auto; border: 2px solid #4f46e5; box-shadow: 0 0 25px rgba(79, 70, 229, 0.45);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -729,9 +773,9 @@
     
     <!-- CSS 动画定义：闪烁与禁止穿透类 -->
     <style>
-        .genesis-running-backdrop {
-            pointer-events: auto !important;
-            cursor: not-allowed !important;
+        .genesis-running-indicator {
+            /* 运行指示器：不再阻断点击，允许用户关闭窗口让建纲后台运行 */
+            cursor: default !important;
         }
         @keyframes genesis-pulse {
             0% { border-color: #4f46e5; box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); }
@@ -828,6 +872,11 @@
                 <button id="faction-cancel-btn">取消</button>
             </div>
         </div>
+    </div>
+
+    <!-- 编辑器右键菜单 -->
+    <div id="editor-context-menu" class="context-menu hidden">
+        <div class="ctx-item" data-action="add-marker">⏰ 添加时间流逝标记</div>
     </div>
 </body>
 </html>

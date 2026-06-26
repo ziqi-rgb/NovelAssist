@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['backend\\main.py'],
+    ['run.py'],
     pathex=[],
     binaries=[],
     datas=[('frontend', 'frontend')],
-    hiddenimports=['uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets.auto'],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
