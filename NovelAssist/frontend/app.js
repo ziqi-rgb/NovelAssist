@@ -47,7 +47,7 @@ function clearGenesisState() {
 
 function formatGenesisResumeInfo(state) {
     if (state.parallel && state.chainStates) {
-        var keys = ["outline", "map", "character"];
+        var keys = ["character", "map", "outline"];
         var labels = { outline: "大纲", map: "地图", character: "人设" };
         var totalNodes = 0;
         var completedCount = 0;
@@ -1918,7 +1918,7 @@ document.getElementById("genesis-discard-btn")?.addEventListener("click", functi
 function restoreProgressFromState(state) {
     var stepIds = ["step-char", "step-map", "step-outline"];
     if (state.parallel && state.chainStates) {
-        var keys = ["outline", "map", "character"];
+        var keys = ["character", "map", "outline"];
         keys.forEach(function(key, idx) {
             var el = document.getElementById(stepIds[idx]);
             if (!el) return;
@@ -2652,7 +2652,7 @@ function handleGenesisPaused(state, statusBadge, submitBtn, closeBtn, pauseBtn, 
     var stepIds = ["step-char", "step-map", "step-outline"];
     if (state.parallel && state.chainStates) {
         // 并行模式：标记所有未完成的链为 interrupted
-        var keys = ["outline", "map", "character"];
+        var keys = ["character", "map", "outline"];
         keys.forEach(function(key, idx) {
             var cs = state.chainStates[key];
             if (cs && !cs.completed) {
@@ -6535,6 +6535,51 @@ document.addEventListener("DOMContentLoaded", async () => {
     var stopPan = function(e) { if (e.button === 2 || e.type === "mouseleave") { isCanvasPanning = false; canvasViewport.style.cursor = ""; } };
     document.addEventListener("mouseup", stopPan);
     canvasViewport.addEventListener("mouseleave", stopPan);
+
+    // 🔄 建纲自动恢复：页面刷新后检测未完成的运行中建纲任务
+    setTimeout(function() {
+        var savedGenesis = loadGenesisState();
+        if (savedGenesis && savedGenesis.status === "running") {
+            console.log("[Genesis] 检测到刷新前正在运行的建纲任务，自动后台恢复...");
+            var state = savedGenesis;
+            isGenesisRunning = true;
+            genesisPaused = false;
+            genesisAborted = false;
+            genesisAbortController = new AbortController();
+
+            var initialState = {
+                phase: state.phase || 1,
+                completedPhases: state.completedPhases || [false, false, false],
+                currentNodeId: state.currentNodeId || null,
+                currentChainId: state.currentChainId || null,
+                fullChainContext: state.fullChainContext || "",
+                executedNodeCount: state.executedNodeCount || 0,
+                inputText: state.inputText || "",
+                mode: state.mode || "full",
+                parallel: state.parallel || false,
+                chainStates: state.chainStates || null,
+                status: "running",
+                startedAt: Date.now(),
+            };
+
+            // 更新触发按钮显示运行状态
+            var genesisTriggerBtn = document.getElementById("outline-genesis-btn");
+            if (genesisTriggerBtn) {
+                genesisTriggerBtn.textContent = "⏳ 建纲运行中...";
+                genesisTriggerBtn.style.background = "linear-gradient(135deg, #1e3a5f, #3b82f6)";
+                genesisTriggerBtn.style.animation = "genesis-pulse 1.5s infinite";
+            }
+
+            // 如果模态框已打开，恢复 UI
+            var modal = document.getElementById("import-modal");
+            if (modal && !modal.classList.contains("hidden")) {
+                restoreRunningGenesisUI();
+            }
+
+            // 启动恢复执行（后台运行，不清除 localStorage 状态以防再次刷新）
+            executeGenesisCore(initialState, state.phase || 1, state.completedPhases || [false, false, false]);
+        }
+    }, 800);  // 延迟 800ms 确保所有 DOM 和事件绑定就绪
 })();
 
 (function bindSend() {
