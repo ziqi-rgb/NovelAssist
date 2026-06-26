@@ -124,10 +124,16 @@ AGENT_TOOLS = [
                                         "{content} - 正文框当前文本\n"
                                         "{characters_list} - 所有活跃人物的档案与时空坐标(含势力归属)\n"
                                         "{characters_inactive} - 已退场人物列表\n"
+                                        "{characters_full_detail} - 全量角色精细档案(含attributes字典)\n"
                                         "{factions_list} - 势力与宗门目录(含成员)\n"
                                         "{relations_graph} - 人物关系网(有向连线)\n"
                                         "{timeline} - 正文时间线历史\n"
+                                        "{timeline_main} - 正文时间线({timeline}等效别名)\n"
+                                        "{timeline_history} - 历史时间线\n"
+                                        "{timeline_world} - 世界时间线\n"
                                         "{outlines_list} - 世界大纲列表\n"
+                                        "{outlines_full_detail} - 全维大纲目录(按分类分组)\n"
+                                        "{locations_list} - 全量地点扁平名录\n"
                                         "{current_time} - 当前世界历法时间\n"
                                         "{lore} - 世界观基础设定集\n"
                                         "{character:名字} - 提取特定人物属性\n"
@@ -2398,9 +2404,10 @@ class ReasoningExecuteRequest(BaseModel):
     chain_id: int | None = None   # 推理链ID（解析 {chain_todos} 时使用）
     response_format: dict | None = None  # {'type': 'json_object'} 用于 DeepSeek 结构化输出
     no_tools: bool = False  # 禁用工具调用（Genesis 建纲模式）
+    max_loops: int = 5     # Agent 工具调用最大轮数
 
 
-async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None) -> StreamingResponse:
+async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None, max_loops: int = 5) -> StreamingResponse:
 
     async def _execute_readonly_tool(tool_name: str, arguments: dict) -> str:
         if tool_name == "query_world_state" and novel_id and db:
@@ -2416,7 +2423,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                     if filt and not _m(c.name): continue
                     f2 = db.get(Faction,c.faction_id) if c.faction_id else None
                     fs = f" [势力: {f2.name} / {c.faction_role}]" if f2 and c.faction_role else ""
-                    lines.append(f"• {c.name}({c.status}){fs} — {c.description or ''}")
+                    lines.append(f"• [ID:{c.id}] {c.name}({c.status}){fs} — {c.description or ''}")
                 result["characters"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("factions","all"):
                 factions = db.query(Faction).filter(Faction.novel_id==novel_id).all()
@@ -2425,7 +2432,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                     if filt and not _m(f.name): continue
                     m2 = db.query(Character).filter(Character.faction_id==f.id).all()
                     ms = ", ".join(f"{x.name}({x.faction_role})" for x in m2 if x.faction_role) or "暂无成员"
-                    lines.append(f"【{f.name}】{f.description or ''} | 成员: {ms}")
+                    lines.append(f"【[ID:{f.id}] {f.name}】{f.description or ''} | 成员: {ms}")
                 result["factions"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("relations","all"):
                 rels = db.query(CharacterRelation).filter(CharacterRelation.novel_id==novel_id).all()
@@ -2436,11 +2443,11 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                     if filt and not (_m(s2.name) or _m(t2.name) or _m(r.label)): continue
                     w = r.weight
                     g = " [极度亲密]" if w>=80 else " [友好]" if w>=40 else " [不共戴天]" if w<=-80 else " [敌对]" if w<=-40 else ""
-                    lines.append(f"[{s2.name}]→<{r.label}>→[{t2.name}](好感:{w:+d}){g}")
+                    lines.append(f"[ID:{r.id}] [{s2.name}]→<{r.label}>→[{t2.name}](好感:{w:+d}){g}")
                 result["relations"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("locations","all"):
                 locs = db.query(Location).filter(Location.novel_id==novel_id).all()
-                lines = [f"• {l.name}[{l.scale_level}] — {l.description or ''}" for l in locs if not filt or _m(l.name)]
+                lines = [f"• [ID:{l.id}] {l.name}[{l.scale_level}] — {l.description or ''}" for l in locs if not filt or _m(l.name)]
                 result["locations"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("timeline","all"):
                 evts_q = db.query(TimelineEvent).filter(TimelineEvent.novel_id==novel_id)
@@ -2470,7 +2477,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                                 src = db.get(TimelineEvent, r.source_event_id)
                                 caused_by_lines.append(f"  ← #{src.timeline_index} [{src.time_label}] {src.title or '(无)'} ({r.label})")
                         result["timeline"] = (
-                            f"📌 事件 #{e.timeline_index}\n"
+                            f"📌 事件 #{e.timeline_index} [DB-ID:{e.id}]\n"
                             f"标题: {e.title or '(无)'}\n"
                             f"时间: {e.time_label}\n"
                             f"类型: {e.event_type}\n"
@@ -2487,7 +2494,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                     else:
                         result["timeline"] = f"未找到序号为 {evt_idx} 的时间线事件"
                 else:
-                    lines = [f"{e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}" for e in evts if not filt or (_m(e.time_label) or _m(e.content) or _m(e.title))]
+                    lines = [f"[DB-ID:{e.id}] {e.timeline_index}. [{e.time_label}] {e.title}{' — ' + e.content if e.content else ''}" for e in evts if not filt or (_m(e.time_label) or _m(e.content) or _m(e.title))]
                     result["timeline"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("outline","all"):
                 outlines = db.query(Outline).filter(Outline.novel_id==novel_id).order_by(Outline.order_index).all()
@@ -2571,7 +2578,6 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
 
     async def gen():
         nonlocal messages
-        max_loops = 3
         for _ in range(max_loops):
             tool_calls_acc: dict[int, dict[str, str]] = {}
             try:
@@ -2765,7 +2771,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         )},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=(None if req.no_tools else AGENT_TOOLS), response_format=req.response_format)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=(None if req.no_tools else AGENT_TOOLS), response_format=req.response_format, max_loops=req.max_loops)
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
@@ -3245,14 +3251,30 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             factions = list(_Cache._factions.values()) if _Cache._factions else []
             if not factions:
                 return "(无势力数据)"
-            res = []
+            res = ["## 势力名录", ""]
             for f in factions:
+                res.append(f"### 🏛️ {f.name}")
+                if f.description:
+                    res.append(f"- 描述: {f.description}")
+                # Resolve base location name + scale
+                if f.base_location_id:
+                    loc = _Cache.get_loc(f.base_location_id)
+                    if loc:
+                        sc = loc.scale_level or ""
+                        res.append(f"- 驻地: {loc.name} [{sc}]" if sc else f"- 驻地: {loc.name}")
+                    else:
+                        res.append(f"- 驻地: (ID:{f.base_location_id}, 已删除)")
+                else:
+                    res.append("- 驻地: 无固定驻地")
                 members = _Cache.faction_members_of(f.id)
-                mem_strs = [f"{m.name}({m.faction_role})" for m in members if m.faction_role]
-                mem_info = f"成员: {', '.join(mem_strs)}" if mem_strs else "暂无成员"
-                base_info = f"驻地ID:{f.base_location_id}" if f.base_location_id else "无固定驻地"
-                res.append(f"【{f.name}】 {f.description} | {base_info} | {mem_info}")
-            return "\n".join(res)
+                if members:
+                    mem_strs = [f"{m.name}({m.faction_role})" for m in members if m.faction_role]
+                    mem_info = f"- 成员({len(members)}): {', '.join(mem_strs)}" if mem_strs else f"- 成员({len(members)}): (无职位信息)"
+                else:
+                    mem_info = "- 成员: 暂无成员"
+                res.append(mem_info)
+                res.append("")  # blank line between factions
+            return "\n".join(res).rstrip()
 
         if ph == "relations_graph":
             relations = db.query(CharacterRelation).filter(CharacterRelation.novel_id == novel_id).all()
@@ -3430,6 +3452,7 @@ class CopilotRequest(BaseModel):
     scene: str = "chat"
     mode: str = "chat"  # "chat" | "prefix" (DeepSeek Beta prefix completion)
     chain_data: str = ""
+    max_loops: int = 5     # Agent 工具调用最大轮数
     history: list = []
 
 
@@ -3520,7 +3543,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
     messages.append({"role": "user", "content": user_content})
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, novel_id=req.novel_id, db=db)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, novel_id=req.novel_id, db=db, max_loops=req.max_loops)
 
 
 # ═══════════ Agent Tool Execution ═══════════

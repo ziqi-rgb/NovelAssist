@@ -80,6 +80,8 @@
                 <input type="checkbox" id="settings-stream">
                 <span>流式传输（逐字显示 AI 输出）</span>
             </label>
+            <label style="margin-top:10px;">Agent 最大工具调用轮数 <span class="hint">(默认5)</span></label>
+            <input type="number" id="settings-agent-loops" min="1" max="20" value="5" style="width:80px;">
             <div class="modal-actions"><button id="settings-save" class="btn-primary">保存</button><button id="settings-cancel">取消</button></div>
         </div>
     </div>
@@ -119,15 +121,22 @@
                         <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_story}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 剧情大纲全文。严格遵循 [卷]->[章]->[幕]。</td></tr>
                         <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#16a34a;">{locations_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 全量地点层级树。包含地名/scale/坐标/描述。</td></tr>
                         <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{outlines_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量大纲条目扁平名录。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outlines_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">分组 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 全维大纲目录。按分类分组（世界观/势力/地理/能力/剧情），含层级父关系与描述摘要。</td></tr>
                         <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{locations_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量地点扁平名录（含ID/scale/父ID）。</td></tr>
                         <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{characters_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">活跃角色名录简档（含当前位置及势力）。</td></tr>
                         <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{characters_inactive}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">已退场角色名录简档。</td></tr>
                         <tr style="background:#fff7ed;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#c2410c;">{characters_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">JSON/Markdown 字典</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 列出全量角色的精细档案。包含其姓名、状态、所属势力及核心自定义嵌套 attributes 字典。用于人设定点核对与质量控制。</td></tr>
-                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{factions_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全势力名录（含描述/驻地/成员清单）。</td></tr>
-                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{character_template}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">JSON 文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前小说自定义人物档案属性模板。</td></tr>
+                        <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#16a34a;">{factions_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">分区块 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【全量】** 势力名录。每个势力一个独立段落，含描述、驻地（名称+尺度）、成员清单及总数。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{relations_graph}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量人物关系网。每条含 [A]→&lt;标签&gt;→[B] (好感度: N)，附带亲密度文字标注与原因描述。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{character_template}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前小说自定义人物档案属性模板（分组: [字段列表]）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{novel_name}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">纯文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前小说名称。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{chapter_title}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">纯文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前最新章节标题。</td></tr>
                         <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{character:姓名}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 精准提取特定角色完整档案。</td></tr>
                         <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{location:名称}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 精准提取特定地点完整档案。</td></tr>
                         <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{outline:标题}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 根据标题精准调取特定大纲条目。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{timeline}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平索引</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">正文时间线索引（序号+时间标签+标题）。{timeline_main} 为等效别名。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{timeline_history}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平索引</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">历史时间线索引（如世界起源、远古事件）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{timeline_world}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平索引</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">世界时间线索引（摄像机外并行发生的事件）。</td></tr>
                         <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{current_time}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">时间标签</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前世界历法时间（如：天宝 甲子年 孟春 初一 子时）。</td></tr>
                     </tbody>
                 </table>
@@ -458,7 +467,6 @@
                 <div class="tab-bar">
                     <button class="tab-btn active" data-tab="tab-characters">人物卡</button>
                     <button class="tab-btn" data-tab="tab-ai">AI助手</button>
-                    <button class="tab-btn" data-tab="tab-chain">推理链</button>
                     <button class="tab-btn" data-tab="tab-timeline">时间线</button>
                 </div>
                 <div id="tab-characters" class="tab-content"><button id="new-character-btn">+ 新建人物</button><div id="character-list"></div></div>
@@ -546,12 +554,6 @@
                         </select>
                     </div>
                     <div class="copilot-input-row"><input type="text" id="copilot-input" placeholder="向 AI 输入指令..."><button id="copilot-send" class="sys-btn sys-btn-primary" onclick="handleCopilotSend()">发送</button></div>
-                </div>
-                <div id="tab-chain" class="tab-content hidden">
-                    <select id="chain-select" style="width:100%;padding:6px;margin-bottom:8px;font-size:.78rem;border:1px solid var(--border);border-radius:var(--radius);"><option value="">-- 选择推演方案 --</option></select>
-                    <div id="chain-bubbles" style="flex:1;overflow-y:auto;"></div>
-                    <button id="chain-run-btn" class="chain-gen-btn hidden" style="background:#6a1b9a;">&#9654; 运行推演链</button>
-                    <button id="chain-generate-btn" class="chain-gen-btn hidden">&#9997; 根据此推演链生成正文</button>
                 </div>
             </aside>
         </div>

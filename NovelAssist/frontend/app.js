@@ -1670,18 +1670,21 @@ async function copilotChat(instruction, forceScene, mode) {
 
     try {
         var currentAiResponse = "";
-        const body = { novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory };
+        const body = { novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory, max_loops: s.agentMaxLoops };
         const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
             else if (msg.type === "tool_query") {
-                var qLabel = msg.tool_name === "query_world_state" ? "🔍 查询世界状态" : "🔧 " + msg.tool_name;
+                var tr = translateToolCall(msg.tool_name, msg.arguments);
                 var qCard = document.createElement("div");
                 qCard.className = "tool-proposal tp-executed";
-                qCard.innerHTML = '<div class="tp-title">📋 ' + e(qLabel) + '</div>'
-                    + '<div class="tp-args">' + e(JSON.stringify(msg.arguments || {}, null, 2)) + '</div>'
+                qCard.setAttribute("data-tool-args", JSON.stringify(msg.arguments || {}));
+                qCard.style.cursor = "pointer";
+                qCard.title = "点击查看详情";
+                qCard.innerHTML = '<div class="tp-title">🔍 ' + e(tr.summary) + '</div>'
                     + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 已自动查询</span></div>';
+                qCard.addEventListener("click", function() { showToolDetailPopup(tr.summary, tr.detail, tr._raw); });
                 aiB.appendChild(qCard);
                 copilotHistory.scrollTop = copilotHistory.scrollHeight;
             }
@@ -2653,32 +2656,191 @@ async function executeGenesisFromResume(state) {
 copilotInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); handleCopilotSend(); } });
 document.querySelectorAll(".cp-quick-btn").forEach(b => b.addEventListener("click", () => copilotChat(b.dataset.cmd)));
 
+function translateToolCall(toolName, args) {
+    /* Returns { summary: "自然语言摘要", detail: "完整JSON或富文本" } */
+    var detail = JSON.stringify(args || {}, null, 2);
+    var a = args || {};
+    var elLabels = { outline: "大纲", location: "地点", character: "角色", timeline: "时间线事件", faction: "势力", relation: "关系", volume: "分卷", character_template: "人物模板" };
+    var actLabels = { add: "创建", update: "更新", delete: "删除" };
+    if (toolName === "manage_world_element") {
+        var el = elLabels[a.element_type] || a.element_type || "元素";
+        var act = actLabels[a.action] || a.action || "操作";
+        var name = "";
+        if (a.data && (a.data.title || a.data.name)) {
+            name = a.data.title || a.data.name;
+        } else if (a.element_id) {
+            name = "ID:" + a.element_id;
+            // 异步查找实体名称并更新 summary
+            lookupEntityName(a.element_type, a.element_id).then(function(found) {
+                if (found && found !== name) {
+                    name = found;
+                    // 找到所有引用此 args 的卡片并更新标题
+                    updateToolCardTitles(a, el, act, name);
+                }
+            });
+        }
+        var summary = "申请" + act + el;
+        if (name) summary += "「" + name + "」";
+        return { summary: summary, detail: detail, _raw: a };
+    }
+    if (toolName === "query_world_state") {
+        var qtype = a.query_type || "all";
+        var typeMap = { all: "全部", characters: "角色", factions: "势力", relations: "关系", locations: "地点", timeline: "时间线", outline: "大纲" };
+        var typeLabel = typeMap[qtype] || qtype;
+        var filterNote = a.filter ? "（筛选:「" + a.filter + "」）" : "";
+        var idxNote = a.event_index != null ? "（事件#" + a.event_index + "）" : "";
+        return { summary: "查找了世界状态 → " + typeLabel + filterNote + idxNote, detail: detail };
+    }
+    if (toolName === "advance_world_time") {
+        var d = a.elapsed_days || 0;
+        var h = a.elapsed_hours || 0;
+        var parts = [];
+        if (d) parts.push(d + "天");
+        if (h) parts.push(h + "小时");
+        return { summary: "申请推进时间 " + (parts.length ? parts.join("") : "0"), detail: detail };
+    }
+    if (toolName === "generate_reasoning_chain") {
+        var gAct = a.action === "overwrite_existing" ? "覆盖" : "创建";
+        var gTitle = a.title || "";
+        return { summary: "申请" + gAct + "推理链「" + gTitle + "」", detail: detail };
+    }
+    return { summary: "调用工具: " + toolName, detail: detail };
+}
+
+/* ── 实体名称异步查找 + 卡片标题回填 ── */
+var _entityNameCache = {};  /* { "character:1": "张三", ... } */
+async function lookupEntityName(elementType, elementId) {
+    if (!elementType || !elementId) return null;
+    var key = elementType + ":" + elementId;
+    if (_entityNameCache[key]) return _entityNameCache[key];
+    try {
+        var epMap = { character: "characters", location: "locations", outline: "outlines", faction: "factions", timeline: "timeline_events" };
+        var ep = epMap[elementType];
+        if (!ep) return null;
+        var url = "/api/" + ep;
+        if (elementType === "character") {
+            var ch = await (await fetch("/api/characters/" + elementId + "?novel_id=" + currentNovelId)).json();
+            var found = ch.name || null;
+        } else if (elementType === "location") {
+            var locs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
+            var match = (Array.isArray(locs) ? locs : []).find(function(l) { return l.id === elementId; });
+            var found = match ? match.name : null;
+        } else if (elementType === "outline") {
+            var ols = await (await fetch("/api/outlines?novel_id=" + currentNovelId)).json();
+            var match = (Array.isArray(ols) ? ols : []).find(function(o) { return o.id === elementId; });
+            var found = match ? match.title : null;
+        } else if (elementType === "faction") {
+            var facs = await (await fetch("/api/factions?novel_id=" + currentNovelId)).json();
+            var match = (Array.isArray(facs) ? facs : []).find(function(f) { return f.id === elementId; });
+            var found = match ? match.name : null;
+        } else if (elementType === "timeline") {
+            var evts = await (await fetch("/api/timeline?novel_id=" + currentNovelId)).json();
+            var match = (Array.isArray(evts) ? evts : []).find(function(e) { return e.id === elementId; });
+            var found = match ? (match.title || match.time_label) : null;
+        }
+        if (found) { _entityNameCache[key] = found; return found; }
+    } catch (e) { /* 静默失败 */ }
+    return null;
+}
+
+function updateToolCardTitles(args, elLabel, actLabel, entityName) {
+    /* 遍历所有 .tool-proposal 卡片，匹配相同 args 的更新标题 */
+    var cards = document.querySelectorAll(".tool-proposal");
+    for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var stored = card.getAttribute("data-tool-args");
+        if (!stored) continue;
+        try {
+            var storedArgs = JSON.parse(stored);
+            if (storedArgs.element_type === args.element_type &&
+                storedArgs.action === args.action &&
+                storedArgs.element_id === args.element_id) {
+                var titleEl = card.querySelector(".tp-title");
+                if (titleEl) {
+                    var newSummary = "申请" + actLabel + elLabel + "「" + entityName + "」";
+                    titleEl.textContent = titleEl.textContent.replace(/「[^」]*」/, "「" + entityName + "」");
+                    card.setAttribute("data-tool-summary", newSummary);
+                }
+            }
+        } catch (e) {}
+    }
+}
+
+function showToolDetailPopup(title, detailText, toolArgs) {
+    /* Popup card — click backdrop to close. If toolArgs provided, enrich with entity lookup. */
+    var exist = document.getElementById("tool-detail-popup");
+    if (exist) exist.remove();
+    var wrap = document.createElement("div");
+    wrap.id = "tool-detail-popup";
+    wrap.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;";
+    var backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.style.position = "fixed";
+    backdrop.addEventListener("click", function() { wrap.remove(); });
+    var box = document.createElement("div");
+    box.className = "modal-box";
+    box.style.cssText = "width:520px;max-height:80vh;overflow-y:auto;";
+    var detailHtml = '<pre style="font-size:.7rem;background:#f8fafc;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-word;max-height:55vh;overflow-y:auto;">' + e(detailText) + '</pre>';
+    box.innerHTML = '<h3 style="margin:0 0 10px;">' + e(title) + '</h3>'
+        + '<div id="tool-detail-body">' + detailHtml + '</div>'
+        + '<div class="modal-actions" style="margin-top:10px;"><button class="btn-primary" onclick="document.getElementById(\'tool-detail-popup\').remove()">关闭</button></div>';
+    wrap.appendChild(backdrop);
+    wrap.appendChild(box);
+    document.body.appendChild(wrap);
+
+    /* 异步富化详情 */
+    if (toolArgs && toolArgs.element_type && toolArgs.element_id && (toolArgs.action === "delete" || toolArgs.action === "update")) {
+        var bodyEl = document.getElementById("tool-detail-body");
+        bodyEl.innerHTML = detailHtml + '<p style="font-size:.7rem;color:#7c3aed;margin-top:6px;">⏳ 正在查找实体信息...</p>';
+        lookupEntityName(toolArgs.element_type, toolArgs.element_id).then(function(foundName) {
+            if (foundName) {
+                var extraLines = [];
+                extraLines.push('<div style="margin-top:8px;padding:8px;background:#fef3c7;border-radius:6px;font-size:.75rem;">');
+                var elLabels2 = { character: "角色", location: "地点", outline: "大纲", faction: "势力", timeline: "时间线事件" };
+                var el2 = elLabels2[toolArgs.element_type] || toolArgs.element_type;
+                var act2 = toolArgs.action === "delete" ? "删除" : "更新";
+                extraLines.push('<p style="margin:0;font-weight:700;color:#92400e;">⚠️ 即将' + act2 + el2 + '：<b>' + e(foundName) + '</b></p>');
+                extraLines.push('<p style="margin:4px 0 0;font-size:.68rem;color:#78350f;">请确认这是您要操作的目标实体，操作不可撤销。</p>');
+                if (toolArgs.action === "delete") {
+                    extraLines.push('<p style="margin:4px 0 0;font-size:.68rem;color:#dc2626;">🔴 删除后数据将永久移除！</p>');
+                }
+                extraLines.push('</div>');
+                bodyEl.innerHTML = detailHtml + extraLines.join("");
+            } else {
+                bodyEl.innerHTML = detailHtml + '<p style="font-size:.7rem;color:#ef4444;margin-top:6px;">⚠️ 未找到该实体信息（可能已被删除），请谨慎操作。</p>';
+            }
+        });
+    }
+}
+
 function renderToolProposal(parentBubble, proposal, autoExecute) {
-    var argsText = JSON.stringify(proposal.arguments || {}, null, 2);
-    var toolLabel = proposal.tool_name === "advance_world_time" ? "🌏 推进世界时间" :
-                    proposal.tool_name === "manage_world_element" ? "⚙️ 元素操作" :
-                    proposal.tool_name === "query_world_state" ? "🔍 查询世界状态" : "🔧 " + proposal.tool_name;
+    var tr = translateToolCall(proposal.tool_name, proposal.arguments);
     var isReadOnly = proposal.tool_name === "query_world_state";
     var tp = document.createElement("div");
     tp.className = "tool-proposal";
+    tp.setAttribute("data-tool-summary", tr.summary);
+    tp.setAttribute("data-tool-args", JSON.stringify(proposal.arguments || {}));
+    tp.style.cursor = "pointer";
+    tp.title = "点击查看详情";
+    tp.addEventListener("click", function(e) {
+        if (e.target.tagName === "BUTTON") return;
+        showToolDetailPopup(tr.summary, tr.detail, tr._raw);
+    });
 
     if (isReadOnly) {
-        // 只读工具静默批准
-        tp.innerHTML = '<div class="tp-title">📋 系统查询: ' + toolLabel + '</div>' +
-            '<div class="tp-args">参数: ' + e(argsText) + '</div>' +
-            '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 自动查询中...</span></div>';
+        tp.innerHTML = '<div class="tp-title">🔍 ' + e(tr.summary) + '</div>'
+            + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 自动查询中...</span></div>';
         parentBubble.appendChild(tp);
         copilotHistory.scrollTop = copilotHistory.scrollHeight;
         executeTool(proposal.tool_name, proposal.arguments, tp);
         return;
     }
 
-    tp.innerHTML = '<div class="tp-title">📋 提议操作: ' + toolLabel + '</div>' +
-        '<div class="tp-args">参数: ' + e(argsText) + '</div>' +
-        '<div class="tp-actions">' +
-            '<button class="tp-approve">✅ 批准并执行</button>' +
-            '<button class="tp-reject">❌ 拒绝</button>' +
-        '</div>';
+    tp.innerHTML = '<div class="tp-title">📋 ' + e(tr.summary) + '</div>'
+        + '<div class="tp-actions">'
+            + '<button class="tp-approve">✅ 批准并执行</button>'
+            + '<button class="tp-reject">❌ 拒绝</button>'
+        + '</div>';
     parentBubble.appendChild(tp);
     copilotHistory.scrollTop = copilotHistory.scrollHeight;
 
@@ -2694,7 +2856,7 @@ function renderToolProposal(parentBubble, proposal, autoExecute) {
     });
     tp.querySelector(".tp-reject").addEventListener("click", function() {
         tp.classList.add("tp-rejected");
-        tp.querySelector(".tp-title").textContent = "❌ 已拒绝: " + toolLabel;
+        tp.querySelector(".tp-title").textContent = "❌ 已拒绝: " + e(tr.summary);
     });
 }
 
@@ -2706,11 +2868,12 @@ async function executeTool(toolName, args, card) {
             body: JSON.stringify({ tool_name: toolName, arguments: args }),
         });
         var result = await res.json();
+        var summaryLabel = card.getAttribute("data-tool-summary") || toolName;
         if (result.status === "success") {
             card.classList.add("tp-executed");
             if (toolName === "query_world_state" && result.data) {
-                var summary = Object.keys(result.data).filter(function(k) { return result.data[k] && result.data[k] !== "(无匹配"; }).length;
-                card.querySelector(".tp-title").textContent = "✅ 已查询: " + summary + " 类数据已获取";
+                var cnt = Object.keys(result.data).filter(function(k) { return result.data[k] && result.data[k] !== "(无匹配"; }).length;
+                card.querySelector(".tp-title").textContent = "✅ 已查询 " + cnt + " 类数据";
                 var detailDiv = document.createElement("div");
                 detailDiv.style.cssText = "font-size:.68rem;color:var(--text-muted);margin-top:4px;max-height:200px;overflow-y:auto;";
                 detailDiv.innerHTML = Object.entries(result.data).map(function(e2) {
@@ -2718,7 +2881,11 @@ async function executeTool(toolName, args, card) {
                 }).join("<br><br>");
                 card.appendChild(detailDiv);
             } else {
-                card.querySelector(".tp-title").textContent = "✅ 已执行: " + (result.msg || "完成");
+                var doneLabel = summaryLabel;
+                if (doneLabel && doneLabel.indexOf("申请") === 0) {
+                    doneLabel = "已" + doneLabel.substring(2);
+                }
+                card.querySelector(".tp-title").textContent = "✅ " + (result.msg || doneLabel);
             }
             if (typeof loadNovelTime === "function") loadNovelTime();
             if (currentModule === "characters" && typeof loadCharacters === "function") loadCharacters(currentNovelId);
@@ -2733,7 +2900,7 @@ async function executeTool(toolName, args, card) {
             }
             return true;
         } else {
-            card.querySelector(".tp-title").textContent = "❌ 执行失败: " + (result.msg || "未知错误");
+            card.querySelector(".tp-title").textContent = "❌ 失败: " + (result.msg || "未知错误");
             card.classList.add("tp-rejected");
             return false;
         }
@@ -3256,9 +3423,10 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                                 );
                                 if (!deleteConfirmed) {
                                     if (bubbleEl) {
+                                        var delTr = translateToolCall(msg.tool_name, msg.arguments);
                                         var rejectedCard = document.createElement("div");
                                         rejectedCard.className = "tool-proposal tp-rejected";
-                                        rejectedCard.innerHTML = '<div class="tp-title">🚫 已拒绝: ' + e(msg.tool_name) + '</div>'
+                                        rejectedCard.innerHTML = '<div class="tp-title">🚫 已拒绝: ' + e(delTr.summary) + '</div>'
                                             + '<div class="tp-actions"><span style="font-size:.7rem;color:#ef4444;">⛔ 用户取消了删除操作</span></div>';
                                         bubbleEl.appendChild(rejectedCard);
                                         copilotHistory.scrollTop = copilotHistory.scrollHeight;
@@ -3271,16 +3439,20 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             if (bubbleEl) {
                                 var card = document.createElement("div");
                                 card.className = "tool-proposal";
-                                card.innerHTML = '<div class="tp-title">🛠 自动执行: ' + e(msg.tool_name) + '</div>'
-                                    + '<div class="tp-args">' + e(JSON.stringify(msg.arguments, null, 2)) + '</div>'
+                                card.style.cursor = "pointer";
+                                card.title = "点击查看详情";
+                                var tr2 = translateToolCall(msg.tool_name, msg.arguments);
+                                card.setAttribute("data-tool-summary", tr2.summary);
+                                card.setAttribute("data-tool-args", JSON.stringify(msg.arguments || {}));
+                                card.innerHTML = '<div class="tp-title">🛠 ' + e(tr2.summary) + '</div>'
                                     + '<div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⏳ 链式执行中...</span></div>';
+                                card.addEventListener("click", function() { showToolDetailPopup(tr2.summary, tr2.detail, tr2._raw); });
                                 bubbleEl.appendChild(card);
                                 copilotHistory.scrollTop = copilotHistory.scrollHeight;
                             }
                             if (onLogCallback) {
-                                var toolName = msg.tool_name || msg.arguments?.element_type || "";
-                                var toolTitle = (msg.arguments?.data?.title || msg.arguments?.data?.name || "");
-                                onLogCallback("\n⚙️ 自动录入实体: [" + toolName + "] -> " + toolTitle + "\n", "tool");
+                                var logTr = translateToolCall(msg.tool_name, msg.arguments);
+                                onLogCallback("\n⚙️ " + logTr.summary + "\n", "tool");
                             }
                             var execRes = await fetch("/api/agent/execute/" + currentNovelId, {
                                 method: "POST", headers: { "Content-Type": "application/json" },
@@ -3293,7 +3465,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             } else {
                                 if (bubbleEl) {
                                     card.classList.add("tp-executed");
-                                    card.querySelector(".tp-title").textContent = "✅ 已执行: " + msg.tool_name;
+                                    card.querySelector(".tp-title").textContent = "✅ 已完成: " + (tr2.summary || msg.tool_name);
                                 }
                                 nodeToolCalls += "\n[✅ 系统已记录：成功调用 '" + msg.tool_name + "' 归档数据: " + toolTitle + "]";
                             }
@@ -3419,7 +3591,9 @@ const chainGenBtn = document.getElementById("chain-generate-btn");
 let currentChainNodes = [];
 let currentChainRunId = null;
 
-document.getElementById("tab-chain").closest(".tab-content")?.addEventListener("DOMNodeInserted", () => {});
+if (chainSelect) {
+
+document.getElementById("tab-chain")?.closest(".tab-content")?.addEventListener("DOMNodeInserted", () => {});
 
 async function loadChainSelect() {
     chainSelect.innerHTML = '<option value="">-- 选择推演方案 --</option>';
@@ -3484,7 +3658,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
             var premise = rawPremise2.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
             var promptT = node.prompt || "";
             var targetT = compileTarget(node.target);
-            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined }) });
+            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined, max_loops: s.agentMaxLoops }) });
             var txt = "";
             var gen = parseSSEStream(res);
             var chunkResult;
@@ -3512,7 +3686,8 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
                         method: "POST", headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ tool_name: msg.tool_name, arguments: msg.arguments, write_to: node.write_to || null, chain_id: currentChainId || null }),
                     });
-                    txt += "\n[🛠 工具已自动执行: " + msg.tool_name + "]";
+                    var cwTr = translateToolCall(msg.tool_name, msg.arguments);
+                    txt += "\n[🛠 " + cwTr.summary + "]";
                 }
             }
             // Extract ROUTE key and strip tags
@@ -3567,15 +3742,19 @@ chainGenBtn.addEventListener("click", async () => {
     document.getElementById("copilot-history").appendChild(aiB);
     chainGenBtn.disabled = true; chainGenBtn.textContent = "生成中...";
     try {
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: getActiveContent(), instruction: "根据推演链结果生成正文", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: "chain_write", chain_data: chainData }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: getActiveContent(), instruction: "根据推演链结果生成正文", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: "chain_write", chain_data: chainData, max_loops: s.agentMaxLoops }) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { aiB.appendChild(document.createTextNode(msg.content)); aiB.scrollIntoView(false); }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
             else if (msg.type === "tool_query") {
-                var ql = msg.tool_name === "query_world_state" ? "🔍 查询世界状态" : "🔧 " + msg.tool_name;
+                var trCW = translateToolCall(msg.tool_name, msg.arguments);
                 var qc = document.createElement("div");
                 qc.className = "tool-proposal tp-executed";
-                qc.innerHTML = '<div class="tp-title">📋 ' + e(ql) + '</div><div class="tp-args">' + e(JSON.stringify(msg.arguments||{},null,2)) + '</div><div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 已自动查询</span></div>';
+                qc.setAttribute("data-tool-args", JSON.stringify(msg.arguments || {}));
+                qc.style.cursor = "pointer";
+                qc.title = "点击查看详情";
+                qc.innerHTML = '<div class="tp-title">🔍 ' + e(trCW.summary) + '</div><div class="tp-actions"><span style="font-size:.7rem;color:#7c3aed;">⚡ 已自动查询</span></div>';
+                qc.addEventListener("click", function() { showToolDetailPopup(trCW.summary, trCW.detail, trCW._raw); });
                 aiB.appendChild(qc);
             }
             else if (msg.type === "tool_proposal") { renderToolProposal(aiB, msg, false); }
@@ -3592,11 +3771,13 @@ chainGenBtn.addEventListener("click", async () => {
             }
         }
     } catch (e) { aiB.appendChild(document.createTextNode("\n[失败: " + e.message + "]")); }
-    finally { aiB.classList.remove("streaming"); chainGenBtn.disabled = false; chainGenBtn.textContent = "\u270D 根据此推演链生成正文"; }
+    finally { aiB.classList.remove("streaming"); if (chainGenBtn) { chainGenBtn.disabled = false; chainGenBtn.textContent = "\u270D 根据此推演链生成正文"; } }
 });
 
+} // end if(chainSelect)
+
 /* ═══════════ AI Settings ═══════════ */
-function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false" }; }
+function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false", agentMaxLoops: parseInt(localStorage.getItem("agent_max_loops") || "5") || 5 }; }
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
 continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
@@ -3997,7 +4178,7 @@ function renderLines() {
 
 /* ═══════════ Target Builder ═══════════ */
 
-const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{outline_cat_world}","{outline_cat_faction}","{outline_cat_geo}","{outline_cat_power}","{outline_cat_story}","{characters_list}","{characters_inactive}","{factions_list}","{relations_graph}","{locations_list}","{locations_full_detail}","{character_template}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
+const PLACEHOLDER_OPTS = ["{content}","{selection}","{lore}","{outlines_list}","{outlines_full_detail}","{outline_cat_world}","{outline_cat_faction}","{outline_cat_geo}","{outline_cat_power}","{outline_cat_story}","{characters_list}","{characters_inactive}","{characters_full_detail}","{factions_list}","{relations_graph}","{locations_list}","{locations_full_detail}","{character_template}","{timeline}","{timeline_main}","{timeline_history}","{timeline_world}","{current_time}","{novel_name}","{chapter_title}","{character:}","{outline:}","{location:}","{chain_data}"];
 
 function getNodeById(nid) { return (currentChain && currentChain.nodes) ? currentChain.nodes.find(function(n) { return n.id === nid; }) : null; }
 
@@ -4784,17 +4965,18 @@ async function runNode(card, node) {
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined }),
+            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined, max_loops: s.agentMaxLoops }),
         });
         let rawResult = "";
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { rawResult += msg.content; outDiv.textContent = "AI 思考中...\n" + rawResult; outDiv.scrollTop = outDiv.scrollHeight; }
             else if (msg.type === "error") { rawResult += "\n[错误: " + msg.message + "]"; }
             else if (msg.type === "tool_proposal") {
+                var tr3 = translateToolCall(msg.tool_name, msg.arguments);
                 var safeArgs = encodeURIComponent(JSON.stringify(msg.arguments));
-                outDiv.innerHTML += '<div class="tool-proposal-card" style="margin-top:10px;padding:10px;border:1px solid #c084fc;border-radius:8px;background:#faf5ff;">'
-                    + '<p style="margin:0 0 5px 0;color:#9333ea;"><strong>🛠 提议执行: ' + e(msg.tool_name) + '</strong></p>'
-                    + '<pre style="font-size:0.75rem;background:#fff;padding:5px;border-radius:4px;max-height:100px;overflow-y:auto;">' + e(JSON.stringify(msg.arguments, null, 2)) + '</pre>'
+                var safeRaw = encodeURIComponent(JSON.stringify(msg.arguments));
+                outDiv.innerHTML += '<div class="tool-proposal-card" style="margin-top:10px;padding:10px;border:1px solid #c084fc;border-radius:8px;background:#faf5ff;" data-tool-args=\'' + e(JSON.stringify(msg.arguments)) + '\'>'
+                    + '<p style="margin:0 0 5px 0;color:#9333ea;cursor:pointer;" onclick="var r=JSON.parse(decodeURIComponent(\'' + safeRaw + '\'));showToolDetailPopup(\'' + e(tr3.summary.replace(/'/g, "\\'")) + '\',\'' + e(tr3.detail.replace(/'/g, "\\'").replace(/\n/g, "\\n")) + '\',r)"><strong>🛠 ' + e(tr3.summary) + '</strong> <span style="font-size:.65rem;color:#a78bfa;">[详情]</span></p>'
                     + '<button class="sys-btn sys-btn-primary" style="margin-top:5px;width:100%;" onclick="var a=JSON.parse(decodeURIComponent(\'' + safeArgs + '\'));executeTool(\'' + e(msg.tool_name) + '\',a,this)">批准执行</button>'
                     + '</div>';
             }
@@ -4921,10 +5103,10 @@ document.getElementById("chain-restore-btn")?.addEventListener("click", async fu
 
 /* ═══════════ Settings ═══════════ */
 const sm = document.getElementById("settings-modal");
-document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; sm.classList.remove("hidden"); });
+document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; document.getElementById("settings-agent-loops").value = s.agentMaxLoops; sm.classList.remove("hidden"); });
 document.getElementById("settings-cancel").addEventListener("click", () => sm.classList.add("hidden"));
 sm.querySelector(".modal-backdrop").addEventListener("click", () => sm.classList.add("hidden"));
-document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); sm.classList.add("hidden"); });
+document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); localStorage.setItem("agent_max_loops", String(parseInt(document.getElementById("settings-agent-loops").value) || 5)); sm.classList.add("hidden"); });
 
 /* ═══════════ Cheat Sheet ═══════════ */
 function showCheatSheet() { document.getElementById("cheat-sheet-modal").classList.remove("hidden"); }
@@ -5009,7 +5191,7 @@ document.getElementById("sandbox-start-btn").addEventListener("click", async fun
     var btn = document.getElementById("sandbox-start-btn");
     btn.disabled = true; btn.textContent = "推演中...";
     try {
-        var res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: scenario, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: "sandbox_sim" }) });
+        var res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: scenario, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: "sandbox_sim", max_loops: s.agentMaxLoops }) });
         logArea.innerHTML = "";
         var gen = parseSSEStream(res);
         for (;;) {
@@ -5663,7 +5845,7 @@ async function refreshAll() {
     await loadCharacters(); swTimeline();
 }
 document.addEventListener("DOMContentLoaded", async () => {
-    await loadNovels(); await loadChainSelect(); await refreshAll();
+    await loadNovels(); if (chainSelect) await loadChainSelect(); await refreshAll();
     document.getElementById("new-volume-btn").addEventListener("click", createNewVolume);
     document.getElementById("new-chapter-btn").addEventListener("click", createNewChapter);
     document.getElementById("new-character-btn").addEventListener("click", createNewCharacter);
