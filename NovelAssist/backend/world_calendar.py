@@ -1,5 +1,8 @@
 """时钟纪元引擎 — Tick ↔ 日期 双向转换"""
 
+import re
+from typing import Tuple, List, Dict
+
 
 class CalendarEngine:
     @staticmethod
@@ -86,3 +89,128 @@ class CalendarEngine:
             h_str = hour_names[dt["hour"]]
 
         return f"{y_str} {m_str} {d_str} {h_str}"
+
+    # ── Time Marker Parser ──
+    # Supports markers like:
+    #   【时间流逝：3天】
+    #   【时间流逝：1年2月】
+    #   【时间流逝：半个时辰】
+    #   【时间流逝：三年后】
+    # Units: 年, 月/个月, 天/日, 小时, 时辰/个时辰 (1时辰=2小时)
+    # Special: 半 = 0.5 (e.g. 半个月=15days, 半个时辰=1hour)
+
+    _CN_NUM_MAP: dict = {
+        '零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+        '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+        '百': 100, '千': 1000, '万': 10000, '亿': 100000000,
+    }
+
+    @staticmethod
+    def _parse_chinese_num(s: str) -> int:
+        """Parse a Chinese numeral or integer string to int.
+        Handles: 半 → returns -1 as sentinel (caller deals with 0.5).
+        """
+        s = s.strip()
+        if s == '半':
+            return -1  # sentinel
+        try:
+            return int(s)
+        except ValueError:
+            pass
+        result = 0
+        current = 0
+        for ch in s:
+            val = CalendarEngine._CN_NUM_MAP.get(ch)
+            if val is None:
+                continue
+            if val >= 10:
+                if current == 0:
+                    current = 1
+                result += current * val
+                current = 0
+            else:
+                current = val
+        result += current
+        return result if result > 0 else 1  # bare unit implies 1
+
+    @staticmethod
+    def parse_time_markers(text: str, config: dict = None) -> Tuple[int, list]:
+        """Parse 【时间流逝：...】 markers from body text.
+
+        Returns (total_tick_increment, [marker_info, ...]) where each
+        marker_info is a dict with keys: text, start, end, ticks, description.
+        """
+        if config is None:
+            config = {}
+        hpd = config.get("hours_per_day", 24)
+        dpm = config.get("days_per_month", 30)
+        mpy = config.get("months_per_year", 12)
+
+        ticks_per_hour = 1
+        ticks_per_day = hpd
+        ticks_per_month = dpm * hpd
+        ticks_per_year = mpy * dpm * hpd
+
+        # Match the marker body between 【时间流逝：/ : and 】
+        pattern = r'【时间流逝[：:]([^】]+)】'
+        total_ticks = 0
+        markers: list = []
+
+        for m in re.finditer(pattern, text):
+            time_expr = m.group(1).strip()
+            # Strip trailing 后 / 之后
+            time_expr = re.sub(r'[之后]$', '', time_expr)
+
+            marker_ticks = 0
+            desc_parts: list = []
+
+            # Parse (amount)(unit) pairs
+            comp_re = r'(半|[一二三四五六七八九十百千万亿\d]+)\s*(年|个月|月|天|日|小时|时辰|个时辰)'
+            for cm in re.finditer(comp_re, time_expr):
+                amt_str = cm.group(1)
+                unit = cm.group(2)
+
+                raw = CalendarEngine._parse_chinese_num(amt_str)
+                if raw == -1:  # 半
+                    amt = 0.5
+                else:
+                    amt = float(raw)
+
+                if unit == '年':
+                    marker_ticks += int(amt * ticks_per_year)
+                    desc_parts.append(f"{amt_str}年")
+                elif unit in ('月', '个月'):
+                    marker_ticks += int(amt * ticks_per_month)
+                    desc_parts.append(f"{amt_str}月")
+                elif unit in ('天', '日'):
+                    marker_ticks += int(amt * ticks_per_day)
+                    desc_parts.append(f"{amt_str}天")
+                elif unit == '小时':
+                    marker_ticks += int(amt * ticks_per_hour)
+                    desc_parts.append(f"{amt_str}小时")
+                elif unit in ('时辰', '个时辰'):
+                    marker_ticks += int(amt * 2)  # 1时辰=2小时
+                    desc_parts.append(f"{amt_str}时辰")
+
+            if marker_ticks > 0:
+                total_ticks += marker_ticks
+                markers.append({
+                    'text': m.group(0),
+                    'start': m.start(),
+                    'end': m.end(),
+                    'ticks': marker_ticks,
+                    'description': ' '.join(desc_parts),
+                })
+
+        return total_ticks, markers
+
+    @staticmethod
+    def strip_time_markers(text: str) -> str:
+        """Remove all 【时间流逝：...】 markers from text.
+        Returns the cleaned text with markers stripped out.
+        Also cleans up any double-newlines that may result from removal.
+        """
+        cleaned = re.sub(r'【时间流逝[：:][^】]+】\s*', '', text)
+        # Collapse 3+ consecutive newlines into 2
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()

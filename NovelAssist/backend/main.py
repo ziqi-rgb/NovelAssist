@@ -513,7 +513,7 @@ async def lifespan(app: FastAPI):
         if gs and isinstance(gs.prompt_templates, dict):
             tpl = dict(gs.prompt_templates)
             healed = False
-            if "archive_timeline" not in tpl or "elapsed_years" not in tpl["archive_timeline"]:
+            if "archive_timeline" not in tpl or "\"events\"" not in tpl["archive_timeline"]:
                 tpl["archive_timeline"] = DEFAULT_PROMPT_TEMPLATES["archive_timeline"]
                 healed = True
             if "archive_character" not in tpl or "faction_change" not in tpl["archive_character"]:
@@ -1109,7 +1109,22 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     pending = ch.pending_timeline_text.strip() if ch.pending_timeline_text else ""
     full_text = (pending + "\n\n" + text).strip() if pending else text
 
-    # 2. Timeline summary
+    # ── Parse time-passage markers BEFORE AI call ──
+    novel = db.get(Novel, ch.novel_id)
+    cfg = novel.calendar_config if novel and novel.calendar_config else {}
+    marker_ticks, markers_found = CalendarEngine.parse_time_markers(full_text, cfg)
+
+    # Strip markers from text sent to AI (time info goes via {detected_time})
+    clean_full_text = CalendarEngine.strip_time_markers(full_text)
+
+    # Build detected-time description for the AI prompt
+    if markers_found:
+        detected_parts = [f"- {m['description']} (+{m['ticks']} ticks)" for m in markers_found]
+        detected_time_str = "正文中检测到以下时间流逝标记：\n" + "\n".join(detected_parts) + f"\n总计推进：{marker_ticks} ticks"
+    else:
+        detected_time_str = "本次归档未检测到【时间流逝】标记，时间不推进。请基于正文内容正常提取事件。"
+
+    # 2. Timeline summary — time is marker-driven, AI only extracts events
     elapsed_years = 0
     elapsed_months = 0
     elapsed_days = 0
@@ -1118,12 +1133,27 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     timeline_events_added: list[str] = []
     timeline_error: Optional[str] = None
     pending_timeline_events: list[TimelineEvent] = []
-    pending_tick_advance = 0
-    novel = db.get(Novel, ch.novel_id)
+    pending_tick_advance = marker_ticks  # Time from markers, NOT from AI
+
+    # Compute elapsed breakdown from markers for the response
+    if marker_ticks > 0:
+        hpd = cfg.get("hours_per_day", 24)
+        dpm = cfg.get("days_per_month", 30)
+        mpy = cfg.get("months_per_year", 12)
+        remaining = marker_ticks
+        elapsed_years = remaining // (mpy * dpm * hpd)
+        remaining %= (mpy * dpm * hpd)
+        elapsed_months = remaining // (dpm * hpd)
+        remaining %= (dpm * hpd)
+        elapsed_days = remaining // hpd
+        elapsed_hours = remaining % hpd
+
     try:
+        tl_prompt = templates.get("archive_timeline", DEFAULT_PROMPT_TEMPLATES["archive_timeline"])
+        tl_prompt = tl_prompt.replace("{detected_time}", detected_time_str).replace("{text}", full_text)
         tl_resp = await client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": templates.get("archive_timeline", DEFAULT_PROMPT_TEMPLATES["archive_timeline"]).replace("{text}", full_text)}],
+            messages=[{"role": "user", "content": tl_prompt}],
             temperature=0.5,
         )
         raw_tl = (tl_resp.choices[0].message.content or "").strip()
@@ -1138,13 +1168,9 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
         except json.JSONDecodeError:
             raise HTTPException(422, f"归档时间线JSON解析失败。LLM原始输出:\n{raw_tl[:300]}")
         if isinstance(parsed_tl, dict):
-            elapsed_years = int(parsed_tl.get("elapsed_years", 0))
-            elapsed_months = int(parsed_tl.get("elapsed_months", 0))
-            elapsed_days = int(parsed_tl.get("elapsed_days", 0))
-            elapsed_hours = int(parsed_tl.get("elapsed_hours", 0))
-            # Multi-dimensional tick conversion: 1 year=8640h, 1 month=720h, 1 day=24h
-            tick_increment = (elapsed_years * 8640) + (elapsed_months * 720) + (elapsed_days * 24) + elapsed_hours
-            pending_tick_advance = tick_increment
+            # NOTE: AI's elapsed_years/months/days/hours fields are IGNORED.
+            # Time advancement is exclusively driven by 【时间流逝】 markers.
+            tick_increment = pending_tick_advance
             cal_time = format_ticks_to_calendar((novel.current_tick if novel else 0) + tick_increment)
             events_list = parsed_tl.get("events", [])
             for evt in events_list:
@@ -1197,7 +1223,9 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                 )
                 pending_timeline_events.append(te)
                 timeline_added = True
-                timeline_events_added.append(f"[{cal_time}] {evt_title or content_str[:40]}")
+                # Include event type in report: 正文/历史/世界
+                type_label = {"MAIN_STORY": "正文", "HISTORY": "历史", "WORLD": "世界"}.get(te.event_type, te.event_type)
+                timeline_events_added.append(f"[{type_label}] [{cal_time}] {evt_title or content_str[:40]}")
     except HTTPException:
         raise
     except Exception as e:
@@ -1209,34 +1237,33 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     try:
         char_template = novel.character_template if novel and novel.character_template else []
         chars = db.scalars(select(Character).where(Character.novel_id == ch.novel_id)).all()
-        if chars:
-            char_list = []
-            for c in chars:
-                name = c.name
-                if c.attributes and isinstance(c.attributes, dict):
-                    base = c.attributes.get("基础信息", {})
-                    if isinstance(base, dict) and base.get("姓名"):
-                        name = str(base["姓名"])
-                char_list.append({"id": c.id, "name": name, "status": c.status, "is_active": c.is_active, "attributes": c.attributes or {}})
-            char_json = json.dumps(char_list, ensure_ascii=False)
-            tmpl_json = json.dumps(char_template, ensure_ascii=False)
-            prompt = templates.get("archive_character", DEFAULT_PROMPT_TEMPLATES["archive_character"]).replace("{template}", tmpl_json).replace("{characters}", char_json).replace("{text}", text)
-            cu_resp = await client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            )
-            raw = (cu_resp.choices[0].message.content or "").strip()
-            # Robust JSON extraction
-            m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", raw, re.DOTALL)
-            if m:
-                raw = m.group(1).strip()
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                raise HTTPException(422, f"归档人物JSON解析失败。LLM原始输出:\n{raw[:300]}")
-            if isinstance(parsed, list):
-                for upd in parsed:
+        char_list = []
+        for c in chars:
+            name = c.name
+            if c.attributes and isinstance(c.attributes, dict):
+                base = c.attributes.get("基础信息", {})
+                if isinstance(base, dict) and base.get("姓名"):
+                    name = str(base["姓名"])
+            char_list.append({"id": c.id, "name": name, "status": c.status, "is_active": c.is_active, "attributes": c.attributes or {}})
+        char_json = json.dumps(char_list, ensure_ascii=False)
+        tmpl_json = json.dumps(char_template, ensure_ascii=False)
+        prompt = templates.get("archive_character", DEFAULT_PROMPT_TEMPLATES["archive_character"]).replace("{template}", tmpl_json).replace("{characters}", char_json).replace("{text}", text)
+        cu_resp = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+        raw = (cu_resp.choices[0].message.content or "").strip()
+        # Robust JSON extraction
+        m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", raw, re.DOTALL)
+        if m:
+            raw = m.group(1).strip()
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            raise HTTPException(422, f"归档人物JSON解析失败。LLM原始输出:\n{raw[:300]}")
+        if isinstance(parsed, list):
+            for upd in parsed:
                     is_new = upd.get("is_new", False)
                     cid = upd.get("character_id")
                     u = upd.get("updates", {})
@@ -1269,7 +1296,9 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                         if target:
                             old_attrs = copy.deepcopy(target.attributes or {})
                             db.add(CharacterSnapshot(character_id=cid, version_name="自动归档前快照", attributes=old_attrs))
-                            # Merge attributes
+                            # Track changes for report
+                            changes: list[str] = []
+                            # Merge attributes and detect diffs
                             if u and isinstance(u, dict):
                                 merged = copy.deepcopy(target.attributes or {})
                                 for group, fields in u.items():
@@ -1277,19 +1306,38 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                         merged.setdefault(group, {})
                                         if isinstance(merged[group], dict):
                                             for k, v in fields.items():
-                                                merged[group][k] = str(v)
+                                                old_val = merged[group].get(k)
+                                                new_val = str(v)
+                                                if old_val is None:
+                                                    changes.append(f"  + {group}.{k}: {new_val}")
+                                                elif str(old_val) != new_val:
+                                                    changes.append(f"  ~ {group}.{k}: {str(old_val)} → {new_val}")
+                                                merged[group][k] = new_val
                                 target.attributes = merged
                                 flag_modified(target, "attributes")
                             # Handle status_change and is_active
                             if upd.get("status_change"):
-                                target.status = str(upd["status_change"])
+                                old_status = target.status
+                                new_status = str(upd["status_change"])
+                                target.status = new_status
+                                if old_status != new_status:
+                                    changes.append(f"  📌 状态: {old_status} → {new_status}")
                             if "is_active" in upd:
+                                was_active = target.is_active
                                 target.is_active = bool(upd["is_active"])
+                                if was_active and not target.is_active:
+                                    changes.append(f"  🚪 退场")
+                                elif not was_active and target.is_active:
+                                    changes.append(f"  🎬 重新登场")
                             name = target.name
                             if target.attributes and isinstance(target.attributes, dict):
                                 base = target.attributes.get("基础信息", {})
                                 if isinstance(base, dict) and base.get("姓名"):
                                     name = str(base["姓名"])
+                            if changes:
+                                updated_names.append(f"✏️ {name}:\n" + "\n".join(changes))
+                            else:
+                                updated_names.append(f"✓ {name} (无变化)")
 
                     # === Unified post-processing for both new and existing characters ===
                     if target:
@@ -1339,8 +1387,6 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                                     db.refresh(new_fac)
                                     target.faction_id = new_fac.id
 
-                        if not is_new:
-                            updated_names.append(name)
     except HTTPException:
         raise
     except Exception as e:
@@ -1348,9 +1394,9 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
 
     # ── All processing succeeded — now apply all pending writes atomically ──
 
-    # Checkpoint: if timeline events found, clear accumulator; otherwise accumulate
-    if pending_timeline_events:
-        ch.pending_timeline_text = ""  # reset checkpoint
+    # Checkpoint: if timeline events found OR markers advanced time, clear accumulator; otherwise accumulate
+    if pending_timeline_events or pending_tick_advance > 0:
+        ch.pending_timeline_text = ""  # reset checkpoint — time moved or events extracted
     else:
         ch.pending_timeline_text = full_text  # accumulate for next archive
 
@@ -1362,15 +1408,18 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     for te in pending_timeline_events:
         db.add(te)
 
-    # Move text from content → archived
+    # Move text from content → archived (strip time markers from archived text)
+    clean_text = CalendarEngine.strip_time_markers(text)
     if req.selection_start < req.selection_end and ch.content[req.selection_start:req.selection_end] == text:
         remaining = (ch.content[:req.selection_start] + ch.content[req.selection_end:]).strip()
     else:
         remaining = ch.content.replace(text, "", 1).strip()
+    # Safety: strip any leftover time markers from remaining body text
+    remaining = CalendarEngine.strip_time_markers(remaining)
     if ch.archived_content:
-        ch.archived_content += "\n\n" + text
+        ch.archived_content += "\n\n" + clean_text
     else:
-        ch.archived_content = text
+        ch.archived_content = clean_text
     ch.content = remaining
 
     db.commit()
@@ -1386,6 +1435,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
         "characters_updated": updated_names,
         "updated_characters": updated_names,
         "character_error": character_error,
+        "archived_text": clean_text,
     }
 
 
@@ -1730,9 +1780,9 @@ def export_novel(novel_id: int, db: Session = Depends(get_db)):
         for ch in chapters:
             lines.append(f"### {ch.title or '(无标题)'}")
             if ch.content:
-                lines.append(ch.content)
+                lines.append(CalendarEngine.strip_time_markers(ch.content))
             if ch.archived_content:
-                lines.append(f"\n> *已归档内容:*\n{ch.archived_content}")
+                lines.append(f"\n> *已归档内容:*\n{CalendarEngine.strip_time_markers(ch.archived_content)}")
             lines.append("")
 
     # Locations
@@ -1842,7 +1892,7 @@ def export_novel_zip(novel_id: int, db: Session = Depends(get_db)):
 
             safe_ch = "".join(c for c in (ch.title or "无标题") if c not in r'\/:*?"<>|') or "无标题"
             file_path = f"{safe_novel}/{vol_folder}/第{current_ch_num}章_{safe_ch}.txt"
-            zf.writestr(file_path, ch.content or "")
+            zf.writestr(file_path, CalendarEngine.strip_time_markers(ch.content or ""))
 
     mem_zip.seek(0)
     encoded_name = urllib.parse.quote(f"{safe_novel}的底稿.zip")
