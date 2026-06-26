@@ -287,7 +287,7 @@ class ReasoningChain(Base):
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     nodes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    context_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {"use_outlines": True, "use_characters": True, "use_timeline": True})
+    context_settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {"use_outlines": False, "use_characters": False, "use_timeline": False})
     todos: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # 推理链任务清单 [{id, content, status, created_at, updated_at, notes}]
 
     novel: Mapped[Novel] = relationship()

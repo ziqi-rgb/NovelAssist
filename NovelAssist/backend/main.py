@@ -2776,7 +2776,15 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
             else:
                 blocks.append("【已发生的时间线事件】: (暂无)")
 
-        context_header = "==== 当前世界状态参考 ====\n" + "\n\n".join(blocks) + "\n==========================\n\n"
+        context_header = (
+            "==== 当前世界状态参考 ====\n"
+            + "\n\n".join(blocks)
+            + "\n\n【⚠️ 增量创建原则 — 必须遵守】:\n"
+            + "1. 以上是当前世界已有的全部数据。你必须在此基础之上进行补充和扩展。\n"
+            + "2. 严禁创建与已有条目标题重复或内容高度相似的条目。如果某个主题已被覆盖，直接跳过。\n"
+            + "3. 只规划/创建那些确实缺失且需要新增的内容。\n"
+            + "==========================\n\n"
+        )
         final_prompt = context_header + resolved_prompt
 
     user_parts = []
@@ -3937,6 +3945,18 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         break
                 parent_id = last_parent_id
 
+            # Upsert: check existing by title + category (prevents duplicates in incremental mode)
+            existing_outline = None
+            if action == "add" and data.get("title") and data.get("category"):
+                existing_outline = db.query(Outline).filter(
+                    Outline.novel_id == novel_id,
+                    Outline.title == data["title"],
+                    Outline.category == data["category"],
+                ).first()
+                if existing_outline:
+                    action = "update"
+                    eid = existing_outline.id
+
             if action == "add":
                 db.add(Outline(
                     novel_id=novel_id,
@@ -4219,8 +4239,9 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                                 data["name"] = str(base_info[name_key]).strip()
                                 break
                 if not data.get("name") or str(data.get("name")).strip() == "未知":
-                    import random
-                    data["name"] = f"隐世散人_{random.randint(100, 999)}"
+                    # 无法解析出有效角色名 → 跳过创建，避免产生 "隐世散人_XXX" 垃圾数据
+                    db.commit()
+                    return {"status": "skipped", "msg": "角色名缺失，已跳过创建。请确保 AI 输出包含有效的角色名称字段。"}
 
             raw_attrs = data.get("attributes", {})
             if not isinstance(raw_attrs, dict):
@@ -4304,6 +4325,17 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     db.add(fac)
                     db.flush()
                     faction_id = fac.id
+
+            # Upsert: check existing by name (增量覆盖：已存在则更新并保留快照)
+            existing_char = None
+            if action == "add" and data.get("name") and str(data.get("name")).strip() not in ("", "未知"):
+                existing_char = db.query(Character).filter(
+                    Character.novel_id == novel_id,
+                    Character.name == data["name"],
+                ).first()
+                if existing_char:
+                    action = "update"
+                    eid = existing_char.id
 
             if action == "add":
                 db.add(Character(
@@ -4525,7 +4557,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 novel_id=novel_id,
                 title=title,
                 nodes=built_nodes,
-                context_settings={"use_outlines": True, "use_characters": True, "use_timeline": True},
+                context_settings={"use_outlines": False, "use_characters": False, "use_timeline": False},
             )
             db.add(new_chain)
             db.commit()

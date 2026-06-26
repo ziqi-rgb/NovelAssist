@@ -2204,7 +2204,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         genesisPaused = false;
 
         // 增量模式的上下文设置
-        var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
+        var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : {};
 
         // 📝 日志实时写入
         var genesisFullLog = "";
@@ -2309,7 +2309,9 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         }
 
         // 🌍 获取人设数据注入到阶段2地图上下文
-        var mapCtx = incCtx ? Object.assign({}, incCtx) : {};
+        var mapCtx = Object.keys(incCtx).length ? Object.assign({}, incCtx) : {};
+
+
         try {
             var mapChars = await (await fetch("/api/characters?novel_id=" + currentNovelId)).json();
             mapCtx.characters_full_detail = JSON.stringify(mapChars);
@@ -2367,7 +2369,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
         }
 
         // 阶段 3：大纲（先注入地图+人设数据）
-        var outlineCtx = incCtx ? Object.assign({}, incCtx) : {};
+        var outlineCtx = Object.keys(incCtx).length ? Object.assign({}, incCtx) : {};
         try {
             var olLocs = await (await fetch("/api/locations?novel_id=" + currentNovelId)).json();
             outlineCtx.locations_full_detail = JSON.stringify(olLocs);
@@ -2448,7 +2450,7 @@ async function executeGenesisCore(initialState, startPhase, completedPhases) {
 async function executeGenesisParallel(initialState, startPhase, completedPhases, state, logToConsole, consoleEl, statusBadge, submitBtn, closeBtn, pauseBtn, abortBtn, textarea, backdrop) {
     var text = initialState.inputText;
     var mode = initialState.mode;
-    var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : null;
+    var incCtx = (mode === "incremental") ? { use_outlines: true, use_characters: true, use_timeline: true } : {};
 
     isGenesisRunning = true;
     genesisPaused = false;
@@ -3501,7 +3503,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             target: targetT,
                             previous_output: fullChainContext,
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
-                            context_settings: contextSettings || rc.context_settings || {},
+                            context_settings: (contextSettings != null) ? contextSettings : (rc.context_settings || {}),
                             response_format: (/deepseek/i.test(s.model) && node.format) ? {type: "json_object"} : undefined,
                             no_tools: true,
                         }),
@@ -5172,7 +5174,11 @@ document.getElementById("add-node-btn").addEventListener("click", () => {
 var csm = document.getElementById("chain-settings-modal");
 document.getElementById("chain-settings-btn")?.addEventListener("click", function() {
     if (!currentChain) { alert("请先选择或新建推演方案"); return; }
-    if (!currentChain.context_settings) currentChain.context_settings = { use_outlines: true, use_characters: true, use_timeline: true };
+    if (!currentChain.context_settings) currentChain.context_settings = { use_outlines: false, use_characters: false, use_timeline: false };
+    // 补全可能缺失的键（如 _version 迁移导致的字段丢失）
+    ["use_outlines","use_characters","use_timeline"].forEach(function(k) {
+        if (!(k in currentChain.context_settings)) currentChain.context_settings[k] = false;
+    });
     document.getElementById("cs-title").value = currentChain.title || "";
     document.getElementById("cs-use-outlines").checked = !!currentChain.context_settings.use_outlines;
     document.getElementById("cs-use-characters").checked = !!currentChain.context_settings.use_characters;
