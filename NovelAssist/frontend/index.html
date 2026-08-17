@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Novel Helper</title>
+    <link rel="stylesheet" href="/style.css?v=7">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script defer src="/app.js?v=7"></script>
+    <style>
+    /* ==========================================================================
+       🛡️ 人物面板专用·精准局部骨架锁 (隔离版)
+       ========================================================================== */
+
+    /* 1. 锁死大中栏，确保其高度不超出视口 */
+    #center-workspace {
+        height: 100% !important;
+        max-height: 100% !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* 2. 仅当人物面板处于“非隐藏”激活状态时，才强制限制高度 */
+    #ws-characters:not(.hidden) {
+        height: 100% !important;
+        max-height: 100% !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    /* 3. 仅当子模式面板处于激活状态时，才进行 Flex 伸缩约束 */
+    #char-card-mode:not(.hidden), 
+    #char-template-mode:not(.hidden), 
+    #char-snapshot-mode:not(.hidden) {
+        flex: 1 1 auto !important;
+        height: calc(100% - 40px) !important; /* 扣除顶部 toolbar 高度 */
+        max-height: calc(100% - 40px) !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    /* 4. 强制表单、模板编辑器、快照预览区独立生成各自的内部滚动条 */
+    #char-dynamic-form, 
+    #template-editor, 
+    #snapshot-preview {
+        flex: 1 1 auto !important;
+        overflow-y: auto !important;
+        min-height: 0 !important;
+        height: 100% !important;
+        box-sizing: border-box !important;
+        padding: 16px 24px !important;
+    }
+
+    /* 5. 修复快照模式下的内部双栏高度 */
+    #char-snapshot-mode:not(.hidden) > div {
+        flex: 1 !important;
+        min-height: 0 !important;
+        height: 100% !important;
+        display: flex !important;
+    }
+</style>
+</head>
+<body>
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box">
+            <h3>API 设置</h3>
+            <label>API Key</label>
+            <input type="password" id="settings-apikey" placeholder="sk-...">
+            <label>Base URL <span class="hint">(可选)</span></label>
+            <input type="text" id="settings-baseurl" placeholder="https://api.openai.com/v1">
+            <label>模型</label>
+            <input type="text" id="settings-model" placeholder="gpt-3.5-turbo">
+            <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                <input type="checkbox" id="settings-stream">
+                <span>流式传输（逐字显示 AI 输出）</span>
+            </label>
+            <label style="margin-top:10px;">Agent 最大工具调用轮数 <span class="hint">(默认5)</span></label>
+            <input type="number" id="settings-agent-loops" min="1" max="20" value="5" style="width:80px;">
+            <label style="margin-top:10px;">时间标记快捷键 <span class="hint">(留空则不启用，如 Ctrl+Shift+M)</span></label>
+            <input type="text" id="settings-marker-shortcut" placeholder="例如：Ctrl+Shift+M" style="width:200px;">
+            <div class="modal-actions"><button id="settings-save" class="btn-primary">保存</button><button id="settings-cancel">取消</button></div>
+        </div>
+    </div>
+
+    <!-- 时间流逝标记添加弹窗 -->
+    <div id="time-marker-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box time-marker-box">
+            <h3>⏰ 添加时间流逝标记</h3>
+            <div class="time-marker-capsules">
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="year">−</button>
+                    <div class="tm-capsule" id="tm-year-val">0</div>
+                    <span class="tm-unit-label">年</span>
+                    <button class="tm-btn tm-inc" data-unit="year">+</button>
+                </div>
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="month">−</button>
+                    <div class="tm-capsule" id="tm-month-val">0</div>
+                    <span class="tm-unit-label">月</span>
+                    <button class="tm-btn tm-inc" data-unit="month">+</button>
+                </div>
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="day">−</button>
+                    <div class="tm-capsule" id="tm-day-val">0</div>
+                    <span class="tm-unit-label">天</span>
+                    <button class="tm-btn tm-inc" data-unit="day">+</button>
+                </div>
+                <div class="tm-capsule-group">
+                    <button class="tm-btn tm-dec" data-unit="hour">−</button>
+                    <div class="tm-capsule" id="tm-hour-val">0</div>
+                    <span class="tm-unit-label">小时</span>
+                    <button class="tm-btn tm-inc" data-unit="hour">+</button>
+                </div>
+            </div>
+            <div class="tm-preview">
+                <span class="tm-preview-label">预览：</span>
+                <span class="tm-preview-text" id="tm-preview-text">【时间流逝：】</span>
+            </div>
+            <div class="modal-actions">
+                <button id="time-marker-cancel">取消</button>
+                <button id="time-marker-insert" class="btn-primary">✨ 插入标记</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示词模板设置 -->
+    <div id="prompt-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:640px;max-height:85vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="margin:0;">提示词模板设置</h3>
+                <button id="cheat-prompt-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">💡 说明</button>
+            </div>
+            <div id="prompt-templates"></div>
+            <div class="modal-actions"><button id="prompt-save" class="btn-primary">保存</button><button id="prompt-cancel">取消</button></div>
+        </div>
+    </div>
+
+    <div id="cheat-sheet-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:780px;max-height:85vh;overflow-y:auto;">
+            <h3 style="margin:0 0 12px;">💡 占位符速查表</h3>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;font-size:.72rem;border-collapse:collapse;white-space:nowrap;">
+                    <thead>
+                        <tr style="background:var(--bg);text-align:left;">
+                            <th style="padding:6px 10px;border:1px solid var(--border);">占位符语法</th>
+                            <th style="padding:6px 10px;border:1px solid var(--border);">返回格式</th>
+                            <th style="padding:6px 10px;border:1px solid var(--border);">高阶用途 & 内容详情</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:var(--accent);">{lore}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">聚合 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量常驻生效上下文（常驻大纲+活跃角色+全地点名录+全时间线）</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_world}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 世界观分类大纲全文。保留层级缩进与全部设定细节。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_faction}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 势力大纲全文。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_geo}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 地理知识分类大纲全文。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_power}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 能力体系分类大纲全文。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outline_cat_story}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 剧情大纲全文。严格遵循 [卷]->[章]->[幕]。</td></tr>
+                        <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#16a34a;">{locations_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">树状 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 全量地点层级树。包含地名/scale/坐标/描述。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{outlines_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量大纲条目扁平名录。</td></tr>
+                        <tr style="background:#f8fafc;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#2563eb;">{outlines_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">分组 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 全维大纲目录。按分类分组（世界观/势力/地理/能力/剧情），含层级父关系与描述摘要。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{locations_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量地点扁平名录（含ID/scale/父ID）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{characters_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">活跃角色名录简档（含当前位置及势力）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{characters_inactive}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平列表</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">已退场角色名录简档。</td></tr>
+                        <tr style="background:#fff7ed;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#c2410c;">{characters_full_detail}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">JSON/Markdown 字典</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高密度】** 列出全量角色的精细档案。包含其姓名、状态、所属势力及核心自定义嵌套 attributes 字典。用于人设定点核对与质量控制。</td></tr>
+                        <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#16a34a;">{factions_list}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">分区块 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【全量】** 势力名录。每个势力一个独立段落，含描述、驻地（名称+尺度）、成员清单及总数。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{relations_graph}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平 Markdown</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">全量人物关系网。每条含 [A]→&lt;标签&gt;→[B] (好感度: N)，附带亲密度文字标注与原因描述。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{character_template}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前小说自定义人物档案属性模板（分组: [字段列表]）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{novel_name}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">纯文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前小说名称。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{chapter_title}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">纯文本</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前最新章节标题。</td></tr>
+                        <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{character:姓名}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 精准提取特定角色完整档案。</td></tr>
+                        <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{location:名称}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 精准提取特定地点完整档案。</td></tr>
+                        <tr style="background:#fffbeb;"><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:700;color:#d97706;">{outline:标题}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">Markdown 卡片</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">**【高阶检索】** 根据标题精准调取特定大纲条目。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{timeline}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平索引</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">正文时间线索引（序号+时间标签+标题）。{timeline_main} 为等效别名。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{timeline_history}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平索引</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">历史时间线索引（如世界起源、远古事件）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{timeline_world}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">扁平索引</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">世界时间线索引（摄像机外并行发生的事件）。</td></tr>
+                        <tr><td style="padding:6px 10px;border:1px solid var(--border);font-family:monospace;font-weight:600;">{current_time}</td><td style="padding:6px 10px;border:1px solid var(--border);color:var(--text-muted);">时间标签</td><td style="padding:6px 10px;border:1px solid var(--border);white-space:normal;">当前世界历法时间（如：天宝 甲子年 孟春 初一 子时）。</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p style="font-size:.65rem;color:var(--muted);margin-top:8px;">点击任意占位符语法可双击选中。系统支持多重高密度大纲与地点互借对齐。</p>
+            <div class="modal-actions"><button id="cheat-sheet-close" class="btn-primary">关闭</button></div>
+        </div>
+    </div>
+
+    <div id="app-root">
+        <nav class="nav-sidebar">
+            <div class="nav-novel-select"><select id="novel-select"></select><button id="novel-add-btn">+</button><button id="novel-del-btn" title="删除当前小说">✕</button></div>
+            <button class="nav-btn active" data-module="writing"><span class="nav-icon">&#9997;</span><span class="nav-label">正文创作</span></button>
+            <button class="nav-btn" data-module="outline"><span class="nav-icon">&#128196;</span><span class="nav-label">设定大纲</span></button>
+            <button class="nav-btn" data-module="characters"><span class="nav-icon">&#127917;</span><span class="nav-label">人物档案</span></button>
+            <button class="nav-btn" data-module="map"><span class="nav-icon">&#128506;</span><span class="nav-label">地图编辑</span></button>
+            <button class="nav-btn" data-module="sandbox"><span class="nav-icon">🎬</span><span class="nav-label">场景沙盘</span></button>
+            <button class="nav-btn" data-module="reasoning"><span class="nav-icon">&#129504;</span><span class="nav-label">推理链编辑</span></button>
+            <button class="nav-btn" data-module="relations"><span class="nav-icon">🌐</span><span class="nav-label">势力关系</span></button>
+            <div class="nav-spacer"></div>
+            <button class="nav-btn" id="prompt-settings-btn"><span class="nav-icon">&#9965;</span><span class="nav-label">提示词</span></button>
+            <button class="nav-btn" id="export-btn"><span class="nav-icon">&#128229;</span><span class="nav-label">导出设定</span></button>
+            <button class="nav-btn" id="settings-btn"><span class="nav-icon">&#9881;</span><span class="nav-label">设置</span></button>
+        </nav>
+
+        <div class="content-area">
+            <!-- 左栏 -->
+            <aside id="left-sidebar">
+                <div id="global-clock-btn" style="cursor:pointer;padding:6px 10px;background:var(--active-bg);border:1px solid var(--border);border-radius:6px;margin:8px;font-size:0.8rem;font-weight:700;color:var(--accent);text-align:center;box-shadow:0 2px 6px rgba(0,0,0,0.05);">⏳ 当前时间: <span id="global-clock-display">加载中...</span></div>
+                <!-- 写作模块 -->
+                <div id="module-writing" class="module-panel">
+                    <div class="sidebar-header"><h2>分卷</h2><div class="sidebar-actions"><button id="new-volume-btn" class="sys-btn sys-btn-secondary">+ 分卷</button><button id="new-chapter-btn" class="sys-btn sys-btn-secondary">+ 章节</button><button id="export-zip-btn" class="sys-btn sys-btn-primary" style="flex:0 0 auto;padding:5px 10px;font-size:.75rem;" title="导出全书 ZIP">📦 导出全书</button></div></div>
+                    <ul id="volume-list"></ul>
+                </div>
+                <!-- 大纲模块：分类导航 -->
+                <div id="module-outline" class="module-panel hidden">
+                    <div class="sidebar-header"><h2>大纲分类</h2>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button id="outline-genesis-btn" class="sys-btn sys-btn-primary" style="font-size: 0.75rem; background: linear-gradient(135deg, #4f46e5, #9333ea); font-weight: 700;">🌌智能建纲</button>
+                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;">📤 导出 MD</button>
+                        </div>
+                    </div>
+                    <ul id="outline-category-nav" class="category-nav">
+                        <!-- populated by JS from OUTLINE_CATEGORIES -->
+                    </ul>
+                </div>
+                <!-- 人物模块 -->
+                <div id="module-characters" class="module-panel hidden">
+                    <div class="sidebar-header"><h2>人物列表</h2><button id="new-char-btn" class="sys-btn sys-btn-secondary">+ 新建</button></div>
+                    <ul id="char-list"></ul>
+                </div>
+                <!-- 地图模块 -->
+                <div id="module-map" class="module-panel hidden"><div class="sidebar-header"><h2>地点列表</h2></div><ul id="location-list-tree"></ul></div>
+                <div id="module-sandbox" class="module-panel hidden">
+                    <div class="sandbox-setup">
+                        <h3 style="margin:0 0 8px;font-size:.9rem;">🎬 场景设定</h3>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">场地：</label>
+                        <select id="sandbox-location" style="width:100%;padding:4px 6px;font-size:.75rem;margin-bottom:8px;"><option value="">-- 选择场地 --</option></select>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">参与角色：</label>
+                        <div id="sandbox-characters" style="max-height:200px;overflow-y:auto;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:4px;"></div>
+                        <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:2px;">推演情景：</label>
+                        <textarea id="sandbox-scenario" placeholder="例：张三在暗处伏击了李四...此处可写复杂指令（只要模型性能足够理解）" style="width:100%;height:80px;font-size:.75rem;padding:6px 8px;border:1px solid var(--border);border-radius:4px;resize:vertical;margin-bottom:8px;"></textarea>
+                        <button id="sandbox-start-btn" class="sys-btn sys-btn-primary" style="width:100%;padding:8px 0;">▶️ 开始场景推演</button>
+                    </div>
+                </div>
+                <div id="module-reasoning" class="module-panel hidden">
+                    <div class="sidebar-header"><h2>推演方案</h2><button id="new-chain-btn" class="sys-btn sys-btn-secondary">+ 新建方案</button></div>
+                    <ul id="chain-list"></ul>
+                </div>
+                <div id="module-relations" class="module-panel hidden">
+                    <div class="list-header" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+                        <span>🏛️ 势力名录</span>
+                        <button id="new-faction-btn" class="sys-btn sys-btn-secondary" style="font-size:.72rem;padding:3px 8px;">+ 新建势力</button>
+                    </div>
+                    <ul id="factions-list-ul" class="item-list" style="overflow-y:auto;flex:1;"></ul>
+                </div>
+            </aside>
+
+            <!-- 中栏 -->
+            <main id="center-workspace">
+                <!-- 写作 -->
+                <div id="ws-writing" class="ws-panel">
+                    <div id="editor-workspace" class="ws-inner">
+                        <div class="editor-toolbar"><span class="info">Ctrl+S 保存</span><div class="toolbar-actions"><button id="continue-btn" class="sys-btn sys-btn-primary">&#10024; 续写</button><button id="save-btn" class="sys-btn sys-btn-primary">保存</button></div></div>
+                        <input type="text" id="title-input" placeholder="章节标题...">
+                        <div id="archived-content-viewer" class="readonly-text hidden"></div>
+                        <div id="content-input" contenteditable="true" class="content-editor" placeholder="开始写作..."></div>
+                        <div class="editor-status">字数: <span id="word-count">0</span> | 状态: <span id="save-status">未保存</span><button id="archive-selected-btn" class="archive-btn sys-btn sys-btn-primary" title="归档全部正文">📦 归档当前正文</button></div>
+                    </div>
+                </div>
+
+                <!-- 大纲：双栏 -->
+                <div id="ws-outline" class="ws-panel hidden">
+                    <div class="outline-split">
+                        <div class="outline-list-pane">
+                            <div class="pane-header"><span id="outline-pane-title">条目列表</span><div style="display:flex;gap:4px;"><button id="new-outline-note-btn" class="sys-btn sys-btn-secondary">+ 根条目</button><button id="new-outline-child-btn" class="sys-btn sys-btn-secondary hidden" title="在选中条目下创建子节点">+ 子条目</button></div></div>
+                            <div id="outline-note-list"></div>
+                        </div>
+                        <div class="outline-editor-pane">
+                            <div class="editor-toolbar"><span class="info">大纲编辑</span><button id="save-outline-btn" class="sys-btn sys-btn-primary">保存</button></div>
+                            <input type="text" id="outline-title-input" placeholder="大纲标题...">
+                            <div style="padding:0 24px;display:flex;gap:24px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
+                                <label style="font-size:0.82rem;font-weight:600;">分类：<input type="text" id="outline-category-input" placeholder="剧情" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;width:120px;margin-left:4px;"></label>
+                                <label style="font-size:0.82rem;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="outline-context-toggle"> 🧠 常驻生效</label>
+                            </div>
+                            <div class="md-tabs">
+                                <button class="md-tab active" data-view="edit">&#9997; 编辑</button>
+                                <button class="md-tab" data-view="preview">&#128065; 预览</button>
+                            </div>
+                            <textarea id="outline-content-input" placeholder="支持 Markdown 语法..."></textarea>
+                            <div id="outline-md-preview" class="md-preview hidden"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 人物 -->
+                <div id="ws-characters" class="ws-panel hidden" style="height: 100%; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
+                    <div class="editor-toolbar" style="gap:12px; flex-shrink: 0;">
+                        <span class="info">人物档案</span>
+                        <button class="mode-tab active" data-mode="card">&#128196; 人物资料</button>
+                        <button class="mode-tab" data-mode="template">&#9881; 模板设置</button>
+                        <button class="mode-tab" data-mode="snapshot">&#128338; 历史快照</button>
+                    </div>
+                    
+                    <!-- 人物资料卡片模式：刚性锁定高度，超长部分由子表单接管滚动 -->
+                    <div id="char-card-mode" style="flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+                        <div id="char-dynamic-form" style="flex: 1; overflow-y: auto; min-height: 0; padding: 16px 24px; background: var(--bg-card);"></div>
+                        <!-- 🏛️ 势力归属（不属于模板，固定显示） -->
+                        <div id="char-faction-row" style="flex-shrink: 0; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg-card); display: flex; gap: 12px; align-items: center;">
+                            <label style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">🏛️ 所属势力</label>
+                            <select id="char-faction-sel" style="flex: 1; padding: 6px 8px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
+                                <option value="">-- 散修 / 无势力 --</option>
+                            </select>
+                            <label style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">职位</label>
+                            <input id="char-faction-role-inp" type="text" placeholder="如：宗主、长老、散修" style="flex: 1; padding: 6px 8px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
+                        </div>
+                        <!-- 🔗 人物关系连线 -->
+                        <div id="char-relations-section" style="flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg-card);">
+                            <div style="padding: 10px 24px; display: flex; gap: 8px; align-items: center; cursor: pointer;" onclick="var b=document.getElementById('char-relations-body');b.classList.toggle('hidden');this.querySelector('span').textContent=b.classList.contains('hidden')?'▶':'▼';">
+                                <span style="font-size:0.65rem;">▼</span>
+                                <span style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted);">🔗 人物关系连线</span>
+                                <span id="char-relations-count" style="font-size:0.7rem; color: var(--text-muted);"></span>
+                            </div>
+                            <div id="char-relations-body" style="padding: 0 24px 12px;">
+                                <div id="char-relations-list" style="font-size: 0.75rem; max-height: 200px; overflow-y: auto; margin-bottom: 8px;"></div>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                    <select id="char-rel-target-sel" style="flex: 1; min-width: 100px; padding: 4px 6px; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);"><option value="">-- 关联角色 --</option></select>
+                                    <input id="char-rel-label-inp" type="text" placeholder="关系标签（如师徒）" style="flex: 1; min-width: 80px; padding: 4px 6px; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
+                                    <input id="char-rel-weight-inp" type="number" min="-100" max="100" value="0" style="width: 60px; padding: 4px 6px; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);" title="好感度 -100~100">
+                                    <button id="char-rel-add-btn" class="sys-btn sys-btn-ghost" style="font-size:0.7rem; padding:4px 8px;">+ 添加</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="editor-toolbar" style="flex-shrink: 0; border-top: 1px solid var(--border);">
+                            <span></span>
+                            <div style="display:flex;gap:8px;">
+                                <button id="archive-btn" class="sys-btn sys-btn-secondary">&#128248; 创建快照</button>
+                                <button id="save-char-btn" class="sys-btn sys-btn-primary">保存人物</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 模板设置模式：同步适配 Flex 边界 -->
+                    <div id="char-template-mode" class="hidden" style="flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+                        <div id="template-editor" style="padding:16px 24px; overflow-y:auto; flex:1; min-height: 0;"></div>
+                        <div class="editor-toolbar" style="flex-shrink: 0; border-top: 1px solid var(--border);">
+                            <span></span>
+                            <button id="save-template-btn" class="sys-btn sys-btn-primary">保存模板</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 历史快照模式：同步适配 Flex 边界 -->
+                    <div id="char-snapshot-mode" class="hidden" style="flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+                        <div style="display:flex; flex:1; overflow:hidden; min-height: 0;">
+                            <div id="snapshot-list" style="width:200px; border-right:1px solid var(--border); overflow-y:auto; padding:8px; flex-shrink: 0;"></div>
+                            <div id="snapshot-preview" style="flex:1; overflow-y:auto; padding:16px 24px;"></div>
+                        </div>
+                        <div class="editor-toolbar" style="flex-shrink: 0; border-top: 1px solid var(--border);">
+                            <span></span>
+                            <button id="restore-snapshot-btn" class="sys-btn sys-btn-secondary hidden">&#128260; 恢复至此版本</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 地图 -->
+                <div id="ws-map" class="ws-panel hidden">
+                    <div class="map-toolbar">
+                        <button id="map-list-btn" class="map-mode-btn sys-btn sys-btn-secondary active">📄 列表模式</button>
+                        <button id="map-grid-btn" class="map-mode-btn sys-btn sys-btn-secondary">🗺️ 25x25 简易地图（新增地点在这里）</button>
+                        <button id="loc-tmpl-btn" class="map-mode-btn sys-btn sys-btn-secondary" style="margin-left:auto;">⚙️ 地点模板设置</button>
+                    </div>
+                    <div id="map-list-mode" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+                        <div class="editor-toolbar"><span class="info">地点编辑</span><button id="save-location-btn" class="sys-btn sys-btn-primary">保存</button></div>
+                        <div class="loc-editor-split">
+                            <div class="loc-left-pane">
+                                <input type="text" id="loc-name-input" placeholder="地点名称...">
+                                <textarea id="loc-desc-input" placeholder="详细描述..."></textarea>
+                                <div class="loc-meta-box" style="margin-top:16px;border-top:1px dashed var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px;">
+                                    <div style="display:flex;gap:8px;align-items:center;">
+                                        <label style="font-size:0.75rem;font-weight:700;min-width:60px;color:var(--accent);">空间标尺:</label>
+                                        <input id="loc-scale-select" list="loc-scale-datalist" placeholder="标尺级别" style="flex:1;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                        <datalist id="loc-scale-datalist">
+                                        </datalist>
+                                    </div>
+                                    <div style="display:flex;gap:8px;align-items:center;">
+                                        <label style="font-size:0.75rem;font-weight:700;min-width:60px;color:var(--accent);">嵌套上级:</label>
+                                        <select id="loc-parent-select" style="flex:1;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                            <option value="">-- 无上级 (根节点) --</option>
+                                        </select>
+                                    </div>
+                                    <div style="display:flex;gap:12px;align-items:center;margin-top:4px;">
+                                        <div style="display:flex;gap:4px;align-items:center;flex:1;">
+                                            <label style="font-size:0.75rem;font-weight:700;color:var(--accent);">网格 X:</label>
+                                            <input type="number" id="loc-grid-x" min="0" max="24" placeholder="无" style="width:55px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                        </div>
+                                        <div style="display:flex;gap:4px;align-items:center;flex:1;">
+                                            <label style="font-size:0.75rem;font-weight:700;color:var(--accent);">网格 Y:</label>
+                                            <input type="number" id="loc-grid-y" min="0" max="24" placeholder="无" style="width:55px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;background:var(--bg);">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="loc-attrs-editor" class="loc-right-pane"></div>
+                        </div>
+                    </div>
+                    <div id="map-grid-mode" class="hidden">
+                        <div class="map-breadcrumbs" id="map-breadcrumbs"></div>
+                        <div class="fractal-map-container" id="fractal-map-container"></div>
+                    </div>
+                </div>
+                <!-- 场景沙盘 -->
+                <div id="ws-sandbox" class="ws-panel hidden">
+                    <div class="sandbox-log-header">
+                        <span style="font-weight:600;font-size:.85rem;">📜 推演记录</span>
+                        <div style="display:flex;gap:4px;">
+                            <button id="sandbox-copy-btn" class="cp-quick-btn" style="font-size:.68rem;" disabled>💾 复制到正文</button>
+                            <button id="sandbox-next-btn" class="cp-quick-btn" style="font-size:.68rem;" disabled>⏭️ 继续推演</button>
+                        </div>
+                    </div>
+                    <div class="sandbox-log-content" id="sandbox-log-content"></div>
+                </div>
+                    <!-- 推演：2D 节点图 -->
+                <div id="ws-reasoning" class="ws-panel hidden">
+                    <div style="display:flex;justify-content:flex-end;padding:4px 6px;background:var(--bg);border-bottom:1px solid var(--border);gap:6px;">
+                        <button id="chain-restore-btn" class="sys-btn sys-btn-ghost hidden" style="font-size:.72rem;color:var(--accent);font-weight:700;margin-right:8px;">🔄 恢复默认</button>
+                        <button id="placeholder-ref-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">💡 占位符速查表</button>
+                        <button id="chain-settings-btn" class="sys-btn sys-btn-ghost" style="font-size:.72rem;">⚙️ 方案设置</button>
+                    </div>
+                    <!-- 📋 推理链任务清单 -->
+                    <div id="chain-todos-panel" style="display:none;padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border);font-size:.72rem;max-height:150px;overflow-y:auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                            <strong style="color:var(--accent);">📋 任务清单</strong>
+                            <button id="chain-todos-toggle" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:1px 4px;">收起</button>
+                        </div>
+                        <div id="chain-todos-list"></div>
+                    </div>
+                    <div class="canvas-container" id="reasoning-canvas">
+                        <div id="chain-canvas">
+                            <svg id="canvas-lines"></svg>
+                        </div>
+                    </div>
+                    <button id="add-node-btn" class="fab-btn">+ 新增推演节点</button>
+                </div>
+                <div id="ws-relations" class="ws-panel hidden" style="position:relative;">
+                    <div class="ws-header" style="padding:10px;border-bottom:1px solid var(--border);background:var(--bg);">
+                        <h3 style="margin:0;font-size:1.1rem;display:inline-block;">🌐 势力与人际拓扑沙盘</h3>
+                        <button id="btn-refresh-graph" class="sys-btn" style="margin-left:20px;">🔄 重新物理排版</button>
+                        <span style="font-size:0.8rem;color:#64748b;margin-left:15px;">操作: 滚轮缩放 | 拖拽节点 | 空白处拖拽视角</span>
+                    </div>
+                    <div style="flex:1;position:relative;width:100%;overflow:hidden;">
+                        <div id="relation-network" style="position:absolute;top:0;left:0;right:0;bottom:0;background-color:#fafafa;"></div>
+                        <!-- 角色快捷编辑浮窗 (从拓扑图点击角色球触发) -->
+                        <div id="char-quick-edit-panel" class="quick-edit-panel hidden" style="position:absolute;z-index:20;width:340px;max-height:55vh;display:flex;flex-direction:column;background:var(--active-bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);font-size:.78rem;">
+                            <!-- 固定窗口条 -->
+                            <div class="quick-edit-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--border);border-radius:10px 10px 0 0;flex-shrink:0;">
+                                <span id="quick-char-title" style="font-weight:700;font-size:.9rem;">📝 快捷编辑</span>
+                                <button id="quick-char-close-btn" style="border:none;background:none;cursor:pointer;font-size:1.1rem;color:var(--text-muted);padding:0 4px;line-height:1;">✕</button>
+                            </div>
+                            <!-- 可滚动内容区：基本字段 + 模板字段 -->
+                            <div class="quick-edit-body" style="flex:1;min-height:0;overflow-y:auto;padding:10px 14px 8px;">
+                            <label>角色名称</label>
+                            <input type="text" id="quick-char-name" placeholder="角色名称" style="width:100%;padding:5px;margin-top:2px;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;font-size:.78rem;">
+                            <div style="margin-bottom:8px;">
+                                <label>状态</label>
+                                <select id="quick-char-status" style="width:100%;padding:5px;margin-top:2px;border:1px solid var(--border);border-radius:4px;background:var(--bg);box-sizing:border-box;font-size:.78rem;">
+                                    <option value="存活">存活</option><option value="死亡">死亡</option><option value="失踪">失踪</option><option value="飞升">飞升</option>
+                                </select>
+                            </div>
+                            <div id="quick-char-template-fields" style="margin-top:4px;"></div>
+                            </div><!-- /.quick-edit-body -->
+                            <!-- 固定底栏：势力 + 关系连线 + 保存 -->
+                            <div class="quick-edit-footer" style="flex-shrink:0;border-top:1px solid var(--border);background:var(--bg);border-radius:0 0 10px 10px;padding:8px 14px;">
+                                <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:6px;">
+                                    <div style="flex:1;"><label style="font-size:.7rem;">🏛️ 所属势力</label>
+                                    <select id="quick-char-faction" style="width:100%;padding:4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);box-sizing:border-box;font-size:.72rem;">
+                                        <option value="">-- 散修 / 无势力 --</option>
+                                    </select></div>
+                                    <div style="flex:1;"><label style="font-size:.7rem;">职位</label>
+                                    <input type="text" id="quick-char-faction-role" placeholder="如：宗主、长老" style="width:100%;padding:4px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;font-size:.72rem;"></div>
+                                </div>
+                                <!-- 关系连线（可折叠） -->
+                                <div style="border-top:1px solid var(--border);padding-top:5px;">
+                                    <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="var b=document.getElementById('quick-char-relations-body');b.classList.toggle('hidden');this.querySelector('.toggle-arrow').textContent=b.classList.contains('hidden')?'▶':'▼';">
+                                        <span class="toggle-arrow" style="font-size:.6rem;">▼</span>
+                                        <span style="font-weight:600;font-size:.72rem;color:var(--text-muted);">🔗 人物关系连线</span>
+                                        <span id="quick-char-relations-count" style="font-size:.7rem;color:var(--text-muted);"></span>
+                                    </div>
+                                    <div id="quick-char-relations-body">
+                                        <div id="quick-char-relations-list" style="max-height:120px;overflow-y:auto;margin-bottom:4px;"></div>
+                                        <div style="display:flex;gap:4px;align-items:center;">
+                                            <select id="quick-char-rel-target" style="flex:1;min-width:80px;padding:3px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);"><option value="">-- 关联角色 --</option></select>
+                                            <input id="quick-char-rel-label" type="text" placeholder="关系" style="width:48px;padding:3px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);">
+                                            <input id="quick-char-rel-weight" type="number" min="-100" max="100" value="0" style="width:42px;padding:3px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);" title="好感度">
+                                            <button id="quick-char-rel-add-btn" style="font-size:.62rem;padding:3px 6px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--active-bg);">+添加</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="text-align:right;margin-top:6px;">
+                                    <button id="quick-char-save-btn" style="padding:5px 16px;font-size:.75rem;font-weight:600;border-radius:4px;cursor:pointer;background:var(--accent);color:#fff;border:1px solid var(--accent);">保存</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- 右栏 -->
+            <aside id="right-sidebar">
+                <div class="tab-bar">
+                    <button class="tab-btn active" data-tab="tab-characters">人物卡</button>
+                    <button class="tab-btn" data-tab="tab-ai">AI助手</button>
+                    <button class="tab-btn" data-tab="tab-timeline">时间线</button>
+                </div>
+                <div id="tab-characters" class="tab-content"><button id="new-character-btn">+ 新建人物</button><div id="character-list"></div></div>
+                <div id="tab-timeline" class="tab-content hidden">
+                    <div class="timeline-header" id="timeline-title">时间线</div><div id="timeline-list"></div>
+                    <div class="timeline-form"><input type="text" id="tl-title" placeholder="事件名称"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
+                </div>
+                <!-- 时间线详情/编辑弹窗 -->
+                <div id="tl-detail-modal" class="modal hidden">
+                    <div class="modal-backdrop"></div>
+                    <div class="modal-box" style="width:460px;max-height:90vh;overflow-y:auto;">
+                        <h3>📅 时间线事件</h3>
+                        <label>序号</label>
+                        <span id="tl-detail-index" style="font-size:.85rem;color:var(--text-muted);">—</span>
+                        <label>事件名称</label>
+                        <input type="text" id="tl-detail-title" placeholder="事件名称">
+                        <label>时间标签
+                            <button id="tl-detail-time-now" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:1px 6px;margin-left:6px;" title="填入当前世界历法时间">📅 现在</button>
+                        </label>
+                        <input type="text" id="tl-detail-label" placeholder="如：大陆历前1200年">
+                        <label>事件类型</label>
+                        <select id="tl-detail-type" style="width:100%;padding:7px 8px;font-size:.85rem;border:1px solid var(--border);border-radius:4px;">
+                            <option value="main_story">正文时间线</option>
+                            <option value="history">历史时间线</option>
+                            <option value="world">世界时间线</option>
+                        </select>
+                        <label>事件分类</label>
+                        <select id="tl-detail-category" style="width:100%;padding:7px 8px;font-size:.85rem;border:1px solid var(--border);border-radius:4px;">
+                            <option value="地形变动">🏔 地形变动</option>
+                            <option value="人物生死">💀 人物生死</option>
+                            <option value="政治事件">🏛 政治事件</option>
+                            <option value="宝物现世">💎 宝物现世</option>
+                            <option value="生物异动">🐉 生物异动</option>
+                            <option value="自然演变">🌿 自然演变</option>
+                            <option value="其他">📋 其他</option>
+                        </select>
+                        <label>参与人物 <span style="font-weight:400;color:var(--text-muted);">(从人物库选择，可空)</span></label>
+                        <div style="display:flex;gap:4px;">
+                            <select id="tl-detail-char-select" style="flex:1;padding:6px;font-size:.78rem;border:1px solid var(--border);border-radius:4px;">
+                                <option value="">— 选择人物 —</option>
+                            </select>
+                            <button id="tl-detail-char-add" class="sys-btn sys-btn-primary" style="padding:4px 10px;font-size:.75rem;">+</button>
+                        </div>
+                        <div id="tl-detail-char-pills" style="margin-top:4px;"></div>
+                        <label>关联地点</label>
+                        <select id="tl-detail-location" style="width:100%;padding:7px 8px;font-size:.85rem;border:1px solid var(--border);border-radius:4px;">
+                            <option value="">— 不关联 —</option>
+                        </select>
+                        <label>事件详情</label>
+                        <textarea id="tl-detail-content" style="width:100%;min-height:100px;resize:vertical;font-size:.85rem;padding:7px 8px;border:1px solid var(--border);border-radius:4px;"></textarea>
+                        <label style="margin-top:12px;">🔗 因果关系</label>
+                        <div id="tl-detail-relations" style="margin-bottom:8px;font-size:.78rem;"></div>
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            <input type="number" id="tl-rel-index" placeholder="事件序号" style="width:80px;padding:5px;font-size:.78rem;border:1px solid var(--border);border-radius:4px;">
+                            <select id="tl-rel-label" style="flex:1;padding:5px;font-size:.78rem;border:1px solid var(--border);border-radius:4px;">
+                                <option value="导致">→ 导致</option>
+                                <option value="触发">→ 触发</option>
+                                <option value="相关">↔ 相关</option>
+                            </select>
+                            <button id="tl-rel-add-btn" class="sys-btn sys-btn-primary" style="padding:5px 10px;font-size:.75rem;">+ 添加</button>
+                        </div>
+                        <div class="modal-actions">
+                            <button id="tl-detail-delete" class="sys-btn sys-btn-danger" style="margin-right:auto;">🗑 删除</button>
+                            <button id="tl-detail-cancel">取消</button>
+                            <button id="tl-detail-save" class="btn-primary">💾 保存</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="tab-ai" class="tab-content hidden">
+                    <div class="agent-ctl-bar">
+                        <span class="agent-status-label">🤖 Agent 状态: 就绪</span>
+                        <label title="开启后，大模型将直接执行修改操作而无需点击批准">
+                            <input type="checkbox" id="agent-auto-execute"> ⚡ 自动执行
+                        </label>
+                        <button id="clear-memory-btn" class="sys-btn sys-btn-ghost" style="font-size:.65rem;padding:2px 6px;" title="清除对话记忆，避免上下文污染">🧹 清空记忆</button>
+                    </div>
+                    <div id="copilot-history"></div>
+                    <div class="copilot-quick" id="copilot-quick-btns"><button data-cmd="润色选中内容" class="cp-quick-btn">&#10024; 润色选中</button><button data-cmd="评价当前情节并提出修改建议" class="cp-quick-btn">&#128064; 评价情节</button></div>
+                    <div style="margin-bottom:6px;">
+                        <select id="chat-scene-select" style="width:100%;max-width:200px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.78rem;background:var(--bg);color:var(--text);">
+                            <option value="chat">💬 日常聊天与精准编辑</option>
+                            <option value="map_gen">🗺️ 自动化生成 - 地图层级</option>
+                            <option value="char_gen">👤 自动化生成 - 角色设定</option>
+                            <option value="outline_gen">📖 自动化生成 - 剧情大纲</option>
+                        </select>
+                    </div>
+                    <div class="copilot-input-row"><input type="text" id="copilot-input" placeholder="向 AI 输入指令..."><button id="copilot-send" class="sys-btn sys-btn-primary" onclick="handleCopilotSend()">发送</button></div>
+                </div>
+            </aside>
+        </div>
+    </div>
+    <div id="archive-overlay" class="hidden">
+        <div class="archive-overlay-box">
+            <div class="spinner"></div>
+            <p>🧠 AI 正在提取时间线并更新人物卡，请稍候...</p>
+        </div>
+    </div>
+    <div id="archive-toast"></div>
+    <div id="loc-tmpl-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:700px;max-height:85vh;overflow-y:auto;">
+            <h3 style="margin:0 0 8px;">⚙️ 地点模板设置</h3>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <input id="loc-tmpl-scale-sel" list="loc-tmpl-scale-datalist" placeholder="标尺级别" style="font-size:.8rem;padding:4px 8px;">
+                <datalist id="loc-tmpl-scale-datalist">
+                </datalist>
+                <button id="loc-tmpl-add-group" class="sys-btn sys-btn-secondary" style="font-size:.75rem;">+ 添加分组</button>
+            </div>
+            <div id="loc-tmpl-editor"></div>
+            <div class="modal-actions"><button id="loc-tmpl-save" class="btn-primary">保存模板</button><button id="loc-tmpl-cancel">取消</button></div>
+        </div>
+    </div>
+    <div id="time-settings-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:520px;max-height:85vh;overflow-y:auto;">
+            <h3>⏳ 世界时间与历法设定</h3>
+            <fieldset style="border:1px solid var(--border);padding:10px;margin-bottom:12px;border-radius:6px;background:#f8fafc;">
+                <legend style="font-size:0.8rem;font-weight:700;color:var(--accent);">当前主线时间 (数字锚点)</legend>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="number" id="ts-year" style="width:60px;" min="1" title="年">年
+                    <input type="number" id="ts-month" style="width:50px;" min="1" title="月">月
+                    <input type="number" id="ts-day" style="width:50px;" min="1" title="日">日
+                    <input type="number" id="ts-hour" style="width:50px;" min="0" title="时">时
+                </div>
+            </fieldset>
+            <fieldset style="border:1px solid var(--border);padding:10px;margin-bottom:12px;border-radius:6px;">
+                <legend style="font-size:0.8rem;font-weight:700;">历法结构</legend>
+                <div style="display:flex;gap:12px;margin-bottom:8px;">
+                    <label>一年几个月: <input type="number" id="ts-mpy" style="width:60px;"></label>
+                    <label>一月几天: <input type="number" id="ts-dpm" style="width:60px;"></label>
+                    <label>一天几时辰: <input type="number" id="ts-hpd" style="width:60px;"></label>
+                </div>
+            </fieldset>
+            <fieldset style="border:1px solid var(--border);padding:10px;margin-bottom:12px;border-radius:6px;">
+                <legend style="font-size:0.8rem;font-weight:700;">名词映射皮肤 (逗号分隔，留空则用数字)</legend>
+                <label>纪元/年号前缀: <input type="text" id="ts-era" placeholder="例如: 天宝"></label>
+                <label>循环年份名: <input type="text" id="ts-year-names" placeholder="例如: 甲子,乙丑... (循环使用)"></label>
+                <label>月份别称: <input type="text" id="ts-month-names" placeholder="例如: 孟春,仲春,季春..."></label>
+                <label>日期别称: <input type="text" id="ts-day-names" placeholder="例如: 初一,初二..."></label>
+                <label>时辰别称: <input type="text" id="ts-hour-names" placeholder="例如: 子时,丑时... (从0时起算)"></label>
+            </fieldset>
+            <div class="modal-actions"><button id="ts-save-btn" class="btn-primary">保存历法与时间</button><button id="ts-cancel-btn">取消</button></div>
+        </div>
+    </div>
+
+    <!-- 推演方案设置模态框 -->
+    <div id="chain-settings-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:400px;">
+            <h3>⚙️ 推演方案设置</h3>
+            <div style="margin-bottom:12px;">
+                <label>方案名称:</label>
+                <input type="text" id="cs-title" style="width:100%;">
+            </div>
+            <fieldset style="border:1px solid var(--border);padding:10px;border-radius:6px;">
+                <legend style="font-size:0.8rem;font-weight:700;">世界上下文注入 (推理时常驻可见列表)</legend>
+                <label style="display:block;"><input type="checkbox" id="cs-use-outlines"> 注入大纲</label>
+                <label style="display:block;"><input type="checkbox" id="cs-use-characters"> 注入人物档案与实时坐标</label>
+                <label style="display:block;"><input type="checkbox" id="cs-use-timeline"> 注入时间线历史</label>
+            </fieldset>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="cs-save-btn" class="btn-primary">保存设置</button>
+                <button id="cs-cancel-btn">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🌌 宇宙级智能创世大重构模态框 -->
+    <div id="import-modal" class="modal hidden">
+        <!-- 遮罩层（运行中显示指示状态，不再阻断点击，允许关闭窗口后台运行） -->
+        <div class="modal-backdrop" id="genesis-backdrop"></div>
+        <div class="modal-box" style="width:720px; max-height:92vh; overflow-y:auto; border: 2px solid #4f46e5; box-shadow: 0 0 25px rgba(79, 70, 229, 0.45);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 id="import-modal-title" style="margin:0; font-size: 1.1rem; color: #9333ea; font-weight: 800;">🌌 智能建纲中心</h3>
+                <span id="genesis-status-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--border);">待命中</span>
+            </div>
+            
+            <p style="font-size:.72rem; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">
+                请输入或粘贴您的<b>原始设定大纲</b>或已经写好的<b>小说正文章节</b>。引擎将按顺序调用推理链（地图流 → 大纲流 → 人设流）进行高精度顺序提炼，并在每一步都将结果回填到对应模块中，帮助您快速搭建起完整的世界观框架和丰富的角色设定！
+            </p>
+            
+            <!-- 🎯 建纲模式选择器 -->
+            <div id="genesis-mode-selector" style="display: flex; gap: 6px; margin-bottom: 12px;">
+                <label class="genesis-mode-btn active" id="mode-full-label">
+                    <input type="radio" name="genesis-mode" value="full" checked style="display:none;">
+                    🌌 完整建纲
+                    <span class="genesis-mode-desc">从零搭建</span>
+                </label>
+                <label class="genesis-mode-btn" id="mode-incremental-label">
+                    <input type="radio" name="genesis-mode" value="incremental" style="display:none;">
+                    📎 分段建纲
+                    <span class="genesis-mode-desc">增量合并</span>
+                </label>
+                <label class="genesis-mode-btn" id="mode-overwrite-label">
+                    <input type="radio" name="genesis-mode" value="overwrite" style="display:none;">
+                    💥 覆写重建
+                    <span class="genesis-mode-desc">清空后重建</span>
+                </label>
+            </div>
+            
+            <!-- ⚡ 并行执行开关 -->
+            <div id="genesis-parallel-row" style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 0.75rem;">
+                <span style="color: var(--text-muted); font-weight: 600;">⚡ 执行策略:</span>
+                <label class="parallel-switch">
+                    <input type="checkbox" id="genesis-parallel-checkbox">
+                    <span class="parallel-slider"></span>
+                </label>
+                <span id="genesis-parallel-label" style="color: var(--text-muted);">依次执行</span>
+                <span style="font-size:0.65rem; color: var(--text-muted); margin-left: 4px;">（并行可大幅缩短建纲时间）</span>
+            </div>
+            
+            <!-- 🔄 断点恢复提示 -->
+            <div id="genesis-resume-banner" style="display:none; background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid #6366f1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; align-items: center; gap: 10px;">
+                <span style="font-size:1.2rem;">⚡</span>
+                <div style="flex:1; font-size:0.75rem;">
+                    <strong>检测到未完成的建纲任务</strong><br>
+                    <span id="genesis-resume-info" style="color:#a5b4fc;">可从断点继续执行</span>
+                </div>
+                <button id="genesis-resume-btn" class="sys-btn sys-btn-primary" style="font-size:0.72rem; white-space:nowrap;">▶ 继续</button>
+                <button id="genesis-discard-btn" class="sys-btn sys-btn-ghost" style="font-size:0.72rem; white-space:nowrap; border-color:#ef4444; color:#ef4444;">🗑 放弃</button>
+            </div>
+            
+            <!-- 📁 拖拽文件上传区 -->
+            <div id="import-drop-zone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center; margin-bottom: 12px; cursor: pointer; background: var(--bg); transition: border-color 0.2s, background 0.2s;">
+                <span style="font-size:1.5rem;">📂</span>
+                <p style="margin:4px 0 0; font-size:.75rem; color:var(--text-muted);">拖拽 .txt 或 .md 文件到此处，或点击选择文件</p>
+                <input type="file" id="import-file-input" accept=".txt,.md,.text" style="display:none;">
+            </div>
+            
+            <textarea id="import-textarea" placeholder="在这里贴入您的设定或正文章节...&#10;&#10;- 如果是设定：AI将为您搭建好全书的大纲框架并生成基础设定。&#10;- 如果是小说正文：AI将自动提炼正文里的门派总部、新人物卡、功法境界并回填！（其实没差）" style="width:100%; height:150px; padding:8px; border:1px solid var(--border); border-radius:4px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; box-sizing:border-box; background:var(--bg); margin-bottom: 12px;"></textarea>
+            
+            <!-- 🌟 三步骤高亮进度条 -->
+            <div class="genesis-progress-bar" style="display: flex; gap: 8px; margin-bottom: 12px; font-size: 0.7rem; font-weight: 700;">
+                <div id="step-char" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    👤 1. 群像人设质检
+                </div>
+                <div id="step-map" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    🗺️ 2. 地理蓝图落子
+                </div>
+                <div id="step-outline" style="flex: 1; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; background: var(--bg); opacity: 0.5; transition: all 0.3s;">
+                    📖 3. 世界观与大纲
+                </div>
+            </div>
+            
+            <!-- 🖥️ 赛博朋克深海控制台 -->
+            <div id="genesis-console-box" style="margin-bottom: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; color: var(--text-muted);">🖥️ 建纲控制台实时执行流:</div>
+                <div id="genesis-console" style="height: 220px; background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; font-family: 'Courier New', Courier, monospace; font-size: 0.7rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; box-shadow: inset 0 0 15px rgba(0,0,0,0.95); scroll-behavior: smooth;">
+[System] 核心就绪。等待指令...</div>
+            </div>
+            
+            <div class="modal-actions" style="margin-top:16px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button id="genesis-pause-btn" class="sys-btn" style="display:none; background: #1e3a5f; color: #93c5fd; border: 1px solid #3b82f6; font-weight: 700;">⏸ 暂停建纲</button>
+                <button id="genesis-abort-btn" class="sys-btn" style="display:none; background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; font-weight: 700;">⏹ 中断建纲</button>
+                <button id="genesis-submit-btn" class="btn-primary" style="background: linear-gradient(135deg, #4f46e5, #9333ea); border: none; font-weight: 700;">🌌 启动创世大重构</button>
+                <button id="import-close-btn" class="sys-btn sys-btn-ghost" style="border: 1px solid var(--border);">关闭窗口</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- CSS 动画定义：闪烁与禁止穿透类 -->
+    <style>
+        .genesis-running-indicator {
+            /* 运行指示器：不再阻断点击，允许用户关闭窗口让建纲后台运行 */
+            cursor: default !important;
+        }
+        @keyframes genesis-pulse {
+            0% { border-color: #4f46e5; box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); }
+            50% { border-color: #e0f2fe; box-shadow: 0 0 15px #38bdf8; }
+            100% { border-color: #4f46e5; box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); }
+        }
+        .step-active {
+            opacity: 1.0 !important;
+            border-color: #38bdf8 !important;
+            color: #38bdf8 !important;
+            background: #0f172a !important;
+            animation: genesis-pulse 1.5s infinite;
+        }
+        .step-completed {
+            opacity: 1.0 !important;
+            border-color: #22c55e !important;
+            color: #22c55e !important;
+            background: #022c22 !important;
+            text-decoration: line-through;
+        }
+        .step-interrupted {
+            opacity: 1.0 !important;
+            border-color: #f59e0b !important;
+            color: #f59e0b !important;
+            background: #1a1200 !important;
+        }
+        /* 🎯 建纲模式选择器 */
+        .genesis-mode-btn {
+            flex: 1; padding: 8px 6px; border: 2px solid var(--border); border-radius: 6px;
+            text-align: center; cursor: pointer; background: var(--bg); font-size: 0.78rem;
+            font-weight: 700; transition: all 0.2s; user-select: none;
+        }
+        .genesis-mode-btn:hover { border-color: #6366f1; background: #1e1b4b; }
+        .genesis-mode-btn.active { border-color: #818cf8; background: #1e1b4b; color: #a5b4fc; box-shadow: 0 0 10px rgba(99,102,241,0.3); }
+        .genesis-mode-desc { font-size:0.62rem; display:block; font-weight:400; color:var(--text-muted); margin-top:2px; }
+        /* ⚡ 并行执行开关 */
+        .parallel-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+        .parallel-switch input { opacity: 0; width: 0; height: 0; }
+        .parallel-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 22px; transition: 0.3s; }
+        .parallel-slider:before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: var(--text-muted); border-radius: 50%; transition: 0.3s; }
+        .parallel-switch input:checked + .parallel-slider { background: #4f46e5; border-color: #6366f1; }
+        .parallel-switch input:checked + .parallel-slider:before { transform: translateX(18px); background: #fff; }
+    </style>
+
+    <div id="edge-edit-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:380px;">
+            <h3 id="edge-edit-title">✏️ 编辑关系</h3>
+            <div id="edge-edit-dir" style="font-size:.8rem;color:var(--accent);margin-bottom:8px;"></div>
+            <div id="edge-edit-single">
+                <label>关系标签</label>
+                <input type="text" id="edge-edit-label" placeholder="如：好友、师徒、敌对">
+                <label>好感度 (-100 ~ 100)</label>
+                <input type="number" id="edge-edit-weight" min="-100" max="100" value="0">
+                <label>原因描述</label>
+                <input type="text" id="edge-edit-desc" placeholder="简述关系缘由...">
+                <label>连线颜色</label>
+                <input type="color" id="edge-edit-color" value="#94a3b8" style="width:60px;height:30px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;">
+            </div>
+            <div id="edge-edit-bi" class="hidden">
+                <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:4px;">双向关系 — 双方共享同一标签和颜色</div>
+                <label>关系标签</label>
+                <input type="text" id="edge-edit-bi-label" placeholder="如：好友">
+                <div style="display:flex;gap:8px;margin-top:6px;">
+                    <div style="flex:1;"><label style="font-size:.7rem;" id="edge-edit-bi-l1">→ 好感度</label><input type="number" id="edge-edit-bi-w1" min="-100" max="100" value="0"></div>
+                    <div style="flex:1;"><label style="font-size:.7rem;" id="edge-edit-bi-l2">← 好感度</label><input type="number" id="edge-edit-bi-w2" min="-100" max="100" value="0"></div>
+                </div>
+                <label style="margin-top:8px;">连线颜色</label>
+                <input type="color" id="edge-edit-bi-color" value="#6366f1" style="width:60px;height:30px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;">
+            </div>
+            <div class="modal-actions">
+                <button id="edge-edit-delete-btn" style="background:#ef4444;color:white;border:1px solid #ef4444;">删除</button>
+                <button id="edge-edit-cancel-btn">取消</button>
+                <button id="edge-edit-save-btn" class="btn-primary">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="faction-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:400px;">
+            <h3 id="faction-modal-title">编辑势力</h3>
+            <label style="font-size:.78rem;font-weight:600;display:block;margin-top:8px;">势力名称</label>
+            <input type="text" id="faction-name-input" placeholder="请输入势力名称..." style="width:100%;padding:6px;margin-top:4px;margin-bottom:12px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+            <label style="font-size:.78rem;font-weight:600;display:block;">势力描述</label>
+            <textarea id="faction-desc-input" placeholder="简述势力历史、宗旨与组织架构..." style="width:100%;height:100px;padding:6px;margin-top:4px;margin-bottom:12px;border:1px solid var(--border);border-radius:4px;resize:vertical;box-sizing:border-box;font-size:.8rem;"></textarea>
+            <label style="font-size:.78rem;font-weight:600;display:block;">总部驻地 (可选)</label>
+            <select id="faction-loc-select" style="width:100%;padding:6px;margin-top:4px;margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);box-sizing:border-box;font-size:.8rem;">
+                <option value="">-- 选择总部地点 --</option>
+            </select>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button id="faction-save-btn" class="btn-primary">保存</button>
+                <button id="faction-delete-btn" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:.8rem;">删除势力</button>
+                <button id="faction-cancel-btn">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑器右键菜单 -->
+    <div id="editor-context-menu" class="context-menu hidden">
+        <div class="ctx-item" data-action="add-marker">⏰ 添加时间流逝标记</div>
+    </div>
+</body>
+</html>

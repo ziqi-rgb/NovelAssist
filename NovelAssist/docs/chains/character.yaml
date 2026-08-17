@@ -1,0 +1,104 @@
+# 👤 严谨人设与模板质检流
+# 节点类型: reasoning | router | write | ask
+# 推理格式: location | character | outline (仅reasoning可用)
+# write_to节点需填 entity + field + action
+# router节点需填 branches, 每个分支: condition -> target_id
+# 直接后继填 next, 分支后继在 branches 中定义
+
+nodes:
+  - id: c_nm1_ask_template
+    type: ask
+    premise: "展示当前人物属性模板，询问用户是否需要新增或修改属性分组/字段。"
+    next: c_n0_init_plan
+    prompt: "【模板校准提问】 当前小说的人物属性模板为： {character_template}  请生成一个问题，询问用户： 1. 是否需要新增属性分组（如「功法体系」「血脉天赋」「法宝装备」等）？ 2. 是否有现有分组需要增加或删减字段？ 3. ..."
+
+  - id: c_n0_init_plan
+    type: reasoning
+    premise: "分析用户输入，列出本次需要创建和质检的所有人物任务清单。"
+    next: c_n0_init_todos
+    prompt: "【人设任务规划】 根据用户输入和模板（如有用户追加的分组/字段要求也一并纳入），列出需要创建的所有人物及其所属势力。格式：- [ ] 角色名 (所属势力)。末尾输出 <ROUTE>DONE</ROUTE>。..."
+
+  - id: c_n0_init_todos
+    type: write
+    premise: "将人物任务清单写入推理链 Todo 列表。"
+    write_to:
+      entity: chain_todos
+      field: content
+      action: create
+    next: c_n1_prepare
+
+  - id: c_n1_prepare
+    type: reasoning
+    premise: "整理用户要求，推导需要创建的人物名称、所属势力、性格特征。"
+    next: c_n2_check_faction
+    prompt: "【初步整理】 整理用户要求，推导出需要创建的人物名称、所属势力、性格特征。建立初步人设文本。在末尾输出 <ROUTE>DONE</ROUTE>。..."
+
+  - id: c_n2_check_faction
+    type: router
+    premise: "判定：初步人设中涉及的势力是否已存在？不存在则需要新建。"
+    branches:
+      - condition: YES
+        target: c_n3_build_faction
+      - condition: NO
+        target: c_n4_number
+
+  - id: c_n3_build_faction
+    type: write
+    premise: "将上游确定的势力信息写入数据库。"
+    write_to:
+      entity: faction
+      field: description
+      action: create
+    next: c_n2_check_faction
+
+  - id: c_n4_number
+    type: reasoning
+    premise: "判定需要创建的人物总数，生成编号清单。"
+    next: c_n5a_gen_char
+    prompt: "【数量判定】 判断需要创建的人物数量（1-N个），生成名字编号清单。 明确输出： 【创世计划人设总名单】：[列出所有角色姓名] 在末尾输出 <ROUTE>DONE</ROUTE>。..."
+
+  - id: c_n5a_gen_char
+    type: reasoning
+    premise: "从计划名单中选出下一个待创建的角色，生成完整的 attributes 属性字典。"
+    format: character
+    next: c_n5_build_char
+    prompt: "【角色属性生成】 系统模板：{character_template} 已有角色：{characters_full_detail}  【执行契约】： 1. 继承前文的【创世计划人设总名单】 2. 比对已有角色，找出第一个尚未创建的角色 3. ..."
+
+  - id: c_n5_build_char
+    type: write
+    premise: "将上游生成的完整角色属性写入数据库。"
+    write_to:
+      entity: character
+      field: attributes
+      action: create
+    next: c_n6_verify_template
+
+  - id: c_n6_verify_template
+    type: reasoning
+    premise: "第一漏斗：质检刚创建的角色属性是否完整对齐模板。"
+    branches:
+      - condition: PERFECT
+        target: c_n8_verify_quantity
+      - condition: NEEDS_FIX
+        target: c_n7_fix
+    prompt: "【属性模板质检】 系统模板：{character_template} 已有角色：{characters_full_detail}  请找出在 c_n5_build_char 中刚刚被创建/修改的那个特定角色的 attributes 字典。 ..."
+
+  - id: c_n7_fix
+    type: write
+    premise: "将上游质检指出的缺失字段补齐写入数据库。"
+    write_to:
+      entity: character
+      field: attributes
+      action: update
+    next: c_n6_verify_template
+
+  - id: c_n8_verify_quantity
+    type: reasoning
+    premise: "第二漏斗：核对已创建角色数量是否达标。"
+    branches:
+      - condition: NEEDS_MORE
+        target: c_n5a_gen_char
+      - condition: DONE
+        target: 
+    prompt: "【数量大盘点】 已有角色：{characters_full_detail}  1. 汇总创世进度 2. 比对上文【创世计划人设总名单】与已创建角色 3. 末尾输出路由：    - 全部角色已创建完毕 → <ROUTE>DONE</ROUTE..."
+
