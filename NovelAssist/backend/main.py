@@ -2080,6 +2080,88 @@ def create_event(body: EventCreate, novel_id: int = Query(default=NOVEL_ID_DEFAU
     return e
 
 
+# ═══════════ WorldEvents 离屏模拟（#T007） ═══════════
+
+class WorldEventReview(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    provider: str = ""
+
+
+@app.get("/api/world_events", response_model=list[EventOut])
+def list_world_events(status: str = "pending", novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    q = select(WorldEvent).where(WorldEvent.novel_id == novel_id)
+    if status:
+        q = q.where(WorldEvent.status == status)
+    return db.scalars(q.order_by(WorldEvent.origin_tick)).all()
+
+
+@app.post("/api/world_events/{event_id}/generate", response_model=EventOut)
+def generate_world_event(event_id: int, req: WorldEventReview, db: Session = Depends(get_db)):
+    ev = db.get(WorldEvent, event_id)
+    if ev is None:
+        raise HTTPException(404, "世界事件不存在")
+    novel = db.get(Novel, ev.novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    ok = _generate_world_event_text(db, novel, ev, {"api_key": req.api_key, "base_url": req.base_url, "model": req.model})
+    db.commit()
+    db.refresh(ev)
+    if not ok:
+        raise HTTPException(400, "生成失败：请确认已配置可用的 API Key / base_url / model")
+    return ev
+
+
+@app.post("/api/world_events/{event_id}/accept", response_model=EventOut)
+def accept_world_event(event_id: int, db: Session = Depends(get_db)):
+    ev = db.get(WorldEvent, event_id)
+    if ev is None:
+        raise HTTPException(404, "世界事件不存在")
+    ev.status = "accepted"
+    ev.is_rumor = True
+    novel = db.get(Novel, ev.novel_id)
+    if novel is not None:
+        cal = novel.calendar_config or {}
+        max_idx = db.scalar(select(func.max(TimelineEvent.timeline_index)).where(TimelineEvent.novel_id == ev.novel_id))
+        db.add(TimelineEvent(
+            event_type=TimelineEventType.WORLD,
+            title=ev.title or "世界事件",
+            time_label=CalendarEngine.format_tick_to_lore_time(ev.origin_tick, cal),
+            category="其他",
+            content=ev.description or "",
+            timeline_index=(max_idx or 0) + 1,
+            absolute_tick=ev.origin_tick,
+            character_ids=[],
+            related_location_id=ev.location_id,
+            novel_id=ev.novel_id,
+        ))
+        wcfg = dict(novel.world_event_config or {})
+        wcfg["pending_days"] = 0.0  # 采纳 → 计数清零
+        novel.world_event_config = wcfg
+        flag_modified(novel, "world_event_config")
+    db.commit()
+    db.refresh(ev)
+    return ev
+
+
+@app.post("/api/world_events/{event_id}/reject", response_model=EventOut)
+def reject_world_event(event_id: int, db: Session = Depends(get_db)):
+    ev = db.get(WorldEvent, event_id)
+    if ev is None:
+        raise HTTPException(404, "世界事件不存在")
+    ev.status = "rejected"
+    novel = db.get(Novel, ev.novel_id)
+    if novel is not None:
+        wcfg = dict(novel.world_event_config or {})
+        wcfg["pending_days"] = float(wcfg.get("pending_days", 0.0)) / 2.0  # 拒绝 → 计数减半后继续累积
+        novel.world_event_config = wcfg
+        flag_modified(novel, "world_event_config")
+    db.commit()
+    db.refresh(ev)
+    return ev
+
+
 # ═══════════ TimelineEvents ═══════════
 
 @app.get("/api/timeline", response_model=list[TimelineOut])
@@ -2254,13 +2336,61 @@ def sync_active_bursts(db: Session, novel_id: int) -> int:
     return changed
 
 
-def check_world_event_triggers(db: Session, novel_id: int, prev_tick: int, new_tick: int) -> list[WorldEvent]:
-    """离屏世界事件 · 触发器：历法时间推进后按「每月概率」判定是否生成一条待审核世界事件草稿。
+def _world_event_creds(creds: Optional[dict]) -> tuple[str, str, str]:
+    c = creds or {}
+    return (
+        c.get("api_key") or LLM_API_KEY,
+        c.get("base_url") or LLM_BASE_URL,
+        c.get("model") or LLM_MODEL,
+    )
 
-    - 概率随跨度缩放：p = 1 - (1 - prob_per_month) ** 月数
-    - 随机源以 (novel_id, prev_tick, new_tick) 播种 → 同一推进结果可复现（可审计）
-    - 同一区间幂等：已存在同 origin_tick 的待审核事件时跳过
-    - 待审核总数受 max_pending 限制
+
+def _generate_world_event_text(db: Session, novel: Novel, ev: WorldEvent, creds: Optional[dict] = None) -> bool:
+    """调用 LLM 为世界事件草稿生成 title/description（同步 httpx，尽力而为）。
+
+    约束：结合世界观 + 主线现状，要求不冲突/不重复。失败或无 key 返回 False（保留空白草稿，前端可重试）。
+    """
+    api_key, base_url, model = _world_event_creds(creds)
+    if not api_key:
+        return False
+    lore = get_world_lore(db, novel.id)
+    active = build_active_events_summary(db, novel.id)
+    prompt = (
+        "你是小说世界的『离屏模拟』引擎。请基于下列世界观，生成一条【主线镜头之外】正在发生的世界事件，"
+        "要求：不与主线剧情冲突、不重复既有事件、有具体的地点与主体，1-2 句描述。"
+        "只返回纯 JSON（不要 markdown 代码块）：{\"title\": \"...\", \"description\": \"...\"}\n\n"
+        f"【世界观】\n{lore[:4000]}\n\n【主线现状】\n{active[:2000]}"
+    )
+    base = (base_url or "https://api.openai.com/v1").rstrip("/")
+    try:
+        r = httpx.post(
+            f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.6},
+            timeout=60,
+        )
+        r.raise_for_status()
+        raw = (r.json()["choices"][0]["message"]["content"] or "").strip()
+        mj = re.search(r"\{[\s\S]*\}", raw)
+        if mj:
+            data = json.loads(mj.group(0))
+            ev.title = str(data.get("title") or "")[:200]
+            ev.description = str(data.get("description") or "")
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def check_world_event_triggers(db: Session, novel_id: int, prev_tick: int, new_tick: int, creds: Optional[dict] = None) -> list[WorldEvent]:
+    """离屏世界事件 · 触发器（累计时间 → 概率判定）。
+
+    - 每次时间推进把 Δtick 折算为天数，累加到 `world_event_config.pending_days`
+    - 无待审核事件时按累计时间长度判定：p = 1 - (1 - prob_per_month) ** 月数
+      随机源以 (novel_id, prev_tick, new_tick) 播种 → 同一推进可复现（可审计）
+    - 触发后草稿等待作者审核：**采纳 → 计数清零；拒绝 → 计数减半**后继续累计
+      （减半用于降低拒绝后的即时复发概率，避免「拒绝一次后每月都弹窗」）
+    - 已有待审核草稿时暂不新建（但计时继续累积）
     """
     novel = db.get(Novel, novel_id)
     if novel is None or new_tick <= prev_tick:
@@ -2268,34 +2398,36 @@ def check_world_event_triggers(db: Session, novel_id: int, prev_tick: int, new_t
     cfg = dict(novel.world_event_config or {})
     if not cfg.get("enabled", True):
         return []
+    cal = novel.calendar_config or {}
+    hpd = float(cal.get("hours_per_day", 24) or 24)
+    days_per_month = float(cal.get("days_per_month", 30) or 30)
+    cfg["pending_days"] = float(cfg.get("pending_days", 0.0)) + (new_tick - prev_tick) / hpd
     pending = db.scalars(select(WorldEvent).where(
         WorldEvent.novel_id == novel_id,
         WorldEvent.status == "pending",
     )).all()
-    if len(pending) >= int(cfg.get("max_pending", 3)):
-        return []
-    if any(ev.origin_tick == new_tick for ev in pending):  # 幂等
-        return []
-    cal = novel.calendar_config or {}
-    ticks_per_month = int(cal.get("days_per_month", 30)) * int(cal.get("hours_per_day", 24))
-    if ticks_per_month <= 0:
-        ticks_per_month = 1
-    months = (new_tick - prev_tick) / ticks_per_month
-    prob = max(0.0, min(1.0, float(cfg.get("prob_per_month", 0.35))))
-    p_any = 1.0 - (1.0 - prob) ** months
-    rng = random.Random(f"we:{novel_id}:{prev_tick}:{new_tick}")
-    if rng.random() >= p_any:
-        return []
-    ev = WorldEvent(
-        title="", description="",
-        event_type="WORLD",  # type: ignore[arg-type]
-        status="pending", origin_tick=new_tick, timeline_index=0,
-        is_rumor=False, spread_json={}, novel_id=novel_id,
-    )
-    db.add(ev)
+    created: list[WorldEvent] = []
+    if not pending:
+        months = cfg["pending_days"] / days_per_month
+        prob = max(0.0, min(1.0, float(cfg.get("prob_per_month", 0.35))))
+        p_any = 1.0 - (1.0 - prob) ** months
+        rng = random.Random(f"we:{novel_id}:{prev_tick}:{new_tick}")
+        if rng.random() < p_any:
+            ev = WorldEvent(
+                title="", description="",
+                event_type="WORLD",  # type: ignore[arg-type]
+                status="pending", origin_tick=new_tick, timeline_index=0,
+                is_rumor=False, spread_json={}, novel_id=novel_id,
+            )
+            db.add(ev)
+            _generate_world_event_text(db, novel, ev, creds)  # 触发即生成内容（无 key 则留空待前端重试）
+            created.append(ev)
+    novel.world_event_config = cfg
+    flag_modified(novel, "world_event_config")
     db.commit()
-    db.refresh(ev)
-    return [ev]
+    for ev in created:
+        db.refresh(ev)
+    return created
 
 
 def build_active_events_summary(db: Session, novel_id: int) -> str:

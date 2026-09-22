@@ -212,6 +212,7 @@
             <button class="nav-btn" data-module="reasoning"><span class="nav-icon">&#129504;</span><span class="nav-label">推理链编辑</span></button>
             <button class="nav-btn" data-module="relations"><span class="nav-icon">🌐</span><span class="nav-label">势力关系</span></button>
             <div class="nav-spacer"></div>
+            <button class="nav-btn" id="world-event-btn"><span class="nav-icon">🌍</span><span class="nav-label">世界事件</span></button>
             <button class="nav-btn" id="prompt-settings-btn"><span class="nav-icon">&#9965;</span><span class="nav-label">提示词</span></button>
             <button class="nav-btn" id="export-btn"><span class="nav-icon">&#128229;</span><span class="nav-label">导出设定</span></button>
             <button class="nav-btn" id="settings-btn"><span class="nav-icon">&#9881;</span><span class="nav-label">设置</span></button>
@@ -600,6 +601,19 @@
                             <button id="tl-detail-delete" class="sys-btn sys-btn-danger" style="margin-right:auto;">🗑 删除</button>
                             <button id="tl-detail-cancel">取消</button>
                             <button id="tl-detail-save" class="btn-primary">💾 保存</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 世界事件审核弹窗（#T007 离屏模拟） -->
+                <div id="world-event-modal" class="modal hidden">
+                    <div class="modal-backdrop"></div>
+                    <div class="modal-box" style="width:560px;max-height:85vh;display:flex;flex-direction:column;">
+                        <h3>🌍 世界事件审核 <span style="font-weight:400;font-size:.72rem;color:var(--text-muted);">主线镜头之外正在发生的事</span></h3>
+                        <p style="font-size:.74rem;color:var(--text-muted);margin-bottom:6px;line-height:1.5;">时间推进后，主线之外会由 AI 生成「世界事件」草稿，请逐条审核。采纳后写入 🌍 世界时间线，并可能通过传闻影响主线。</p>
+                        <div id="we-list" style="overflow-y:auto;flex:1;min-height:60px;"></div>
+                        <div class="modal-actions">
+                            <button id="we-refresh" class="sys-btn sys-btn-ghost" style="margin-right:auto;">🔄 刷新</button>
+                            <button id="we-close">关闭</button>
                         </div>
                     </div>
                 </div>

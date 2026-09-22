@@ -65,9 +65,8 @@ class Novel(Base):
     current_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     world_event_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {
         "enabled": True,
-        "prob_per_month": 0.35,
-        "max_pending": 3,
-        "last_check_tick": 0,
+        "prob_per_month": 0.35,  # 每月基准触发概率
+        "pending_days": 0.0,     # 参与概率判定的累计时间长度（天）：采纳 → 清零；拒绝 → 减半后继续累计
     })
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

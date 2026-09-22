@@ -1,6 +1,8 @@
-"""#T007 离屏世界事件 · 触发器最小单测。
+"""#T007 离屏世界事件 · 触发器 + 审核 最小单测。
 
-覆盖：大跨度必触发 / 同区间幂等 / max_pending 上限 / enabled 开关 / 不回溯 / 可复现 / 提示词过滤。
+机制：累加「参与概率判定的时间长度」`pending_days`（天）→ 无待审核事件时
+按 p = 1 - (1 - prob_per_month) ** 月数 掷骰触发；采纳 → 计数清零并写入 world 时间线；
+拒绝 → 计数**减半**后继续累积（避免拒绝一次后每月都弹窗）。
 conftest.py 已把工作目录切到临时目录，数据库落在隔离的临时 .data/novel.db。
 """
 import pytest
@@ -8,7 +10,8 @@ import pytest
 from backend import main as M
 from backend.database import Base, engine, SessionLocal
 
-TICKS_PER_MONTH = 30 * 24  # 默认历法：30 天/月 × 24 时/天 = 720
+HPD = 24            # 默认历法：24 时/天
+DPM = 30            # 30 天/月
 
 
 def setup_module(module):
@@ -17,74 +20,103 @@ def setup_module(module):
 
 @pytest.fixture(autouse=True)
 def _clean():
-    """每个用例前清空世界事件并复位小说时间/触发配置。"""
+    """每个用例前清空世界事件/时间线并复位小说时间与配置。"""
     with SessionLocal() as db:
         db.query(M.WorldEvent).delete()
+        db.query(M.TimelineEvent).delete()
         nv = db.get(M.Novel, 1)
         if nv is None:
             nv = M.Novel(id=1, title="测试小说")
             db.add(nv)
         nv.current_tick = 0
-        nv.calendar_config = {"months_per_year": 12, "days_per_month": 30, "hours_per_day": 24}
-        nv.world_event_config = {"enabled": True, "prob_per_month": 0.35, "max_pending": 3, "last_check_tick": 0}
+        nv.calendar_config = {"months_per_year": 12, "days_per_month": DPM, "hours_per_day": HPD}
+        nv.world_event_config = {"enabled": True, "prob_per_month": 1.0, "pending_days": 0.0}
         db.commit()
     yield
 
 
-def test_large_span_triggers_pending_draft():
-    """推进一年 → p≈1 → 必生成一条待审核草稿。"""
+def _pending_days(db):
+    return float((db.get(M.Novel, 1).world_event_config or {}).get("pending_days", 0.0))
+
+
+def test_prob1_triggers_pending_draft():
+    """prob=1 → 任意推进都触发一条待审核草稿。"""
     with SessionLocal() as db:
-        created = M.check_world_event_triggers(db, 1, 0, 12 * TICKS_PER_MONTH)
+        created = M.check_world_event_triggers(db, 1, 0, 5 * HPD)  # 推进 5 天
         assert len(created) == 1
-        ev = created[0]
-        assert ev.status == "pending"
-        assert ev.origin_tick == 12 * TICKS_PER_MONTH
-        assert ev.is_rumor is False
+        assert created[0].status == "pending"
+        assert created[0].origin_tick == 5 * HPD
+        assert _pending_days(db) == pytest.approx(5.0)
 
 
-def test_same_span_is_idempotent():
-    """同一 (prev,new) 区间重复调用不重复生成。"""
-    with SessionLocal() as db:
-        a = M.check_world_event_triggers(db, 1, 0, 12 * TICKS_PER_MONTH)
-        b = M.check_world_event_triggers(db, 1, 0, 12 * TICKS_PER_MONTH)
-        assert len(a) == 1
-        assert len(b) == 0
-
-
-def test_respects_max_pending():
-    """待审核数量达到 max_pending 后不再生成。"""
+def test_prob0_accumulates_but_never_triggers():
+    """prob=0 → 不触发，但累计时间长度持续增长。"""
     with SessionLocal() as db:
         nv = db.get(M.Novel, 1)
-        nv.world_event_config = {"enabled": True, "prob_per_month": 1.0, "max_pending": 2}
+        nv.world_event_config = {"enabled": True, "prob_per_month": 0.0, "pending_days": 0.0}
         db.commit()
-        assert len(M.check_world_event_triggers(db, 1, 0, TICKS_PER_MONTH)) == 1
-        assert len(M.check_world_event_triggers(db, 1, TICKS_PER_MONTH, 2 * TICKS_PER_MONTH)) == 1
-        assert len(M.check_world_event_triggers(db, 1, 2 * TICKS_PER_MONTH, 3 * TICKS_PER_MONTH)) == 0
+        assert M.check_world_event_triggers(db, 1, 0, 30 * HPD) == []
+        assert _pending_days(db) == pytest.approx(30.0)
+
+
+def test_pending_blocks_new_trigger_but_time_accumulates():
+    """存在未处理 pending 时不再新建，但累计时间继续增长。"""
+    with SessionLocal() as db:
+        assert len(M.check_world_event_triggers(db, 1, 0, 1 * HPD)) == 1
+        assert M.check_world_event_triggers(db, 1, 1 * HPD, 3 * HPD) == []
+        assert _pending_days(db) == pytest.approx(3.0)
+
+
+def test_accept_clears_counter_and_writes_world_timeline():
+    with SessionLocal() as db:
+        ev = M.check_world_event_triggers(db, 1, 0, 10 * HPD)[0]
+        ev.title = "北境雪灾"  # 模拟已有生成内容
+        db.commit()
+        out = M.accept_world_event(ev.id, db=db)
+        assert out.status == "accepted" and out.is_rumor is True
+        assert _pending_days(db) == pytest.approx(0.0)
+        tes = db.query(M.TimelineEvent).all()
+        assert len(tes) == 1
+        assert tes[0].event_type == M.TimelineEventType.WORLD
+        assert tes[0].title == "北境雪灾"
+        assert tes[0].absolute_tick == 10 * HPD
+
+
+def test_reject_halves_counter():
+    with SessionLocal() as db:
+        ev = M.check_world_event_triggers(db, 1, 0, 10 * HPD)[0]
+        assert _pending_days(db) == pytest.approx(10.0)
+        out = M.reject_world_event(ev.id, db=db)
+        assert out.status == "rejected"
+        assert _pending_days(db) == pytest.approx(5.0)  # 减半后继续累计
 
 
 def test_disabled_switch():
-    """enabled=False 时永不触发。"""
     with SessionLocal() as db:
         nv = db.get(M.Novel, 1)
         nv.world_event_config = {"enabled": False}
         db.commit()
-        assert M.check_world_event_triggers(db, 1, 0, 12 * TICKS_PER_MONTH) == []
+        assert M.check_world_event_triggers(db, 1, 0, 100 * HPD) == []
 
 
 def test_no_trigger_on_non_advance():
-    """时间未前进（相等/倒退）不触发。"""
     with SessionLocal() as db:
         assert M.check_world_event_triggers(db, 1, 100, 100) == []
         assert M.check_world_event_triggers(db, 1, 100, 50) == []
 
 
 def test_reproducible_same_span():
-    """同一区间的随机判定可复现（种子由 novel_id/prev/new 决定）。"""
+    """同一区间的概率判定可复现（种子由 novel_id/prev/new 决定）。"""
     with SessionLocal() as db:
-        r1 = M.check_world_event_triggers(db, 1, 0, 60)  # 小跨度 → 小概率
-        db.query(M.WorldEvent).delete()
+        nv = db.get(M.Novel, 1)
+        nv.world_event_config = {"enabled": True, "prob_per_month": 0.5, "pending_days": 0.0}
         db.commit()
-        r2 = M.check_world_event_triggers(db, 1, 0, 60)
+        r1 = M.check_world_event_triggers(db, 1, 0, 2 * HPD)
+        db.query(M.WorldEvent).delete()
+        nv = db.get(M.Novel, 1)
+        nv.world_event_config = {"enabled": True, "prob_per_month": 0.5, "pending_days": 0.0}
+        db.commit()
+        r2 = M.check_world_event_triggers(db, 1, 0, 2 * HPD)
         assert len(r1) == len(r2)
 
 

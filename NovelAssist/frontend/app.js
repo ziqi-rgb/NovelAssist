@@ -830,6 +830,88 @@ document.getElementById("ae-add-burst")?.addEventListener("click", () => _aeDeta
 document.getElementById("ae-graduate-main")?.addEventListener("click", () => { if (_aeMainNode) _aeGraduate(_aeMainNode); else alert("当前没有主干事件"); });
 document.getElementById("ae-del-main")?.addEventListener("click", () => { if (_aeMainNode && confirm("删除该主干及其所有分支/突发？")) apiDel("/api/active_events", _aeMainNode.id).then(loadActiveEvents); });
 
+/* ═══════════ 世界事件审核（#T007 离屏模拟） ═══════════ */
+(function initWorldEventReview() {
+    const modal = document.getElementById("world-event-modal");
+    if (!modal) return;
+    const listEl = document.getElementById("we-list");
+
+    async function fetchPending() {
+        try {
+            return await (await fetch(`/api/world_events?status=pending&novel_id=${currentNovelId}`)).json();
+        } catch (err) { return []; }
+    }
+
+    function renderWorldEventDrafts(items) {
+        listEl.innerHTML = "";
+        if (!items.length) {
+            listEl.innerHTML = '<p class="placeholder">暂无待审核的世界事件。\n时间推进后，主线镜头之外可能触发离屏世界事件。</p>';
+            return;
+        }
+        items.forEach(it => {
+            const card = document.createElement("div");
+            card.className = "we-card";
+            const label = (it.origin_tick != null) ? formatTickToLoreTime(it.origin_tick) : "—";
+            const body = it.description
+                ? e(it.description)
+                : '<span style="color:var(--text-muted);">（尚未生成内容，点击「重新生成」调用 AI）</span>';
+            card.innerHTML =
+                `<div class="we-card-head">🌍 <b>${e(it.title || "(未命名)")}</b> <span class="we-time">${e(label)}</span></div>` +
+                `<div class="we-card-body">${body}</div>`;
+            const actions = document.createElement("div");
+            actions.className = "we-card-actions";
+            const btnAccept = document.createElement("button"); btnAccept.className = "sys-btn sys-btn-primary"; btnAccept.textContent = "✔ 采纳";
+            const btnReject = document.createElement("button"); btnReject.className = "sys-btn"; btnReject.textContent = "✘ 拒绝";
+            const btnRegen = document.createElement("button"); btnRegen.className = "sys-btn sys-btn-ghost"; btnRegen.textContent = "✨ 重新生成";
+            btnAccept.addEventListener("click", () => reviewAction(it.id, "accept", btnAccept));
+            btnReject.addEventListener("click", () => reviewAction(it.id, "reject", btnReject));
+            btnRegen.addEventListener("click", () => reviewAction(it.id, "generate", btnRegen));
+            actions.append(btnAccept, btnReject, btnRegen);
+            card.appendChild(actions);
+            listEl.appendChild(card);
+        });
+    }
+
+    async function reviewAction(id, action, btn) {
+        const old = btn ? btn.textContent : "";
+        if (btn) { btn.disabled = true; btn.textContent = "…"; }
+        try {
+            const opts = { method: "POST", headers: { "Content-Type": "application/json" } };
+            if (action === "generate") {
+                const s = getSettings();
+                if (!s.apiKey) { document.getElementById("settings-modal").classList.remove("hidden"); return; }
+                opts.body = JSON.stringify({ api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider });
+            }
+            const res = await fetch(`/api/world_events/${id}/${action}`, opts);
+            const data = await res.json();
+            if (!res.ok) { alert("操作失败: " + (data.detail || res.status)); return; }
+            if (action === "accept") { showToast("✅ 世界事件已采纳，写入世界时间线"); loadTimeline(); }
+            else if (action === "reject") { showToast("已拒绝该世界事件"); }
+            renderWorldEventDrafts(await fetchPending());
+        } catch (err) { alert("操作失败: " + err.message); }
+        finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+    }
+
+    window.openWorldEventReview = function () {
+        modal.classList.remove("hidden");
+        fetchPending().then(renderWorldEventDrafts);
+    };
+    window.checkWorldEventsAndPopup = async function () {
+        if (!modal.classList.contains("hidden")) return;
+        const items = await fetchPending();
+        if (items.length) {
+            showToast(`🌍 有 ${items.length} 条待审核的世界事件`);
+            renderWorldEventDrafts(items);
+            modal.classList.remove("hidden");
+        }
+    };
+
+    document.getElementById("world-event-btn")?.addEventListener("click", window.openWorldEventReview);
+    document.getElementById("we-close")?.addEventListener("click", () => modal.classList.add("hidden"));
+    document.getElementById("we-refresh")?.addEventListener("click", () => fetchPending().then(renderWorldEventDrafts));
+    modal.querySelector(".modal-backdrop")?.addEventListener("click", () => modal.classList.add("hidden"));
+})();
+
 // 编辑区顶部事件轴：默认折叠，点标题展开并加载
 (function initAeBar() {
     const bar = document.getElementById("ae-bar");
@@ -1001,6 +1083,7 @@ document.getElementById("archive-selected-btn").addEventListener("click", async 
         await loadCharacters();
         await loadTimeline();
         loadNovelTime();
+        window.checkWorldEventsAndPopup && window.checkWorldEventsAndPopup();  // 推进时间后检查离屏世界事件
         if (currentChapterId) { selectChapter({ id: currentChapterId, title: titleInput.value, content: contentInput.value, archived_content: document.getElementById("archived-content-viewer").textContent, volume_id: currentVolumeId }); }
     } catch (e) { showToast("归档失败: " + e.message); }
     finally { contentInput.disabled = false; hideArchiveOverlay(); }
@@ -6824,6 +6907,7 @@ async function refreshAll() {
 }
 document.addEventListener("DOMContentLoaded", async () => {
     await loadNovels(); if (chainSelect) await loadChainSelect(); await refreshAll();
+    window.checkWorldEventsAndPopup && window.checkWorldEventsAndPopup();  // 打开应用时提示待审核世界事件
     document.getElementById("new-volume-btn").addEventListener("click", createNewVolume);
     document.getElementById("new-chapter-btn").addEventListener("click", createNewChapter);
     document.getElementById("new-character-btn").addEventListener("click", createNewCharacter);
@@ -6867,6 +6951,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.currentTick = dateToTick(y, m, d, h, window.novelTimeConfig);
         await fetch("/api/novels/" + currentNovelId + "/time", { method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ current_tick: window.currentTick, calendar_config: window.novelTimeConfig }) });
         updateGlobalClockDisplay();
+        window.checkWorldEventsAndPopup && window.checkWorldEventsAndPopup();  // 推进时间后检查离屏世界事件
         document.getElementById("time-settings-modal").classList.add("hidden");
     });
 });
