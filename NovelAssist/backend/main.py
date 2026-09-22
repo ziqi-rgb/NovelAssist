@@ -156,6 +156,18 @@ def resolve_provider(provider_id: Optional[str], base_url: Optional[str]) -> dic
     return {"id": "custom", **PROVIDERS["custom"]}
 
 
+def llm_debug_log(record: dict) -> None:
+    """可选 LLM 调试日志：设置环境变量 LLM_DEBUG_LOG=<文件路径> 后，记录每次 LLM 请求的 messages 与参数。"""
+    path = os.getenv("LLM_DEBUG_LOG", "")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 AGENT_TOOLS = [
     {
         "type": "function",
@@ -2745,6 +2757,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                     extra["tool_choice"] = "auto"
                 if rf:
                     extra["response_format"] = rf
+                llm_debug_log({"where": "async_llm_stream", "model": model, "provider": prov.get("id"), "has_tools": bool(extra.get("tools")), "response_format": rf, "messages": messages})
                 stream = await client.chat.completions.create(
                     model=model, messages=messages, temperature=0.8, stream=True, **extra,
                 )
@@ -3670,6 +3683,8 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
         async def prefix_gen():
             buf = ""
             decided = not prefix_tail  # 上下文续写路径直接转发；前缀路径需先剥离可能回显的前缀
+            llm_debug_log({"where": "copilot_prefix", "model": model, "provider": prov.get("id"), "prefix_mode": prefix_field, "url": cont_url, "messages": msgs})
+            raw_all: list[str] = []
             async with httpx.AsyncClient(timeout=120) as client:
                 async with client.stream(
                     "POST", cont_url,
@@ -3690,6 +3705,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                         content = delta.get("content")
                         if not content:
                             continue
+                        raw_all.append(str(content))
                         if decided:
                             yield f"data: {json.dumps({'type':'chunk','content':content})}\n\n"
                             continue
@@ -3706,6 +3722,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                             yield f"data: {json.dumps({'type':'chunk','content':buf})}\n\n"
             if not decided and buf and not buf.startswith(prefix_tail):
                 yield f"data: {json.dumps({'type':'chunk','content':buf})}\n\n"
+            llm_debug_log({"where": "copilot_prefix", "raw_response": "".join(raw_all)})
             yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(prefix_gen(), media_type="text/event-stream")
 
