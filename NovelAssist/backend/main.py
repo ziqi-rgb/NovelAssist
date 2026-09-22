@@ -1135,6 +1135,7 @@ def update_novel_time(novel_id: int, req: NovelTimeUpdate, db: Session = Depends
     novel.current_tick = req.current_tick
     novel.calendar_config = req.calendar_config
     db.commit()
+    sync_active_bursts(db, novel_id)
     return {"msg": "OK"}
 
 @app.get("/api/status")
@@ -1545,6 +1546,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
     # Apply world time advancement
     if pending_tick_advance > 0 and novel:
         novel.current_tick += pending_tick_advance
+        sync_active_bursts(db, novel.id)  # 时间推进后：到期的突发自动转分支
 
     # Create timeline events
     for te in pending_timeline_events:
@@ -2207,6 +2209,24 @@ def _delete_active_subtree(db: Session, node_id: int) -> None:
         db.delete(obj)
 
 
+def sync_active_bursts(db: Session, novel_id: int) -> int:
+    """历法时间越过预填「突发」的时间点后，自动将其转为「分支」（未来规划 → 已发生记录）。"""
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        return 0
+    cur = novel.current_tick or 0
+    bursts = db.scalars(select(ActiveEventNode).where(
+        ActiveEventNode.novel_id == novel_id,
+        ActiveEventNode.kind == ActiveEventKind.BURST,
+        ActiveEventNode.tick <= cur,
+    )).all()
+    for b in bursts:
+        b.kind = ActiveEventKind.BRANCH
+    if bursts:
+        db.commit()
+    return len(bursts)
+
+
 def build_active_events_summary(db: Session, novel_id: int) -> str:
     """汇总活跃事件树 → 注入写作/推演 LLM 的「正在发生的剧情」文本（易变区）"""
     nodes = db.scalars(
@@ -2233,7 +2253,12 @@ def build_active_events_summary(db: Session, novel_id: int) -> str:
         names.extend(str(x) for x in (node.extra_characters or []))
         return "、".join(names)
 
-    lines = ["【正在发生的剧情】"]
+    cur_tick = (novel.current_tick if novel else 0) or 0
+    lines = [
+        "【正在发生的剧情】",
+        "※ 请先以『当前世界时间』为基准确认时态——起点在此刻之前的为主干/已发生；标注『待发生』的尚未发生。",
+        f"当前世界时间：{_fmt(cur_tick)}",
+    ]
     for m in mains:
         loc = f"；地点：{m.location.name}" if m.location else ""
         end = f"；结束：{_fmt(m.end_tick)}" if m.end_tick is not None else ""
@@ -2244,11 +2269,13 @@ def build_active_events_summary(db: Session, novel_id: int) -> str:
             lines.append(f"  {m.content}")
         kids = sorted([n for n in nodes if n.parent_id == m.id], key=lambda n: n.tick)
         for c in kids:
-            marker = "⚡ 突发" if c.kind == ActiveEventKind.BURST else "🌿 分支"
             suffix = f"：{c.content}" if c.content else ""
             kpart = _participants(c)
             kpart_str = f"（参与：{kpart}）" if kpart else ""
-            lines.append(f"  ├ {marker}@{_fmt(c.tick)}：{c.title}{suffix}{kpart_str}")
+            if c.kind == ActiveEventKind.BURST:
+                lines.append(f"  ├ ⚡ 突发@{_fmt(c.tick)}【待发生】：{c.title}{suffix}{kpart_str}")
+            else:
+                lines.append(f"  ├ 🌿 分支@{_fmt(c.tick)}【已发生】：{c.title}{suffix}{kpart_str}")
     return "\n".join(lines)
 
 
@@ -2303,6 +2330,7 @@ class GraduateRequest(BaseModel):
 
 @app.get("/api/active_events", response_model=list[ActiveEventOut])
 def list_active_events(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    sync_active_bursts(db, novel_id)
     return db.scalars(
         select(ActiveEventNode).where(ActiveEventNode.novel_id == novel_id).order_by(ActiveEventNode.tick, ActiveEventNode.id)
     ).all()
@@ -4248,6 +4276,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         added_ticks = (days * hpd) + hours
         novel.current_tick += added_ticks
         db.commit()
+        sync_active_bursts(db, novel.id)  # 时间推进后：到期的突发自动转分支
         return {"status": "success", "msg": f"世界时间已推进 {days} 天 {hours} 小时"}
 
     if req.tool_name == "query_world_state":

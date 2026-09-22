@@ -154,3 +154,25 @@ def test_manage_active_event_tool():
         r5 = call({"action": "delete", "id": mid})
         assert r5["status"] == "success"
         assert all(n.id != mid for n in M.list_active_events(novel_id=1, db=db))
+
+
+def test_sync_burst_to_branch_on_time_advance():
+    """历法时间越过预定的「突发」后，自动转为「分支」。"""
+    with SessionLocal() as db:
+        novel = db.get(M.Novel, 1)
+        novel.current_tick = 0
+        db.commit()
+        m = M.create_active_event(M.ActiveEventCreate(kind="main", title="时序主干", tick=0), novel_id=1, db=db)
+        b = M.create_active_event(M.ActiveEventCreate(kind="burst", parent_id=m.id, title="未来事件", tick=50), novel_id=1, db=db)
+
+        M.sync_active_bursts(db, 1)
+        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BURST  # 尚未越过
+
+        novel.current_tick = 60
+        db.commit()
+        assert M.sync_active_bursts(db, 1) >= 1
+        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BRANCH  # 已越过 → 转分支
+
+        summary = M.build_active_events_summary(db, 1)
+        assert "当前世界时间" in summary
+        assert "未来事件" in summary and "已发生" in summary
