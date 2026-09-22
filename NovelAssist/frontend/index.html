@@ -955,10 +955,10 @@
         <div class="ae-win-body">
             <label>事件名称</label>
             <input type="text" id="ae-win-title-input" placeholder="事件名称">
-            <label>时间点 tick <button type="button" id="ae-win-now" class="sys-btn" style="font-size:.65rem;padding:1px 6px;margin-left:6px;">📅 现在</button></label>
+            <label id="ae-win-tick-label"><span id="ae-win-tick-text">时间点 tick</span> <button type="button" id="ae-win-now" class="sys-btn" style="font-size:.65rem;padding:1px 6px;margin-left:6px;">📅 现在</button></label>
             <input type="number" id="ae-win-tick" placeholder="0">
             <div id="ae-win-end-wrap">
-                <label>结束 tick（事件区间终点，可留空）</label>
+                <label id="ae-win-end-label"><span id="ae-win-end-text">结束 tick（可留空）</span></label>
                 <input type="number" id="ae-win-end" placeholder="可留空">
             </div>
             <label>事件内容</label>

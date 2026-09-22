@@ -523,7 +523,16 @@ let _aeWinKind = "branch";
 let _aeWinParent = null;
 let _aeWinCharIds = [];    // 角色库角色 id（含新建的自定义角色）
 let _aeWinExtra = [];      // 龙套角色姓名（仅本事件）
+let _aeWinMainTick = 0;    // 当前主干起点（分支/突发的时间点以它为相对基准）
 
+function _aeTickStep(span) {
+    // 依主线跨度选最小刻度：取使 span/单位 >= 5 的最大单位（年/月/日/时）
+    const cfg = window.novelTimeConfig || {};
+    const hpd = cfg.hours_per_day || 24, dpm = cfg.days_per_month || 30, mpy = cfg.months_per_year || 12;
+    const units = [["年", mpy * dpm * hpd], ["月", dpm * hpd], ["日", hpd], ["时", 1]];
+    for (const u of units) { if (span / u[1] >= 5) return { step: u[1], unit: u[0] }; }
+    return { step: 1, unit: "时" };
+}
 async function _aePopulateCharSelect() {
     const sel = document.getElementById("ae-win-char-select");
     sel.innerHTML = '<option value="">— 选择角色库角色 —</option>';
@@ -565,10 +574,28 @@ async function _aeDetailOpen(node, kind, parentId) {
     const kindLabel = { main: "主干", branch: "分支", burst: "突发" }[_aeWinKind] || "事件";
     document.getElementById("ae-win-title").textContent = (node ? "编辑" : "新建") + kindLabel + "事件";
     document.getElementById("ae-win-title-input").value = node ? (node.title || "") : "";
-    document.getElementById("ae-win-tick").value = node ? (node.tick || 0) : (window.currentTick || 0);
+    const isMain = _aeWinKind === "main";
+    const mainNode = isMain ? node : _aeMainNode;
+    _aeWinMainTick = mainNode ? (mainNode.tick || 0) : 0;
+    let spanEnd = mainNode ? mainNode.end_tick : null;
+    if (spanEnd === null || spanEnd === undefined) spanEnd = Math.max(window.currentTick || 0, _aeWinMainTick + 1);
+    const tickStep = _aeTickStep(Math.max(1, spanEnd - _aeWinMainTick));
+    const tickInput = document.getElementById("ae-win-tick");
+    const endInput = document.getElementById("ae-win-end");
+    tickInput.step = String(tickStep.step);
+    endInput.step = String(tickStep.step);
+    const absTick = node ? (node.tick || 0) : (window.currentTick || 0);
+    tickInput.value = isMain ? absTick : (absTick - _aeWinMainTick);  // 分支/突发：相对主干起点
+    const absEnd = (node && node.end_tick !== null && node.end_tick !== undefined) ? node.end_tick : null;
+    endInput.value = (absEnd === null) ? "" : (isMain ? absEnd : (absEnd - _aeWinMainTick));
+    document.getElementById("ae-win-tick-text").textContent = isMain
+        ? "时间点 tick（绝对）"
+        : ("相对时间点（相对主干起点，最小刻度 1" + tickStep.unit + "）");
+    document.getElementById("ae-win-end-text").textContent = isMain
+        ? "结束 tick（可留空）"
+        : ("结束（相对主干起点，最小刻度 1" + tickStep.unit + "，可留空）");
     document.getElementById("ae-win-content").value = node ? (node.content || "") : "";
     document.getElementById("ae-win-end-wrap").classList.remove("hidden");
-    document.getElementById("ae-win-end").value = (node && node.end_tick !== null && node.end_tick !== undefined) ? node.end_tick : "";
     document.getElementById("ae-win-newchar-form").classList.add("hidden");
     ["ae-win-nc-name", "ae-win-nc-alias", "ae-win-nc-desc"].forEach(id => { document.getElementById(id).value = ""; });
     document.getElementById("ae-win-nc-status").value = "存活";
@@ -582,15 +609,18 @@ function _aeDetailClose() {
     _aeWinNode = null;
 }
 async function _aeDetailSave() {
+    const isMain = _aeWinKind === "main";
+    const base = isMain ? 0 : (_aeWinMainTick || 0);  // 分支/突发：相对值折算回绝对 tick
+    const tickVal = parseInt(document.getElementById("ae-win-tick").value);
+    const ev = document.getElementById("ae-win-end").value;
     const body = {
         kind: _aeWinKind, parent_id: _aeWinParent,
         title: document.getElementById("ae-win-title-input").value.trim(),
         content: document.getElementById("ae-win-content").value,
-        tick: parseInt(document.getElementById("ae-win-tick").value) || 0,
+        tick: (isNaN(tickVal) ? 0 : tickVal) + base,
+        end_tick: ev ? ((parseInt(ev) || 0) + base) : null,
         character_ids: _aeWinCharIds, extra_characters: _aeWinExtra,
     };
-    const ev = document.getElementById("ae-win-end").value;
-    body.end_tick = ev ? (parseInt(ev) || null) : null;
     let res;
     if (_aeWinNode) {
         res = await fetch(`/api/active_events/${_aeWinNode.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -608,7 +638,11 @@ async function _aeDetailSave() {
     document.getElementById("ae-win-cancel").addEventListener("click", _aeDetailClose);
     document.getElementById("ae-win-save").addEventListener("click", _aeDetailSave);
     document.getElementById("ae-win-now").addEventListener("click", async () => {
-        try { const nv = await (await fetch(`/api/novels/${currentNovelId}`)).json(); document.getElementById("ae-win-tick").value = nv.current_tick || 0; } catch (e) { /* ignore */ }
+        try {
+            const nv = await (await fetch(`/api/novels/${currentNovelId}`)).json();
+            const cur = nv.current_tick || 0;
+            document.getElementById("ae-win-tick").value = (_aeWinKind === "main") ? cur : Math.max(0, cur - (_aeWinMainTick || 0));
+        } catch (e) { /* ignore */ }
     });
     document.getElementById("ae-win-char-add").addEventListener("click", () => {
         const sel = document.getElementById("ae-win-char-select"); const cid = parseInt(sel.value);
