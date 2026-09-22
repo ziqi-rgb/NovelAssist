@@ -2845,66 +2845,71 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
 
     novel = db.get(Novel, req.novel_id)
     ctx = req.context_settings or {}
-    final_prompt = resolved_prompt
-    if ctx.get("use_outlines") or ctx.get("use_characters") or ctx.get("use_timeline"):
-        current_tick = novel.current_tick if novel else 0
-        cfg = novel.calendar_config if novel else {}
-        blocks: list[str] = []
-        lore_time = CalendarEngine.format_tick_to_lore_time(current_tick, cfg)
-        blocks.append(f"【当前世界时间】: {lore_time}")
+    current_tick = novel.current_tick if novel else 0
+    cfg = novel.calendar_config if novel else {}
+    has_ctx = bool(ctx.get("use_outlines") or ctx.get("use_characters") or ctx.get("use_timeline"))
 
-        if ctx.get("use_outlines"):
-            outlines = db.query(Outline).filter(Outline.novel_id == req.novel_id).order_by(Outline.order_index).all()
-            if outlines:
-                o_lines = [f"- {o.title}: {o.description}" for o in outlines]
-                blocks.append("【世界大纲】:\n" + "\n".join(o_lines))
-            else:
-                blocks.append("【世界大纲】: (暂无)")
+    # ── 世界状态：稳定内容前置（名录/大纲/时间线），易变内容后置（时间/人物坐标）──
+    stable_parts: list[str] = []
+    outlines_list = resolve_placeholders("{outlines_list}", req.novel_id, db)
+    if outlines_list.strip():
+        stable_parts.append(outlines_list)
+    if ctx.get("use_outlines"):
+        outlines = db.query(Outline).filter(Outline.novel_id == req.novel_id).order_by(Outline.order_index).all()
+        if outlines:
+            stable_parts.append("【世界大纲】:\n" + "\n".join(f"- {o.title}: {o.description}" for o in outlines))
+        else:
+            stable_parts.append("【世界大纲】: (暂无)")
+    if ctx.get("use_timeline"):
+        events = db.query(TimelineEvent).filter(TimelineEvent.novel_id == req.novel_id).order_by(TimelineEvent.absolute_tick).all()
+        if events:
+            stable_parts.append("【已发生的时间线事件】:\n" + "\n".join(f"- [{e.time_label}] {e.content}" for e in events))
+        else:
+            stable_parts.append("【已发生的时间线事件】: (暂无)")
 
-        if ctx.get("use_characters"):
-            chars = db.query(Character).filter(Character.novel_id == req.novel_id, Character.is_active).all()
-            if chars:
-                c_lines: list[str] = []
-                for c in chars:
-                    status = get_character_current_status(c.id, current_tick, db)
-                    identity = ""
-                    if c.attributes and isinstance(c.attributes, dict):
-                        identity = c.attributes.get("身份", "")
-                    c_lines.append(f"- {c.name}: [位于 {status['location_name']}] {identity}")
-                blocks.append("【活跃人物与当前坐标】:\n" + "\n".join(c_lines))
-            else:
-                blocks.append("【活跃人物与当前坐标】: (暂无)")
+    volatile_parts: list[str] = []
+    characters_list = resolve_placeholders("{characters_list}", req.novel_id, db)
+    if characters_list.strip():
+        volatile_parts.append(characters_list)
+    if has_ctx:
+        volatile_parts.append(f"【当前世界时间】: {CalendarEngine.format_tick_to_lore_time(current_tick, cfg)}")
+    if ctx.get("use_characters"):
+        chars = db.query(Character).filter(Character.novel_id == req.novel_id, Character.is_active).all()
+        if chars:
+            c_lines: list[str] = []
+            for c in chars:
+                status = get_character_current_status(c.id, current_tick, db)
+                identity = ""
+                if c.attributes and isinstance(c.attributes, dict):
+                    identity = c.attributes.get("身份", "")
+                c_lines.append(f"- {c.name}: [位于 {status['location_name']}] {identity}")
+            volatile_parts.append("【活跃人物与当前坐标】:\n" + "\n".join(c_lines))
+        else:
+            volatile_parts.append("【活跃人物与当前坐标】: (暂无)")
 
-        if ctx.get("use_timeline"):
-            events = db.query(TimelineEvent).filter(TimelineEvent.novel_id == req.novel_id).order_by(TimelineEvent.absolute_tick).all()
-            if events:
-                e_lines = [f"- [{e.time_label}] {e.content}" for e in events]
-                blocks.append("【已发生的时间线事件】:\n" + "\n".join(e_lines))
-            else:
-                blocks.append("【已发生的时间线事件】: (暂无)")
-
-        context_header = (
-            "==== 当前世界状态参考 ====\n"
-            + "\n\n".join(blocks)
-            + "\n\n【⚠️ 增量创建原则 — 必须遵守】:\n"
+    world_state = "==== 当前世界状态参考 ====\n" + "\n\n".join(stable_parts)
+    if has_ctx:
+        world_state += (
+            "\n\n【⚠️ 增量创建原则 — 必须遵守】:\n"
             + "1. 以上是当前世界已有的全部数据。你必须在此基础之上进行补充和扩展。\n"
             + "2. 严禁创建与已有条目标题重复或内容高度相似的条目。如果某个主题已被覆盖，直接跳过。\n"
             + "3. 只规划/创建那些确实缺失且需要新增的内容。\n"
-            + "==========================\n\n"
+            + "==========================\n"
         )
-        final_prompt = context_header + resolved_prompt
+    if volatile_parts:
+        world_state += "\n\n" + "\n\n".join(volatile_parts)
 
-    user_parts = []
+    # ── 任务区（易变，置尾）──
+    task_parts: list[str] = []
     if req.previous_output:
-        user_parts.append(f"[前置内容/上文]:\n{req.previous_output}")
+        task_parts.append(f"[前置内容/上文]:\n{req.previous_output}")
     if resolved_premise:
-        user_parts.append(f"[当前情景]:\n{resolved_premise}")
-    if final_prompt:
-        user_parts.append(f"[推演指令]:\n{final_prompt}")
+        task_parts.append(f"[当前情景]:\n{resolved_premise}")
+    if resolved_prompt:
+        task_parts.append(f"[推演指令]:\n{resolved_prompt}")
     if resolved_target:
-        user_parts.append(f"[输出要求]:\n{resolved_target}")
+        task_parts.append(f"[输出要求]:\n{resolved_target}")
 
-    # 🎯 写入目标硬编码注入
     wt = req.write_to
     if wt and wt.get("entity"):
         entity_labels = {"character": "人物", "location": "地点", "outline": "大纲", "faction": "势力", "timeline": "时间线事件"}
@@ -2913,7 +2918,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         if wt.get("sub_field"):
             field_desc += f".{wt['sub_field']}"
         action_desc = {"create": "新建", "update": "更新"}.get(wt.get("action", "create"), "写入")
-        user_parts.append(
+        task_parts.append(
             f"【🎯 硬编码写入目标 — 强制执行，不得忽略】:\n"
             f"你必须将本节点的推理结果写入到: {el} → {field_desc or '默认字段'}\n"
             f"操作类型: {action_desc}\n"
@@ -2921,21 +2926,23 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
             f"如果本节点不产生数据内容（仅做路由判断），则忽略此写入指令。"
         )
 
+    # system 保持纯静态（不含易变占位符）；user = 世界状态（稳定前置）+ 任务（易变置尾）
+    system_content = (
+        "你是小说推演引擎，严格遵守以下【输出铁律】：\n"
+        "1. 绝对不要输出任何解释、客套话、分析性文字（如'好的'、'以下是'、'根据设定'等）。\n"
+        "2. 禁止用 ``` 或 markdown 代码块包裹输出。\n"
+        "3. 如果API要求JSON输出，必须只输出合法JSON，禁止使用【】标记或任何其他格式。\n"
+        "4. 如果[输出要求]中指定了区块格式，必须严格按照区块编号顺序输出，不得跳过或打乱。\n"
+        "5. 如果[输出要求]中要求输出 <ROUTE> 标签，必须在输出末尾精确包含该标签，不得遗漏。\n"
+        "6. 如果[输出要求]中有布尔/选项判断，必须从给定选项中选一个，不得自创。\n"
+        "7. 当用户指令明确要求调用工具操作某个实体时，必须调用对应工具，参数中的名称、描述等必须与指令完全一致。"
+    )
+
     messages = [
-        {"role": "system", "content": resolve_placeholders(
-            "你是小说推演引擎，严格遵守以下【输出铁律】：\n"
-            "1. 绝对不要输出任何解释、客套话、分析性文字（如'好的'、'以下是'、'根据设定'等）。\n"
-            "2. 禁止用 ``` 或 markdown 代码块包裹输出。\n"
-            "3. 如果API要求JSON输出，必须只输出合法JSON，禁止使用【】标记或任何其他格式。\n"
-            "4. 如果[输出要求]中指定了区块格式，必须严格按照区块编号顺序输出，不得跳过或打乱。\n"
-            "5. 如果[输出要求]中要求输出 <ROUTE> 标签，必须在输出末尾精确包含该标签，不得遗漏。\n"
-            "6. 如果[输出要求]中有布尔/选项判断，必须从给定选项中选一个，不得自创。\n"
-            "7. 当用户指令明确要求调用工具操作某个实体时，必须调用对应工具，参数中的名称、描述等必须与指令完全一致。\n"
-            "{outlines_list}\n{characters_list}",
-            req.novel_id, db,
-        )},
-        {"role": "user", "content": "\n\n".join(user_parts)},
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": world_state + "\n\n" + "\n\n".join(task_parts)},
     ]
+
     return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=(None if req.no_tools else AGENT_TOOLS), response_format=req.response_format, max_loops=req.max_loops, provider=req.provider)
 
 
