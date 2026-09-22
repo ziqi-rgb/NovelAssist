@@ -445,9 +445,9 @@ function renderEventsTree(nodes) {
 
         const endStr = (m.end_tick !== null && m.end_tick !== undefined) ? ` → ${_aeTickLabel(m.end_tick)}` : "";
         const label = document.createElement("div"); label.className = "ae-main-label";
-        label.textContent = `◆ 主干：${m.title || '(无标题)'}（${_aeTickLabel(m.tick)}${endStr}）`;
+        label.innerHTML = `<span>◆ 主干：${e(m.title || '(无标题)')}</span><span class="ae-main-time">${e(_aeTickLabel(m.tick))}${e(endStr)}</span>`;
         label.title = m.content || m.title || "";
-        label.addEventListener("click", () => _aeEditNode(m));
+        label.addEventListener("click", () => _aeDetailOpen(m));
         track.appendChild(label);
 
         kids.forEach(c => {
@@ -461,44 +461,152 @@ function renderEventsTree(nodes) {
             const stem = '<span class="ae-stem"></span>';
             node.innerHTML = isBurst ? (stem + lbl) : (lbl + stem);
             node.title = (c.content || c.title || "") + "\n(点击编辑 · 右键删除)";
-            node.addEventListener("click", () => _aeEditNode(c));
+            node.addEventListener("click", () => _aeDetailOpen(c));
             node.addEventListener("contextmenu", ev => { ev.preventDefault(); if (confirm("删除该节点？")) apiDel("/api/active_events", c.id).then(loadActiveEvents); });
             track.appendChild(node);
         });
         axis.appendChild(track);
     });
 }
-async function _aeCreate(kind) {
-    const mains = (await (await fetch(`/api/active_events?novel_id=${currentNovelId}`)).json()).filter(n => n.kind === "main");
-    const title = prompt(kind === "main" ? "主干事件标题：" : (kind === "burst" ? "突发事件标题：" : "分支事件标题："), "");
-    if (!title) return;
-    const tickStr = prompt("时间点 tick（历法点，留空=当前时间）：", String(window.currentTick || 0));
-    if (tickStr === null) return;
-    const body = { kind: kind, parent_id: (kind !== "main" && mains.length) ? mains[0].id : null, title: title, content: "", tick: parseInt(tickStr) || 0 };
-    if (kind === "main") {
-        const endStr = prompt("主干结束 tick（可留空，写作中再定）：", "");
-        if (endStr) body.end_tick = parseInt(endStr) || null;
-    }
-    await fetch(`/api/active_events?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    loadActiveEvents();
+/* ── 事件详情浮窗（主干/分支/突发通用）── */
+let _aeWinNode = null;     // 编辑中节点；null = 新建
+let _aeWinKind = "branch";
+let _aeWinParent = null;
+let _aeWinCharIds = [];    // 角色库角色 id（含新建的自定义角色）
+let _aeWinExtra = [];      // 龙套角色姓名（仅本事件）
+
+async function _aePopulateCharSelect() {
+    const sel = document.getElementById("ae-win-char-select");
+    sel.innerHTML = '<option value="">— 选择角色库角色 —</option>';
+    try {
+        const chars = await (await fetch(`/api/characters?novel_id=${currentNovelId}`)).json();
+        chars.forEach(c => { _charNameCache[c.id] = c.name; const o = document.createElement("option"); o.value = c.id; o.textContent = c.name; sel.appendChild(o); });
+    } catch (e) { /* ignore */ }
 }
-async function _aeEditNode(n) {
-    const title = prompt("标题：", n.title || "");
-    if (title === null) return;
-    const content = prompt("内容：", n.content || "");
-    const tickStr = prompt("时间点 tick：", String(n.tick || 0));
+function _aeRenderWinPills() {
+    const cp = document.getElementById("ae-win-char-pills");
+    cp.innerHTML = _aeWinCharIds.map(cid => `<span class="ae-win-pill">${e(_charNameCache[cid] || ("ID:" + cid))}<button data-cid="${cid}">&#215;</button></span>`).join("");
+    cp.querySelectorAll("button[data-cid]").forEach(b => b.addEventListener("click", () => { _aeWinCharIds = _aeWinCharIds.filter(x => x !== parseInt(b.dataset.cid)); _aeRenderWinPills(); }));
+    const ep = document.getElementById("ae-win-extra-pills");
+    ep.innerHTML = _aeWinExtra.map((nm, i) => `<span class="ae-win-pill extra">${e(nm)}<button data-i="${i}">&#215;</button></span>`).join("");
+    ep.querySelectorAll("button[data-i]").forEach(b => b.addEventListener("click", () => { _aeWinExtra.splice(parseInt(b.dataset.i), 1); _aeRenderWinPills(); }));
+}
+function _aeWinSetPos(left, top) {
+    const win = document.getElementById("ae-detail-win");
+    const ws = document.getElementById("center-workspace").getBoundingClientRect();
+    const w = win.offsetWidth, h = win.offsetHeight;
+    left = Math.min(Math.max(left, ws.left + 4), Math.max(ws.left + 4, ws.right - w - 4));
+    top = Math.min(Math.max(top, ws.top + 4), Math.max(ws.top + 4, ws.bottom - h - 4));
+    win.style.left = left + "px"; win.style.top = top + "px";
+}
+function _aeWinPosition() {
+    const win = document.getElementById("ae-detail-win");
+    const ws = document.getElementById("center-workspace").getBoundingClientRect();
+    win.style.width = Math.max(320, Math.round(ws.width / 2)) + "px";  // 宽度 = 正文区一半
+    win.style.maxHeight = (window.innerHeight - 24) + "px";            // 最大高度 = 页面高度
+    const w = win.offsetWidth, h = win.offsetHeight;
+    _aeWinSetPos(ws.left + (ws.width - w) / 2, ws.top + Math.max(8, (ws.height - h) / 3));
+}
+async function _aeDetailOpen(node, kind, parentId) {
+    _aeWinNode = node || null;
+    _aeWinKind = node ? node.kind : (kind || "branch");
+    _aeWinParent = node ? node.parent_id : (parentId !== undefined ? parentId : (_aeMainNode ? _aeMainNode.id : null));
+    _aeWinCharIds = node ? (node.character_ids || []).slice() : [];
+    _aeWinExtra = node ? (node.extra_characters || []).slice() : [];
+    const kindLabel = { main: "主干", branch: "分支", burst: "突发" }[_aeWinKind] || "事件";
+    document.getElementById("ae-win-title").textContent = (node ? "编辑" : "新建") + kindLabel + "事件";
+    document.getElementById("ae-win-title-input").value = node ? (node.title || "") : "";
+    document.getElementById("ae-win-tick").value = node ? (node.tick || 0) : (window.currentTick || 0);
+    document.getElementById("ae-win-content").value = node ? (node.content || "") : "";
+    document.getElementById("ae-win-end-wrap").classList.toggle("hidden", _aeWinKind !== "main");
+    document.getElementById("ae-win-end").value = (node && node.end_tick !== null && node.end_tick !== undefined) ? node.end_tick : "";
+    document.getElementById("ae-win-newchar-form").classList.add("hidden");
+    ["ae-win-nc-name", "ae-win-nc-alias", "ae-win-nc-desc"].forEach(id => { document.getElementById(id).value = ""; });
+    document.getElementById("ae-win-nc-status").value = "存活";
+    await _aePopulateCharSelect();
+    _aeRenderWinPills();
+    document.getElementById("ae-detail-win").classList.remove("hidden");
+    _aeWinPosition();
+}
+function _aeDetailClose() {
+    document.getElementById("ae-detail-win").classList.add("hidden");
+    _aeWinNode = null;
+}
+async function _aeDetailSave() {
     const body = {
-        kind: n.kind, parent_id: n.parent_id, title: title,
-        content: content === null ? (n.content || "") : content,
-        tick: parseInt(tickStr) || 0, end_tick: n.end_tick, location_id: n.location_id, character_ids: n.character_ids || [],
+        kind: _aeWinKind, parent_id: _aeWinParent,
+        title: document.getElementById("ae-win-title-input").value.trim(),
+        content: document.getElementById("ae-win-content").value,
+        tick: parseInt(document.getElementById("ae-win-tick").value) || 0,
+        character_ids: _aeWinCharIds, extra_characters: _aeWinExtra,
     };
-    if (n.kind === "main") {
-        const endStr = prompt("结束 tick（留空=进行中）：", (n.end_tick === null || n.end_tick === undefined) ? "" : String(n.end_tick));
-        body.end_tick = endStr ? (parseInt(endStr) || null) : null;
+    if (_aeWinKind === "main") {
+        const ev = document.getElementById("ae-win-end").value;
+        body.end_tick = ev ? (parseInt(ev) || null) : null;
     }
-    await fetch(`/api/active_events/${n.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    let res;
+    if (_aeWinNode) {
+        res = await fetch(`/api/active_events/${_aeWinNode.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    } else {
+        res = await fetch(`/api/active_events?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert("保存失败: " + (d.detail || res.status)); return; }
+    _aeDetailClose();
     loadActiveEvents();
 }
+(function initAeWin() {
+    const win = document.getElementById("ae-detail-win");
+    if (!win) return;
+    document.getElementById("ae-win-close").addEventListener("click", _aeDetailClose);
+    document.getElementById("ae-win-cancel").addEventListener("click", _aeDetailClose);
+    document.getElementById("ae-win-save").addEventListener("click", _aeDetailSave);
+    document.getElementById("ae-win-now").addEventListener("click", async () => {
+        try { const nv = await (await fetch(`/api/novels/${currentNovelId}`)).json(); document.getElementById("ae-win-tick").value = nv.current_tick || 0; } catch (e) { /* ignore */ }
+    });
+    document.getElementById("ae-win-char-add").addEventListener("click", () => {
+        const sel = document.getElementById("ae-win-char-select"); const cid = parseInt(sel.value);
+        if (!cid || _aeWinCharIds.includes(cid)) return; _aeWinCharIds.push(cid); sel.value = ""; _aeRenderWinPills();
+    });
+    document.getElementById("ae-win-extra-add").addEventListener("click", () => {
+        const inp = document.getElementById("ae-win-extra-input"); const nm = inp.value.trim();
+        if (!nm) return; _aeWinExtra.push(nm); inp.value = ""; _aeRenderWinPills();
+    });
+    document.getElementById("ae-win-newchar-btn").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.toggle("hidden"));
+    document.getElementById("ae-win-nc-cancel").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.add("hidden"));
+    document.getElementById("ae-win-nc-save").addEventListener("click", async () => {
+        const name = document.getElementById("ae-win-nc-name").value.trim();
+        if (!name) { alert("请填写新角色名称"); return; }
+        const payload = {
+            name: name,
+            aliases: document.getElementById("ae-win-nc-alias").value.trim(),
+            status: document.getElementById("ae-win-nc-status").value.trim() || "存活",
+            description: document.getElementById("ae-win-nc-desc").value.trim(),
+        };
+        const res = await fetch(`/api/characters?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (!res.ok) { alert("创建角色失败"); return; }
+        const ch = await res.json();
+        _charNameCache[ch.id] = ch.name;
+        if (!_aeWinCharIds.includes(ch.id)) _aeWinCharIds.push(ch.id);
+        document.getElementById("ae-win-newchar-form").classList.add("hidden");
+        ["ae-win-nc-name", "ae-win-nc-alias", "ae-win-nc-desc"].forEach(id => { document.getElementById(id).value = ""; });
+        await _aePopulateCharSelect(); _aeRenderWinPills();
+    });
+    document.getElementById("ae-win-del").addEventListener("click", async () => {
+        if (!_aeWinNode) { _aeDetailClose(); return; }
+        if (!confirm("确认删除该事件？")) return;
+        await apiDel("/api/active_events", _aeWinNode.id);
+        _aeDetailClose(); loadActiveEvents();
+    });
+    // 拖动（限制在中间容器内）
+    const handle = document.getElementById("ae-win-drag");
+    let dragging = false, sx = 0, sy = 0, ol = 0, ot = 0;
+    handle.addEventListener("mousedown", ev => {
+        if (ev.target.id === "ae-win-close") return;
+        const r = win.getBoundingClientRect(); dragging = true; sx = ev.clientX; sy = ev.clientY; ol = r.left; ot = r.top; ev.preventDefault();
+    });
+    document.addEventListener("mousemove", ev => { if (dragging) _aeWinSetPos(ol + (ev.clientX - sx), ot + (ev.clientY - sy)); });
+    document.addEventListener("mouseup", () => { dragging = false; });
+})();
 async function _aeGraduate(m) {
     if (!confirm(`确认结束主干事件「${m.title}」？\n将调用 AI 总结并写入「正文时间线」，随后该主干及其分支/突发将从事件轴移除。`)) return;
     const s = getSettings();
@@ -508,9 +616,9 @@ async function _aeGraduate(m) {
     loadActiveEvents(); loadTimeline();
     showToast("✅ 主干事件已结束并写入正文时间线");
 }
-document.getElementById("ae-add-main")?.addEventListener("click", () => _aeCreate("main"));
-document.getElementById("ae-add-branch")?.addEventListener("click", () => _aeCreate("branch"));
-document.getElementById("ae-add-burst")?.addEventListener("click", () => _aeCreate("burst"));
+document.getElementById("ae-add-main")?.addEventListener("click", () => _aeDetailOpen(null, "main", null));
+document.getElementById("ae-add-branch")?.addEventListener("click", () => _aeDetailOpen(null, "branch"));
+document.getElementById("ae-add-burst")?.addEventListener("click", () => _aeDetailOpen(null, "burst"));
 document.getElementById("ae-graduate-main")?.addEventListener("click", () => { if (_aeMainNode) _aeGraduate(_aeMainNode); else alert("当前没有主干事件"); });
 document.getElementById("ae-del-main")?.addEventListener("click", () => { if (_aeMainNode && confirm("删除该主干及其所有分支/突发？")) apiDel("/api/active_events", _aeMainNode.id).then(loadActiveEvents); });
 

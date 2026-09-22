@@ -2216,6 +2216,7 @@ class ActiveEventCreate(BaseModel):
     location_id: Optional[int] = None
     character_ids: list[int] = []
     character_names: list[str] = []
+    extra_characters: list[str] = []  # 龙套角色姓名（仅本事件）
 
 
 class ActiveEventOut(BaseModel):
@@ -2229,6 +2230,7 @@ class ActiveEventOut(BaseModel):
     end_tick: Optional[int] = None
     location_id: Optional[int] = None
     character_ids: list = []
+    extra_characters: list = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     class Config:
@@ -2273,6 +2275,7 @@ def create_active_event(body: ActiveEventCreate, novel_id: int = Query(default=N
         end_tick=body.end_tick,
         location_id=body.location_id,
         character_ids=_resolve_character_ids(db, novel_id, body.character_ids, body.character_names),
+        extra_characters=body.extra_characters,
     )
     db.add(node)
     db.commit()
@@ -2295,6 +2298,7 @@ def update_active_event(node_id: int, body: ActiveEventCreate, db: Session = Dep
     node.location_id = body.location_id
     if body.character_ids or body.character_names:
         node.character_ids = _resolve_character_ids(db, node.novel_id, body.character_ids, body.character_names)
+    node.extra_characters = body.extra_characters
     db.commit()
     db.refresh(node)
     return node

@@ -221,6 +221,7 @@ class ActiveEventNode(Base):
     end_tick: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # 主轴结束点（作者写作时定）
     location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
     character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    extra_characters: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # 龙套角色姓名（仅本事件，不入角色库）
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

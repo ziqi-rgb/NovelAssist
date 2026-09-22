@@ -106,3 +106,17 @@ def test_graduate_moves_main_to_timeline_and_removes_subtree():
             raise AssertionError("分支不应可毕业")
         except M.HTTPException as exc:
             assert exc.status_code == 400
+
+
+def test_extra_characters_roundtrip():
+    """龙套角色（仅姓名）随事件存取，不进入角色库。"""
+    with SessionLocal() as db:
+        node = M.create_active_event(M.ActiveEventCreate(
+            kind="branch", title="围观群众", tick=3, extra_characters=["路人甲", "路人乙"],
+        ), novel_id=1, db=db)
+        assert list(node.extra_characters) == ["路人甲", "路人乙"]
+
+        upd = M.update_active_event(node.id, M.ActiveEventCreate(
+            kind="branch", title="围观群众", tick=3, extra_characters=["群众丙"],
+        ), db=db)
+        assert list(upd.extra_characters) == ["群众丙"]

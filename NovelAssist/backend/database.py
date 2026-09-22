@@ -135,6 +135,12 @@ def run_migration() -> None:
             db.execute(text("ALTER TABLE locations ADD COLUMN map_y INTEGER"))
             db.commit()
 
+        if "active_events" in insp.get_table_names():
+            ae_cols = [c["name"] for c in insp.get_columns("active_events")]
+            if "extra_characters" not in ae_cols:
+                db.execute(text("ALTER TABLE active_events ADD COLUMN extra_characters JSON DEFAULT '[]'"))
+                db.commit()
+
         rc_cols = [c["name"] for c in insp.get_columns("reasoning_chains")]
         if "todos" not in rc_cols:
             db.execute(text("ALTER TABLE reasoning_chains ADD COLUMN todos JSON DEFAULT '[]'"))
