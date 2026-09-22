@@ -403,6 +403,7 @@ document.getElementById("tl-detail-delete").addEventListener("click", async () =
 });
 
 /* ═══════════ ActiveEvents (事件树 #T005：编辑区顶部横向轴) ═══════════ */
+let _aeMainNode = null;  // 当前唯一主干（供标题栏「结束事件/删除主干」使用）
 
 async function loadActiveEvents() {
     const axis = document.getElementById("ae-axis");
@@ -420,8 +421,13 @@ function renderEventsTree(nodes) {
     const axis = document.getElementById("ae-axis");
     if (!axis) return;
     const mains = nodes.filter(n => n.kind === "main");
+    _aeMainNode = mains[0] || null;
     const mainBtn = document.getElementById("ae-add-main");
     if (mainBtn) mainBtn.disabled = mains.length > 0;
+    const gradBtn = document.getElementById("ae-graduate-main");
+    if (gradBtn) gradBtn.disabled = mains.length === 0;
+    const delMainBtn = document.getElementById("ae-del-main");
+    if (delMainBtn) delMainBtn.disabled = mains.length === 0;
     axis.innerHTML = "";
     if (!mains.length) {
         axis.innerHTML = '<div class="ae-empty">暂无活跃事件。点击「◆ 主干」开启主线，或在正文中选中文字 → 右键「🌿 记录为支线」。</div>';
@@ -443,14 +449,6 @@ function renderEventsTree(nodes) {
         label.title = m.content || m.title || "";
         label.addEventListener("click", () => _aeEditNode(m));
         track.appendChild(label);
-
-        const ops = document.createElement("div");
-        ops.style.cssText = "position:absolute;right:0;top:50%;transform:translateY(-50%);display:flex;gap:4px;";
-        const gradBtn = document.createElement("button"); gradBtn.className = "sys-btn"; gradBtn.textContent = "🎓 毕业"; gradBtn.style.cssText = "font-size:.66rem;padding:1px 6px;";
-        gradBtn.addEventListener("click", ev => { ev.stopPropagation(); _aeGraduate(m); });
-        const delBtn = document.createElement("button"); delBtn.className = "sys-btn"; delBtn.textContent = "🗑"; delBtn.style.cssText = "font-size:.66rem;padding:1px 6px;";
-        delBtn.addEventListener("click", ev => { ev.stopPropagation(); if (confirm("删除该主干及其所有分支/突发？")) apiDel("/api/active_events", m.id).then(loadActiveEvents); });
-        ops.appendChild(gradBtn); ops.appendChild(delBtn); track.appendChild(ops);
 
         kids.forEach(c => {
             const ratio = Math.max(0.04, Math.min(0.96, ((c.tick || 0) - t0) / (t1 - t0)));
@@ -502,17 +500,19 @@ async function _aeEditNode(n) {
     loadActiveEvents();
 }
 async function _aeGraduate(m) {
-    if (!confirm(`确认「毕业」主干「${m.title}」？\n将调用 AI 总结并写入「正文时间线」，随后该主干及其分支/突发将从事件树移除。`)) return;
+    if (!confirm(`确认结束主干事件「${m.title}」？\n将调用 AI 总结并写入「正文时间线」，随后该主干及其分支/突发将从事件轴移除。`)) return;
     const s = getSettings();
     const res = await fetch(`/api/active_events/${m.id}/graduate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider }) });
     const data = await res.json();
-    if (!res.ok) { alert("毕业失败: " + (data.detail || res.status)); return; }
+    if (!res.ok) { alert("结束失败: " + (data.detail || res.status)); return; }
     loadActiveEvents(); loadTimeline();
-    showToast("✅ 主干已毕业并写入正文时间线");
+    showToast("✅ 主干事件已结束并写入正文时间线");
 }
 document.getElementById("ae-add-main")?.addEventListener("click", () => _aeCreate("main"));
 document.getElementById("ae-add-branch")?.addEventListener("click", () => _aeCreate("branch"));
 document.getElementById("ae-add-burst")?.addEventListener("click", () => _aeCreate("burst"));
+document.getElementById("ae-graduate-main")?.addEventListener("click", () => { if (_aeMainNode) _aeGraduate(_aeMainNode); else alert("当前没有主干事件"); });
+document.getElementById("ae-del-main")?.addEventListener("click", () => { if (_aeMainNode && confirm("删除该主干及其所有分支/突发？")) apiDel("/api/active_events", _aeMainNode.id).then(loadActiveEvents); });
 
 // 编辑区顶部事件轴：默认折叠，点标题展开并加载
 (function initAeBar() {
