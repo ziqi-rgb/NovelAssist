@@ -524,6 +524,8 @@ let _aeWinParent = null;
 let _aeWinCharIds = [];    // 角色库角色 id（含新建的自定义角色）
 let _aeWinExtra = [];      // 龙套角色姓名（仅本事件）
 let _aeWinMainTick = 0;    // 当前主干起点（分支/突发的时间点以它为相对基准）
+let _aeWinStep = 1;        // 当前最小刻度（tick 数）
+let _aeWinUnit = "时";     // 当前刻度单位名（随历法/主线跨度自动）
 
 function _aeTickStep(span) {
     // 依主线跨度选最小刻度：取使 span/单位 >= 5 的最大单位（年/月/日/时）
@@ -532,6 +534,10 @@ function _aeTickStep(span) {
     const units = [["年", mpy * dpm * hpd], ["月", dpm * hpd], ["日", hpd], ["时", 1]];
     for (const u of units) { if (span / u[1] >= 5) return { step: u[1], unit: u[0] }; }
     return { step: 1, unit: "时" };
+}
+function _aeFmtUnits(v) {
+    if (!isFinite(v)) return "";
+    return String(Math.round(v * 1000) / 1000);
 }
 async function _aePopulateCharSelect() {
     const sel = document.getElementById("ae-win-char-select");
@@ -580,20 +586,30 @@ async function _aeDetailOpen(node, kind, parentId) {
     let spanEnd = mainNode ? mainNode.end_tick : null;
     if (spanEnd === null || spanEnd === undefined) spanEnd = Math.max(window.currentTick || 0, _aeWinMainTick + 1);
     const tickStep = _aeTickStep(Math.max(1, spanEnd - _aeWinMainTick));
+    _aeWinStep = tickStep.step;
+    _aeWinUnit = tickStep.unit;
     const tickInput = document.getElementById("ae-win-tick");
     const endInput = document.getElementById("ae-win-end");
-    tickInput.step = String(tickStep.step);
-    endInput.step = String(tickStep.step);
     const absTick = node ? (node.tick || 0) : (window.currentTick || 0);
-    tickInput.value = isMain ? absTick : (absTick - _aeWinMainTick);  // 分支/突发：相对主干起点
     const absEnd = (node && node.end_tick !== null && node.end_tick !== undefined) ? node.end_tick : null;
-    endInput.value = (absEnd === null) ? "" : (isMain ? absEnd : (absEnd - _aeWinMainTick));
+    if (isMain) {
+        tickInput.step = String(tickStep.step);
+        endInput.step = String(tickStep.step);
+        tickInput.value = String(absTick);
+        endInput.value = (absEnd === null) ? "" : String(absEnd);
+    } else {
+        // 分支/突发：以「刻度单位」计数（值 = 相对主干起点的偏移 ÷ 单位刻度）
+        tickInput.step = "1";
+        endInput.step = "1";
+        tickInput.value = _aeFmtUnits((absTick - _aeWinMainTick) / tickStep.step);
+        endInput.value = (absEnd === null) ? "" : _aeFmtUnits((absEnd - _aeWinMainTick) / tickStep.step);
+    }
     document.getElementById("ae-win-tick-text").textContent = isMain
-        ? "时间点 tick（绝对）"
-        : ("相对时间点（相对主干起点，最小刻度 1" + tickStep.unit + "）");
+        ? ("时间点 tick（绝对，最小刻度 1" + tickStep.unit + "）")
+        : ("相对时间点（单位：" + tickStep.unit + "，相对主干起点）");
     document.getElementById("ae-win-end-text").textContent = isMain
         ? "结束 tick（可留空）"
-        : ("结束（相对主干起点，最小刻度 1" + tickStep.unit + "，可留空）");
+        : ("结束（单位：" + tickStep.unit + "，可留空）");
     document.getElementById("ae-win-content").value = node ? (node.content || "") : "";
     document.getElementById("ae-win-end-wrap").classList.remove("hidden");
     document.getElementById("ae-win-newchar-form").classList.add("hidden");
@@ -610,15 +626,25 @@ function _aeDetailClose() {
 }
 async function _aeDetailSave() {
     const isMain = _aeWinKind === "main";
-    const base = isMain ? 0 : (_aeWinMainTick || 0);  // 分支/突发：相对值折算回绝对 tick
-    const tickVal = parseInt(document.getElementById("ae-win-tick").value);
+    const unitTicks = _aeWinStep || 1;
+    const tickRaw = parseFloat(document.getElementById("ae-win-tick").value);
     const ev = document.getElementById("ae-win-end").value;
+    let absTick, absEnd;
+    if (isMain) {
+        absTick = isNaN(tickRaw) ? 0 : Math.round(tickRaw);
+        absEnd = (ev === "") ? null : (parseInt(ev) || 0);
+    } else {
+        // 输入以「刻度单位」计 → 折算为相对 tick → 加主干起点得绝对 tick
+        const base = _aeWinMainTick || 0;
+        absTick = base + (isNaN(tickRaw) ? 0 : Math.round(tickRaw * unitTicks));
+        absEnd = (ev === "") ? null : (base + Math.round(parseFloat(ev) * unitTicks));
+    }
     const body = {
         kind: _aeWinKind, parent_id: _aeWinParent,
         title: document.getElementById("ae-win-title-input").value.trim(),
         content: document.getElementById("ae-win-content").value,
-        tick: (isNaN(tickVal) ? 0 : tickVal) + base,
-        end_tick: ev ? ((parseInt(ev) || 0) + base) : null,
+        tick: absTick,
+        end_tick: absEnd,
         character_ids: _aeWinCharIds, extra_characters: _aeWinExtra,
     };
     let res;
@@ -641,7 +667,9 @@ async function _aeDetailSave() {
         try {
             const nv = await (await fetch(`/api/novels/${currentNovelId}`)).json();
             const cur = nv.current_tick || 0;
-            document.getElementById("ae-win-tick").value = (_aeWinKind === "main") ? cur : Math.max(0, cur - (_aeWinMainTick || 0));
+            document.getElementById("ae-win-tick").value = (_aeWinKind === "main")
+                ? String(cur)
+                : _aeFmtUnits((cur - (_aeWinMainTick || 0)) / (_aeWinStep || 1));
         } catch (e) { /* ignore */ }
     });
     document.getElementById("ae-win-char-add").addEventListener("click", () => {
