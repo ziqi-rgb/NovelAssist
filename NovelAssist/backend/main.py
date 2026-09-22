@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 from sqlalchemy import select, func, text
@@ -4739,7 +4740,17 @@ if getattr(sys, "frozen", False):
     frontend_path = os.path.join(sys._MEIPASS, "frontend")  # type: ignore[attr-defined]
 else:
     frontend_path = str(Path(__file__).resolve().parent.parent / "frontend")
-app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+class _NoCacheStaticFiles(StaticFiles):
+    """静态资源禁用强缓存（保留 304 重验证），避免前端改动后浏览器仍加载旧文件。"""
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        # 该挂载仅服务前端静态文件（API 路由优先匹配），统一禁用强缓存
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
+app.mount("/", _NoCacheStaticFiles(directory=frontend_path, html=True), name="frontend")
 
 
 # ═══════════ Entry Point ═══════════
