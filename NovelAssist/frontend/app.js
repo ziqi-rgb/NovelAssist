@@ -3965,35 +3965,33 @@ function getProviderCap(id) { return PROVIDERS[id] || PROVIDERS.custom; }
 function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", provider: localStorage.getItem("ai_provider") || "openai", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false", agentMaxLoops: parseInt(localStorage.getItem("agent_max_loops") || "5") || 5, markerShortcut: localStorage.getItem("marker_shortcut") || "" }; }
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
-continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
-    // Show in AI chat area
-    const userB = document.createElement("div"); userB.className = "copilot-bubble user";
-    userB.innerHTML = `<div class="cp-label">你</div>续写<div style="text-align:right;margin-top:6px;"><span class="undo-capsule" onclick="truncateChat(this)">✕ 撤回</span></div>`;
-    copilotHistory.appendChild(userB);
-    const aiB = document.createElement("div"); aiB.className = "copilot-bubble ai streaming";
-    aiB.innerHTML = '<div class="cp-label">AI</div>';
-    copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
+function appendTextToEditor(text) {
+    if (!text) return;
+    var parts = String(text).split("\n");
+    for (var i = 0; i < parts.length; i++) {
+        if (i > 0) contentInput.appendChild(document.createElement("br"));
+        if (parts[i]) contentInput.appendChild(document.createTextNode(parts[i]));
+    }
+    contentInput.scrollTop = contentInput.scrollHeight;
+}
+continueBtn.addEventListener("click", async () => {
+    if (!requireApiKey()) return;
+    const s = getSettings();
+    continueBtn.disabled = true; continueBtn.textContent = "生成中...";
+    var gotAny = false;
     try {
-        var currentAiResponse = "";
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, mode: "prefix" }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: contentInput.value, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, mode: "prefix" }) });
         for await (const msg of parseSSEStream(res)) {
-            if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
-            else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
-            else if (msg.type === "done") {
-                currentAiResponse = currentAiResponse.trim();
-                if (!currentAiResponse) { aiB.appendChild(document.createTextNode("(模型未返回内容 — 请检查服务商/Base URL/模型配置)")); break; }
-                const row = document.createElement("div"); row.className = "cp-action-row";
-                const insBtn = document.createElement("button"); insBtn.className = "cp-insert-btn";
-                insBtn.textContent = "\u2B05 插入到当前光标处";
-                insBtn.addEventListener("click", () => { insertToActiveTextarea(currentAiResponse); });
-                const repBtn = document.createElement("button"); repBtn.className = "cp-insert-btn";
-                repBtn.textContent = "\uD83D\uDD04 替换当前文本";
-                repBtn.addEventListener("click", () => { if (confirm("替换当前编辑器全部内容？")) replaceActiveTextarea(currentAiResponse); });
-                row.appendChild(insBtn); row.appendChild(repBtn); aiB.appendChild(row);
-            }
+            if (msg.type === "chunk") { appendTextToEditor(msg.content); gotAny = true; }
+            else if (msg.type === "error") { appendTextToEditor("\n[错误: " + msg.message + "]"); }
         }
-        copilotHistory.scrollTop = copilotHistory.scrollHeight;
-    } catch (e) { aiB.appendChild(document.createTextNode(`\n[出错: ${e.message}]`)); } finally { continueBtn.disabled = false; continueBtn.textContent = "\u2728 续写"; aiB.classList.remove("streaming"); } });
+    } catch (e) {
+        appendTextToEditor("\n[出错: " + e.message + "]");
+    } finally {
+        if (gotAny) contentInput.dispatchEvent(new Event("input"));
+        continueBtn.disabled = false; continueBtn.textContent = "\u2728 续写";
+    }
+});
 
 /* ═══════════ Reasoning 2D Graph ═══════════ */
 let currentChainId = null;

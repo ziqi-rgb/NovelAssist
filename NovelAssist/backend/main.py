@@ -3626,46 +3626,42 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
     gs = db.get(GlobalSettings, 1)
     templates = gs.prompt_templates if gs else DEFAULT_PROMPT_TEMPLATES
 
-    # ── Prefix completion mode (DeepSeek Beta) ──
+    # --- 续写模式：原生前缀续写（支持者）/ 上下文续写（其余）---
     if req.mode == "prefix":
         system_tmpl = templates.get("continue_prefix", DEFAULT_PROMPT_TEMPLATES["continue_prefix"])
         system_content = resolve_placeholders(system_tmpl, req.novel_id, db)
-
-        # Split chapter at nearest period (。) to midpoint
-        text = req.current_chapter_content
-        if len(text) > 60:
-            mid = len(text) // 2
-            left = text.rfind("。", 0, mid)
-            right = text.find("。", mid)
-            if left >= 0 and (right < 0 or (mid - left) <= (right - mid)):
-                split_at = left + 1  # include 。in first half
-            elif right >= 0:
-                split_at = right + 1
-            else:
-                split_at = mid
-            first_half = text[:split_at].rstrip()
-            second_half = text[split_at:].lstrip()
-        else:
-            first_half = "请续写下文"
-            second_half = text
-
         base_url = req.base_url or LLM_BASE_URL
         api_key = req.api_key or LLM_API_KEY
         model = req.model or LLM_MODEL
         prov = resolve_provider(req.provider, base_url)
         prefix_field = prov.get("prefix_mode")
+        text = req.current_chapter_content or ""
+        _instr = "请紧接着以上正文继续写下去，只输出新增的正文内容，不要重复已有内容，不要任何解释或客套话。"
+
         msgs: list[dict] = [{"role": "system", "content": system_content}]
+        prefix_tail = ""
         if prefix_field:
-            # 支持前缀续写的 provider（DeepSeek=prefix / Moonshot=partial）
-            msgs.append({"role": "user", "content": f"请续写下文\n\n{first_half}"})
-            msgs.append({"role": "assistant", "content": second_half, prefix_field: True})
+            # 支持原生前缀续写（DeepSeek=prefix / Moonshot=partial）：assistant 预填正文末尾，无缝接续
+            prefix_tail = text[-120:] if len(text) > 120 else text
+            head = text[:len(text) - len(prefix_tail)]
+            if head:
+                msgs.append({"role": "user", "content": f"【已有正文】\n{head}\n\n{_instr}"})
+            else:
+                msgs.append({"role": "user", "content": _instr})
+            msgs.append({"role": "assistant", "content": prefix_tail, prefix_field: True})
             cont_url = str(prov.get("prefix_base_url") or base_url).rstrip("/") + "/chat/completions"
         else:
-            # 该 provider 不支持前缀续写 → 退化为普通续写
-            msgs.append({"role": "user", "content": f"请续写下文\n\n{first_half}\n\n（请自然地接着上文继续写下去）"})
-            cont_url = base_url.rstrip("/") + "/chat/completions"
+            # 不支持前缀续写 → 上下文续写（输出即新增内容）
+            ct = text if len(text) <= 6000 else text[-6000:]
+            if ct:
+                msgs.append({"role": "user", "content": f"【已有正文】\n{ct}\n\n{_instr}"})
+            else:
+                msgs.append({"role": "user", "content": _instr})
+            cont_url = (base_url or "").rstrip("/") + "/chat/completions"
 
         async def prefix_gen():
+            buf = ""
+            decided = not prefix_tail  # 上下文续写路径直接转发；前缀路径需先剥离可能回显的前缀
             async with httpx.AsyncClient(timeout=120) as client:
                 async with client.stream(
                     "POST", cont_url,
@@ -3673,18 +3669,36 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                     json={"model": model, "messages": msgs, "temperature": 0.8, "stream": True},
                 ) as resp:
                     async for line in resp.aiter_lines():
-                        if line.startswith("data: "):
-                            data = line[6:]
-                            if data == "[DONE]":
-                                yield f"data: {json.dumps({'type':'done'})}\n\n"
-                                return
-                            try:
-                                chunk = json.loads(data)
-                                delta = chunk["choices"][0]["delta"]
-                                if delta.get("content"):
-                                    yield f"data: {json.dumps({'type':'chunk','content':delta['content']})}\n\n"
-                            except (json.JSONDecodeError, KeyError, IndexError):
-                                pass
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0]["delta"]
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+                        content = delta.get("content")
+                        if not content:
+                            continue
+                        if decided:
+                            yield f"data: {json.dumps({'type':'chunk','content':content})}\n\n"
+                            continue
+                        buf += content
+                        if buf.startswith(prefix_tail):
+                            decided = True
+                            rem = buf[len(prefix_tail):]
+                            if rem:
+                                yield f"data: {json.dumps({'type':'chunk','content':rem})}\n\n"
+                        elif prefix_tail.startswith(buf):
+                            pass  # 回显仍在累积
+                        else:
+                            decided = True
+                            yield f"data: {json.dumps({'type':'chunk','content':buf})}\n\n"
+            if not decided and buf and not buf.startswith(prefix_tail):
+                yield f"data: {json.dumps({'type':'chunk','content':buf})}\n\n"
+            yield f"data: {json.dumps({'type':'done'})}\n\n"
         return StreamingResponse(prefix_gen(), media_type="text/event-stream")
 
     # ── Normal chat mode ──
