@@ -2409,6 +2409,13 @@ def delete_character(char_id: int, db: Session = Depends(get_db)):
     c = db.get(Character, char_id)
     if c is None:
         raise HTTPException(404, "人物不存在")
+    # 级联清理关联数据（FK 未开 CASCADE，手动清理避免孤儿行）
+    db.query(CharacterRoutine).filter_by(character_id=char_id).delete()
+    db.query(CharacterTrajectory).filter_by(character_id=char_id).delete()
+    db.query(CharacterSnapshot).filter_by(character_id=char_id).delete()
+    db.query(CharacterRelation).filter(
+        (CharacterRelation.source_id == char_id) | (CharacterRelation.target_id == char_id)
+    ).delete()
     db.delete(c)
     db.commit()
     return {"ok": True}

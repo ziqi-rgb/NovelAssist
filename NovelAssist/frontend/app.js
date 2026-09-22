@@ -821,6 +821,8 @@ function addRoutineRow(data) {
 function addTrajectoryRow(data) {
     data = data || { location_id: null, start_tick: window.currentTick, end_tick: null, reason: "" };
     var d = tickToDate(data.start_tick || window.currentTick);
+    var ongoing = (data.end_tick === null || data.end_tick === undefined);
+    var de = ongoing ? { year: "", month: "", day: "", hour: "" } : tickToDate(data.end_tick);
     var div = document.createElement("div");
     div.className = "time-row";
     div.style.cssText = "display:flex;gap:4px;align-items:center;margin-bottom:3px;font-size:0.72rem;flex-wrap:wrap;";
@@ -829,6 +831,11 @@ function addTrajectoryRow(data) {
         + '<input type="number" class="traj-m" value="' + d.month + '" style="width:40px;" min="1">月'
         + '<input type="number" class="traj-d" value="' + d.day + '" style="width:40px;" min="1">日'
         + '<input type="number" class="traj-h" value="' + d.hour + '" style="width:40px;" min="0">时'
+        + '<span>止:</span>'
+        + '<input type="number" class="traj-ey" value="' + de.year + '" style="width:40px;" min="1" placeholder="进行中">年'
+        + '<input type="number" class="traj-em" value="' + de.month + '" style="width:40px;" min="1">月'
+        + '<input type="number" class="traj-ed" value="' + de.day + '" style="width:40px;" min="1">日'
+        + '<input type="number" class="traj-eh" value="' + de.hour + '" style="width:40px;" min="0">时'
         + '<span>→</span>' + locationOptionsHtml(data.location_id)
         + '<input class="traj-reason" placeholder="原因" value="' + e(data.reason || "") + '" style="width:100px;">'
         + '<button onclick="this.parentElement.remove()" class="sys-btn sys-btn-danger">✕</button>';
@@ -866,10 +873,21 @@ async function saveTimeData() {
         var m = parseInt(row.querySelector(".traj-m").value) || 1;
         var d = parseInt(row.querySelector(".traj-d").value) || 1;
         var h = parseInt(row.querySelector(".traj-h").value) || 0;
+        // 结束时间留空 → 视为「进行中」(end_tick = null)
+        var ey = row.querySelector(".traj-ey");
+        var end_tick = null;
+        if (ey && String(ey.value).trim() !== "") {
+            end_tick = dateToTick(
+                parseInt(ey.value) || 1,
+                parseInt(row.querySelector(".traj-em").value) || 1,
+                parseInt(row.querySelector(".traj-ed").value) || 1,
+                parseInt(row.querySelector(".traj-eh").value) || 0
+            );
+        }
         trajectories.push({
             location_id: parseInt(row.querySelector(".traj-loc").value) || 0,
             start_tick: dateToTick(y, m, d, h),
-            end_tick: null,
+            end_tick: end_tick,
             reason: row.querySelector(".traj-reason").value.trim()
         });
     });
