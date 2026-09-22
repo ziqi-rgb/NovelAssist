@@ -85,6 +85,9 @@ def run_migration() -> None:
         if "current_tick" not in novel_cols:
             db.execute(text("ALTER TABLE novels ADD COLUMN current_tick INTEGER NOT NULL DEFAULT 0"))
             db.commit()
+        if "world_event_config" not in novel_cols:
+            db.execute(text("ALTER TABLE novels ADD COLUMN world_event_config JSON DEFAULT '{}'"))
+            db.commit()
         te_cols2 = [c["name"] for c in insp.get_columns("timeline_events")]
         if "absolute_tick" not in te_cols2:
             db.execute(text("ALTER TABLE timeline_events ADD COLUMN absolute_tick INTEGER NOT NULL DEFAULT 0"))
@@ -142,6 +145,21 @@ def run_migration() -> None:
                 db.commit()
             if "time_unit" not in ae_cols:
                 db.execute(text("ALTER TABLE active_events ADD COLUMN time_unit VARCHAR(16) DEFAULT 'auto'"))
+                db.commit()
+
+        if "world_events" in insp.get_table_names():
+            we_cols = [c["name"] for c in insp.get_columns("world_events")]
+            if "origin_tick" not in we_cols:
+                db.execute(text("ALTER TABLE world_events ADD COLUMN origin_tick INTEGER NOT NULL DEFAULT 0"))
+                db.commit()
+            if "status" not in we_cols:
+                db.execute(text("ALTER TABLE world_events ADD COLUMN status VARCHAR(16) DEFAULT 'accepted'"))
+                db.commit()
+            if "is_rumor" not in we_cols:
+                db.execute(text("ALTER TABLE world_events ADD COLUMN is_rumor BOOLEAN DEFAULT 0"))
+                db.commit()
+            if "spread_json" not in we_cols:
+                db.execute(text("ALTER TABLE world_events ADD COLUMN spread_json JSON DEFAULT '{}'"))
                 db.commit()
 
         rc_cols = [c["name"] for c in insp.get_columns("reasoning_chains")]

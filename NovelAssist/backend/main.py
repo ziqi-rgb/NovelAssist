@@ -6,6 +6,7 @@ import copy
 import io
 import json
 import os
+import random
 import re
 import sys
 import threading
@@ -888,6 +889,9 @@ class EventCreate(BaseModel):
     event_type: str = "MAIN"
     timeline_index: int = 0
     location_id: Optional[int] = None
+    origin_tick: int = 0
+    status: str = "accepted"
+    is_rumor: bool = False
 
 class EventOut(BaseModel):
     id: int
@@ -896,6 +900,9 @@ class EventOut(BaseModel):
     event_type: str
     timeline_index: int
     location_id: Optional[int] = None
+    origin_tick: int = 0
+    status: str = "accepted"
+    is_rumor: bool = False
     novel_id: int
     class Config:
         from_attributes = True
@@ -1132,10 +1139,12 @@ def update_novel_time(novel_id: int, req: NovelTimeUpdate, db: Session = Depends
     novel = db.get(Novel, novel_id)
     if novel is None:
         raise HTTPException(404, "小说不存在")
+    prev_tick = novel.current_tick
     novel.current_tick = req.current_tick
     novel.calendar_config = req.calendar_config
     db.commit()
-    sync_active_bursts(db, novel_id)
+    sync_active_bursts(db, novel_id)  # 时间推进后：到期的突发自动转分支
+    check_world_event_triggers(db, novel_id, prev_tick, novel.current_tick)  # 离屏世界事件触发器
     return {"msg": "OK"}
 
 @app.get("/api/status")
@@ -1545,8 +1554,10 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
 
     # Apply world time advancement
     if pending_tick_advance > 0 and novel:
+        _prev_tick = novel.current_tick
         novel.current_tick += pending_tick_advance
         sync_active_bursts(db, novel.id)  # 时间推进后：到期的突发自动转分支
+        check_world_event_triggers(db, novel.id, _prev_tick, novel.current_tick)  # 离屏世界事件触发器
 
     # Create timeline events
     for te in pending_timeline_events:
@@ -2061,6 +2072,7 @@ def create_event(body: EventCreate, novel_id: int = Query(default=NOVEL_ID_DEFAU
         title=body.title, description=body.description,
         event_type=body.event_type,  # type: ignore[arg-type]
         timeline_index=body.timeline_index, location_id=body.location_id, novel_id=novel_id,
+        origin_tick=body.origin_tick, status=body.status, is_rumor=body.is_rumor,
     )
     db.add(e)
     db.commit()
@@ -2240,6 +2252,50 @@ def sync_active_bursts(db: Session, novel_id: int) -> int:
     if changed:
         db.commit()
     return changed
+
+
+def check_world_event_triggers(db: Session, novel_id: int, prev_tick: int, new_tick: int) -> list[WorldEvent]:
+    """离屏世界事件 · 触发器：历法时间推进后按「每月概率」判定是否生成一条待审核世界事件草稿。
+
+    - 概率随跨度缩放：p = 1 - (1 - prob_per_month) ** 月数
+    - 随机源以 (novel_id, prev_tick, new_tick) 播种 → 同一推进结果可复现（可审计）
+    - 同一区间幂等：已存在同 origin_tick 的待审核事件时跳过
+    - 待审核总数受 max_pending 限制
+    """
+    novel = db.get(Novel, novel_id)
+    if novel is None or new_tick <= prev_tick:
+        return []
+    cfg = dict(novel.world_event_config or {})
+    if not cfg.get("enabled", True):
+        return []
+    pending = db.scalars(select(WorldEvent).where(
+        WorldEvent.novel_id == novel_id,
+        WorldEvent.status == "pending",
+    )).all()
+    if len(pending) >= int(cfg.get("max_pending", 3)):
+        return []
+    if any(ev.origin_tick == new_tick for ev in pending):  # 幂等
+        return []
+    cal = novel.calendar_config or {}
+    ticks_per_month = int(cal.get("days_per_month", 30)) * int(cal.get("hours_per_day", 24))
+    if ticks_per_month <= 0:
+        ticks_per_month = 1
+    months = (new_tick - prev_tick) / ticks_per_month
+    prob = max(0.0, min(1.0, float(cfg.get("prob_per_month", 0.35))))
+    p_any = 1.0 - (1.0 - prob) ** months
+    rng = random.Random(f"we:{novel_id}:{prev_tick}:{new_tick}")
+    if rng.random() >= p_any:
+        return []
+    ev = WorldEvent(
+        title="", description="",
+        event_type="WORLD",  # type: ignore[arg-type]
+        status="pending", origin_tick=new_tick, timeline_index=0,
+        is_rumor=False, spread_json={}, novel_id=novel_id,
+    )
+    db.add(ev)
+    db.commit()
+    db.refresh(ev)
+    return [ev]
 
 
 def build_active_events_summary(db: Session, novel_id: int) -> str:
@@ -2868,7 +2924,10 @@ def get_world_lore(db: Session, novel_id: int) -> str:
             lines.append(e)
         parts.append("\n".join(lines))
     events = db.scalars(
-        select(WorldEvent).where(WorldEvent.novel_id == novel_id).order_by(WorldEvent.timeline_index)
+        select(WorldEvent).where(
+            WorldEvent.novel_id == novel_id,
+            WorldEvent.status == "accepted",  # 仅注入已采纳的世界事件（待审核草稿不进提示词）
+        ).order_by(WorldEvent.timeline_index)
     ).all()
     if events:
         lines = ["## 世界事件轴"]
@@ -4308,9 +4367,11 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         cfg = novel.calendar_config or {}
         hpd = cfg.get("hours_per_day", 24)
         added_ticks = (days * hpd) + hours
+        prev_tick = novel.current_tick
         novel.current_tick += added_ticks
         db.commit()
         sync_active_bursts(db, novel.id)  # 时间推进后：到期的突发自动转分支
+        check_world_event_triggers(db, novel.id, prev_tick, novel.current_tick)  # 离屏世界事件触发器
         return {"status": "success", "msg": f"世界时间已推进 {days} 天 {hours} 小时"}
 
     if req.tool_name == "query_world_state":

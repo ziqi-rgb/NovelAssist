@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text, DateTime, JSON
+from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text, DateTime, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
@@ -63,6 +63,12 @@ class Novel(Base):
     location_templates: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     calendar_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {"months_per_year": 12, "days_per_month": 30, "hours_per_day": 24})
     current_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    world_event_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=lambda: {
+        "enabled": True,
+        "prob_per_month": 0.35,
+        "max_pending": 3,
+        "last_check_tick": 0,
+    })
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -199,6 +205,11 @@ class WorldEvent(Base):
     )
     timeline_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
+    # —— 离屏世界事件 / 传闻系统（#T007） ——
+    origin_tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 事件发生的历法 tick
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="accepted")  # pending/accepted/rejected
+    is_rumor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # 是否已转为传播中的传闻
+    spread_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # 扩散进度/已到达网格
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
 
     novel: Mapped[Novel] = relationship(back_populates="world_events")
