@@ -867,12 +867,8 @@
         .ae-node .ae-lbl { position:absolute; left:50%; transform:translateX(-50%); border-radius:14px; border:2px solid #000; padding:2px 10px; font-size:.72rem; line-height:1.2; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis; color:#000; z-index:1; }
         .ae-node.branch .ae-lbl { top:0; background:#86efac; }
         .ae-node.burst .ae-lbl { bottom:0; background:#fca5a5; }
-        /* 一起一止两条竖线，连接事件胶囊与主干轴 */
-        .ae-node .ae-leg { position:absolute; width:0; border-left:2px solid #000; }
-        .ae-node.branch .ae-leg { top:24px; bottom:0; }
-        .ae-node.burst .ae-leg { top:0; bottom:24px; }
-        .ae-node .ae-leg.start { left:0; }
-        .ae-node .ae-leg.end { right:0; }
+        /* 连接线由 SVG 绘制：同天=双竖线，跨天=折线 */
+        .ae-links { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
         .ae-node:hover .ae-lbl { box-shadow:0 0 0 2px rgba(99,102,241,.65); }
         /* 事件详情浮动窗 */
         .ae-win { position:fixed; z-index:1200; display:flex; flex-direction:column; background:var(--bg); border:2px solid var(--border); border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,.4); overflow:hidden; }

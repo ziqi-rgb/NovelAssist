@@ -442,6 +442,11 @@ function renderEventsTree(nodes) {
         if (t1 <= t0) t1 = t0 + 1;
         const track = document.createElement("div"); track.className = "ae-track";
         const spine = document.createElement("div"); spine.className = "ae-spine"; track.appendChild(spine);
+        const SVGNS = "http://www.w3.org/2000/svg";
+        const linksSvg = document.createElementNS(SVGNS, "svg"); linksSvg.setAttribute("class", "ae-links");
+        const linksPath = document.createElementNS(SVGNS, "path");
+        linksPath.setAttribute("fill", "none"); linksPath.setAttribute("stroke", "#000"); linksPath.setAttribute("stroke-width", "2");
+        linksSvg.appendChild(linksPath); track.appendChild(linksSvg);
 
         const endStr = (m.end_tick !== null && m.end_tick !== undefined) ? ` → ${_aeTickLabel(m.end_tick)}` : "";
         const label = document.createElement("div"); label.className = "ae-main-label";
@@ -460,18 +465,59 @@ function renderEventsTree(nodes) {
             node.className = "ae-node " + (isBurst ? "burst" : "branch");
             node.style.left = (Math.min(x1, x2) * 100) + "%";
             node.style.width = (Math.abs(x2 - x1) * 100) + "%";  // 跨度 = 起→止
+            node.dataset.x1 = String(x1 * 100);
+            node.dataset.x2 = String(x2 * 100);
+            node.dataset.start = String(c.tick || 0);
+            node.dataset.end = hasEnd ? String(c.end_tick) : "";
             const icon = isBurst ? "⚡" : "🌿";
-            // 一起一止两条竖线连到主轴（无结束时间则单线）
-            const legs = hasEnd ? '<span class="ae-leg start"></span><span class="ae-leg end"></span>' : '<span class="ae-leg start"></span>';
-            node.innerHTML = `<span class="ae-lbl">${icon} ${e(c.title || '(无标题)')}</span>${legs}`;
+            node.innerHTML = `<span class="ae-lbl">${icon} ${e(c.title || '(无标题)')}</span>`;
             node.title = (c.content || c.title || "") + "\n(点击编辑 · 右键删除)";
             node.addEventListener("click", () => _aeDetailOpen(c));
             node.addEventListener("contextmenu", ev => { ev.preventDefault(); if (confirm("删除该节点？")) apiDel("/api/active_events", c.id).then(loadActiveEvents); });
             track.appendChild(node);
         });
         axis.appendChild(track);
+        requestAnimationFrame(() => _aeRedrawLinks(track));
     });
 }
+// 连接线：无结束时间=单竖线；起止同天=双竖线；起止跨天=折线（斜-平-斜）
+function _aeRedrawLinks(track) {
+    const svg = track.querySelector("svg.ae-links");
+    if (!svg) return;
+    const path = svg.querySelector("path");
+    const tr = track.getBoundingClientRect();
+    if (tr.width <= 1) return;
+    const hpd = (window.novelTimeConfig && window.novelTimeConfig.hours_per_day) || 24;
+    const axisY = tr.height / 2;
+    let d = "";
+    track.querySelectorAll(".ae-node").forEach(node => {
+        const lbl = node.querySelector(".ae-lbl");
+        if (!lbl) return;
+        const lr = lbl.getBoundingClientRect();
+        if (lr.width === 0) return;
+        const isBurst = node.classList.contains("burst");
+        const px1 = (parseFloat(node.dataset.x1) || 0) / 100 * tr.width;
+        const px2 = (parseFloat(node.dataset.x2) || 0) / 100 * tr.width;
+        const capL = lr.left - tr.left, capR = lr.right - tr.left, capC = (capL + capR) / 2;
+        const capY = isBurst ? (lr.top - tr.top) : (lr.bottom - tr.top);
+        const endRaw = node.dataset.end;
+        if (endRaw === "") {
+            d += `M${capC},${axisY} L${capC},${capY} `;
+        } else {
+            const start = parseInt(node.dataset.start) || 0, end = parseInt(endRaw) || 0;
+            if (Math.floor(start / hpd) === Math.floor(end / hpd)) {
+                d += `M${px1},${axisY} L${px1},${capY} M${px2},${axisY} L${px2},${capY} `;
+            } else {
+                d += `M${px1},${axisY} L${capL},${capY} L${capR},${capY} L${px2},${axisY} `;
+            }
+        }
+    });
+    svg.setAttribute("viewBox", `0 0 ${tr.width} ${tr.height}`);
+    path.setAttribute("d", d);
+}
+window.addEventListener("resize", () => {
+    document.querySelectorAll("#ae-axis .ae-track").forEach(t => _aeRedrawLinks(t));
+});
 /* ── 事件详情浮窗（主干/分支/突发通用）── */
 let _aeWinNode = null;     // 编辑中节点；null = 新建
 let _aeWinKind = "branch";
