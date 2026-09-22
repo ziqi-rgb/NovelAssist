@@ -495,20 +495,19 @@ function _aeRedrawLinks(track) {
         if (!lbl) return;
         const lr = lbl.getBoundingClientRect();
         if (lr.width === 0) return;
-        const isBurst = node.classList.contains("burst");
         const px1 = (parseFloat(node.dataset.x1) || 0) / 100 * tr.width;
         const px2 = (parseFloat(node.dataset.x2) || 0) / 100 * tr.width;
-        const capL = lr.left - tr.left, capR = lr.right - tr.left, capC = (capL + capR) / 2;
-        const capY = isBurst ? (lr.top - tr.top) : (lr.bottom - tr.top);
+        const capC = (lr.left + lr.right) / 2 - tr.left;
+        const capY = (lr.top + lr.bottom) / 2 - tr.top;  // 胶囊中心高度
         const endRaw = node.dataset.end;
         if (endRaw === "") {
-            d += `M${capC},${axisY} L${capC},${capY} `;
+            d += `M${capC},${axisY} L${capC},${capY} `;  // 单点：竖线
         } else {
             const start = parseInt(node.dataset.start) || 0, end = parseInt(endRaw) || 0;
             if (Math.floor(start / hpd) === Math.floor(end / hpd)) {
-                d += `M${px1},${axisY} L${px1},${capY} M${px2},${axisY} L${px2},${capY} `;
+                d += `M${capC},${axisY} L${capC},${capY} `;  // 同天：单竖线
             } else {
-                d += `M${px1},${axisY} L${capL},${capY} L${capR},${capY} L${px2},${axisY} `;
+                d += `M${px1},${axisY} L${px1},${capY} L${px2},${capY} L${px2},${axisY} `;  // 跨天：门形（竖-横-竖）
             }
         }
     });
