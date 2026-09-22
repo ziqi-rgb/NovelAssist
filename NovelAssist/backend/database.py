@@ -140,6 +140,9 @@ def run_migration() -> None:
             if "extra_characters" not in ae_cols:
                 db.execute(text("ALTER TABLE active_events ADD COLUMN extra_characters JSON DEFAULT '[]'"))
                 db.commit()
+            if "time_unit" not in ae_cols:
+                db.execute(text("ALTER TABLE active_events ADD COLUMN time_unit VARCHAR(16) DEFAULT 'auto'"))
+                db.commit()
 
         rc_cols = [c["name"] for c in insp.get_columns("reasoning_chains")]
         if "todos" not in rc_cols:

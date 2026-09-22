@@ -222,6 +222,7 @@ class ActiveEventNode(Base):
     location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
     character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     extra_characters: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # 龙套角色姓名（仅本事件，不入角色库）
+    time_unit: Mapped[str] = mapped_column(String(16), nullable=False, default="auto")  # 主干时间单位：auto/年/月/日/时
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

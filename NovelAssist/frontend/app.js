@@ -561,6 +561,22 @@ function _aeFillCalSelects(pfx, d) {
     fill(pfx + "d", 1, dpm, d.day, cfg.day_names, "日");
     fill(pfx + "h", 0, hpd - 1, d.hour, cfg.hour_names, "时");
 }
+function _aeUnitTicks(name) {
+    const cfg = window.novelTimeConfig || {};
+    const hpd = cfg.hours_per_day || 24, dpm = cfg.days_per_month || 30, mpy = cfg.months_per_year || 12;
+    if (name === "年") return mpy * dpm * hpd;
+    if (name === "月") return dpm * hpd;
+    if (name === "日") return hpd;
+    return 1;  // 时
+}
+function _aeFillUnitSelect(hasEnd, sel) {
+    const el = document.getElementById("ae-cal-unit");
+    el.innerHTML = "";
+    const opts = hasEnd ? ["自动", "年", "月", "日", "时"] : ["年", "月", "日", "时"];
+    opts.forEach(o => { const op = document.createElement("option"); op.value = o; op.textContent = o; el.appendChild(op); });
+    const want = (sel === "auto" || !sel) ? "自动" : sel;
+    el.value = opts.includes(want) ? want : (hasEnd ? "自动" : "日");
+}
 function _aeReadCalSelects(pfx) {
     return dateToTick(
         parseInt(document.getElementById(pfx + "y").value),
@@ -615,7 +631,10 @@ async function _aeDetailOpen(node, kind, parentId) {
     _aeWinMainTick = mainNode ? (mainNode.tick || 0) : 0;
     let spanEnd = mainNode ? mainNode.end_tick : null;
     if (spanEnd === null || spanEnd === undefined) spanEnd = Math.max(window.currentTick || 0, _aeWinMainTick + 1);
-    const tickStep = _aeTickStep(Math.max(1, spanEnd - _aeWinMainTick));
+    const mainUnit = (mainNode && mainNode.time_unit && mainNode.time_unit !== "auto") ? mainNode.time_unit : "";
+    const tickStep = mainUnit
+        ? { step: _aeUnitTicks(mainUnit), unit: mainUnit }        // 主干指定单位 → 覆盖自动
+        : _aeTickStep(Math.max(1, spanEnd - _aeWinMainTick));     // 自动：按跨度
     _aeWinStep = tickStep.step;
     _aeWinUnit = tickStep.unit;
     const tickInput = document.getElementById("ae-win-tick");
@@ -631,6 +650,7 @@ async function _aeDetailOpen(node, kind, parentId) {
         document.getElementById("ae-cal-hasend").checked = hasEnd;
         document.getElementById("ae-cal-end-row").classList.toggle("hidden", !hasEnd);
         _aeFillCalSelects("ae-cal-e", tickToDate(hasEnd ? absEnd : absTick));
+        _aeFillUnitSelect(hasEnd, node ? node.time_unit : "auto");
     } else {
         // 分支/突发：以「刻度单位」计数（值 = 相对主干起点的偏移 ÷ 单位刻度）
         document.getElementById("ae-win-tickwrap").classList.remove("hidden");
@@ -662,9 +682,12 @@ async function _aeDetailSave() {
     const tickRaw = parseFloat(document.getElementById("ae-win-tick").value);
     const ev = document.getElementById("ae-win-end").value;
     let absTick, absEnd;
+    let timeUnit = "auto";
     if (isMain) {
         absTick = _aeReadCalSelects("ae-cal-s");
         absEnd = document.getElementById("ae-cal-hasend").checked ? _aeReadCalSelects("ae-cal-e") : null;
+        const uv = document.getElementById("ae-cal-unit").value;
+        timeUnit = (uv === "自动") ? "auto" : uv;
     } else {
         // 输入以「刻度单位」计 → 折算为相对 tick → 加主干起点得绝对 tick
         const base = _aeWinMainTick || 0;
@@ -677,7 +700,7 @@ async function _aeDetailSave() {
         content: document.getElementById("ae-win-content").value,
         tick: absTick,
         end_tick: absEnd,
-        character_ids: _aeWinCharIds, extra_characters: _aeWinExtra,
+        character_ids: _aeWinCharIds, extra_characters: _aeWinExtra, time_unit: timeUnit,
     };
     let res;
     if (_aeWinNode) {
@@ -714,7 +737,11 @@ async function _aeDetailSave() {
     });
     document.getElementById("ae-win-newchar-btn").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.toggle("hidden"));
     document.getElementById("ae-cal-hasend").addEventListener("change", (e) => {
-        document.getElementById("ae-cal-end-row").classList.toggle("hidden", !e.target.checked);
+        const on = e.target.checked;
+        document.getElementById("ae-cal-end-row").classList.toggle("hidden", !on);
+        // 有结束时间才提供「自动」档；切换时按当前选择重填
+        const cur = document.getElementById("ae-cal-unit").value;
+        _aeFillUnitSelect(on, cur === "自动" ? "auto" : cur);
     });
     document.getElementById("ae-win-nc-cancel").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.add("hidden"));
     document.getElementById("ae-win-nc-save").addEventListener("click", async () => {

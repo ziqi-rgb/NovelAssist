@@ -222,3 +222,12 @@ def test_single_main_enforced():
         M.delete_active_event(m1.id, db=db)
         m3 = M.create_active_event(M.ActiveEventCreate(kind="main", title="主轴D", tick=1), novel_id=1, db=db)
         assert m3.kind == M.ActiveEventKind.MAIN
+
+
+def test_time_unit_roundtrip():
+    """主干时间单位（auto/年/月/日/时）随事件存取。"""
+    with SessionLocal() as db:
+        m = M.create_active_event(M.ActiveEventCreate(kind="main", title="单位主干", tick=0, time_unit="日"), novel_id=1, db=db)
+        assert m.time_unit == "日"
+        upd = M.update_active_event(m.id, M.ActiveEventCreate(kind="main", title="单位主干", tick=0, time_unit="auto"), db=db)
+        assert upd.time_unit == "auto"
