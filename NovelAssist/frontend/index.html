@@ -276,6 +276,15 @@
                 <div id="ws-writing" class="ws-panel">
                     <div id="editor-workspace" class="ws-inner">
                         <div class="editor-toolbar"><span class="info">Ctrl+S 保存</span><div class="toolbar-actions"><button id="continue-btn" class="sys-btn sys-btn-primary">&#10024; 续写</button><button id="save-btn" class="sys-btn sys-btn-primary">保存</button></div></div>
+                        <div id="ae-bar" class="ae-bar">
+                            <button type="button" id="ae-bar-toggle" class="ae-bar-toggle"><span id="ae-caret">▸</span> 🌳 活跃事件轴</button>
+                            <span id="ae-bar-actions" class="hidden">
+                                <button id="ae-add-main" class="sys-btn sys-btn-primary" title="开启新主干（替换现有主轴）">◆ 主干</button>
+                                <button id="ae-add-branch" class="sys-btn" title="新建分支（记录）">🌿 分支</button>
+                                <button id="ae-add-burst" class="sys-btn" title="新建突发（规划）">⚡ 突发</button>
+                            </span>
+                        </div>
+                        <div id="ae-axis" class="ae-axis hidden"></div>
                         <input type="text" id="title-input" placeholder="章节标题...">
                         <div id="archived-content-viewer" class="readonly-text hidden"></div>
                         <div id="content-input" contenteditable="true" class="content-editor" placeholder="开始写作..."></div>
@@ -522,19 +531,9 @@
                 <div class="tab-bar">
                     <button class="tab-btn active" data-tab="tab-characters">人物卡</button>
                     <button class="tab-btn" data-tab="tab-ai">AI助手</button>
-                    <button class="tab-btn" data-tab="tab-events">事件树</button>
                     <button class="tab-btn" data-tab="tab-timeline">时间线</button>
                 </div>
                 <div id="tab-characters" class="tab-content"><button id="new-character-btn">+ 新建人物</button><div id="character-list"></div></div>
-                <div id="tab-events" class="tab-content hidden">
-                    <div class="timeline-header" id="events-tree-title">🌳 活跃事件树</div>
-                    <div style="display:flex;gap:4px;padding:4px 0;">
-                        <button id="ae-add-main" class="sys-btn sys-btn-primary" style="flex:1;font-size:.72rem;">◆ 主干</button>
-                        <button id="ae-add-branch" class="sys-btn" style="flex:1;font-size:.72rem;">🌿 分支</button>
-                        <button id="ae-add-burst" class="sys-btn" style="flex:1;font-size:.72rem;">⚡ 突发</button>
-                    </div>
-                    <div id="events-tree"></div>
-                </div>
                 <div id="tab-timeline" class="tab-content hidden">
                     <div class="timeline-header" id="timeline-title">⏳ 统一时间轴</div><div id="timeline-list"></div>
                     <div class="timeline-form"><input type="text" id="tl-title" placeholder="事件名称"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
@@ -839,6 +838,28 @@
         .parallel-slider:before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: var(--text-muted); border-radius: 50%; transition: 0.3s; }
         .parallel-switch input:checked + .parallel-slider { background: #4f46e5; border-color: #6366f1; }
         .parallel-switch input:checked + .parallel-slider:before { transform: translateX(18px); background: #fff; }
+        /* 🌳 活跃事件轴 (#T005：编辑区顶部可折叠横向轴) */
+        .ae-bar { display:flex; align-items:center; gap:8px; padding:4px 24px; border-bottom:1px solid var(--border); flex-shrink:0; }
+        .ae-bar-toggle { background:none; border:none; color:var(--text); font-weight:700; font-size:.8rem; cursor:pointer; padding:2px 0; }
+        .ae-bar-toggle:hover { color:#818cf8; }
+        #ae-caret { display:inline-block; transition:transform .15s; }
+        .ae-bar.expanded #ae-caret { transform:rotate(90deg); }
+        #ae-bar-actions { display:inline-flex; gap:4px; }
+        #ae-bar-actions button { font-size:.7rem; padding:2px 8px; }
+        .ae-axis { padding:10px 24px 4px; }
+        .ae-empty { color:var(--text-muted); font-size:.78rem; padding:8px 0; }
+        .ae-track { position:relative; height:150px; margin-bottom:6px; }
+        .ae-spine { position:absolute; left:1%; right:1%; top:50%; height:2px; background:#4f46e5; }
+        .ae-spine::after { content:""; position:absolute; right:-4px; top:-4px; border-left:9px solid #4f46e5; border-top:5px solid transparent; border-bottom:5px solid transparent; }
+        .ae-main-label { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--bg); padding:1px 10px; border:1px solid #4f46e5; border-radius:12px; font-size:.75rem; font-weight:700; white-space:nowrap; max-width:64%; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+        .ae-node { position:absolute; transform:translateX(-50%); text-align:center; font-size:.72rem; line-height:1.2; max-width:132px; cursor:pointer; }
+        .ae-node .ae-lbl { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ae-node .ae-stem { display:block; width:0; height:16px; margin:0 auto; }
+        .ae-node.branch { bottom:50%; margin-bottom:1px; }
+        .ae-node.branch .ae-stem { border-left:2px solid #22c55e; }
+        .ae-node.burst { top:50%; margin-top:1px; }
+        .ae-node.burst .ae-stem { border-left:2px solid #f59e0b; }
+        .ae-node:hover .ae-lbl { color:#818cf8; text-decoration:underline; }
     </style>
 
     <div id="edge-edit-modal" class="modal hidden">

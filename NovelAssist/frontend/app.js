@@ -402,12 +402,11 @@ document.getElementById("tl-detail-delete").addEventListener("click", async () =
     loadTimeline();
 });
 
-/* ═══════════ ActiveEvents (事件树 #T005) ═══════════ */
-const AE_KIND_META = { main: { icon: "◆", label: "主干" }, branch: { icon: "🌿", label: "分支" }, burst: { icon: "⚡", label: "突发" } };
+/* ═══════════ ActiveEvents (事件树 #T005：编辑区顶部横向轴) ═══════════ */
 
 async function loadActiveEvents() {
-    const tree = document.getElementById("events-tree");
-    if (!tree) return;
+    const axis = document.getElementById("ae-axis");
+    if (!axis) return;
     let nodes = [];
     try { nodes = await (await fetch(`/api/active_events?novel_id=${currentNovelId}`)).json(); } catch (e) { nodes = []; }
     renderEventsTree(nodes);
@@ -416,37 +415,59 @@ function _aeTickLabel(tick) {
     try { return (typeof formatTickToLoreTime === "function") ? formatTickToLoreTime(tick) : ("tick " + tick); }
     catch (e) { return "tick " + tick; }
 }
-function _aeBtn(label, onClick) {
-    const b = document.createElement("button"); b.className = "sys-btn"; b.style.fontSize = ".68rem"; b.style.padding = "1px 7px"; b.textContent = label;
-    b.addEventListener("click", onClick); return b;
-}
+// 横向事件轴：主干为横轴，分支(🌿)向上、突发(⚡)向下，按 tick 相对位置挂载
 function renderEventsTree(nodes) {
-    const tree = document.getElementById("events-tree");
+    const axis = document.getElementById("ae-axis");
+    if (!axis) return;
     const mains = nodes.filter(n => n.kind === "main");
-    document.getElementById("ae-add-main").disabled = mains.length > 0;
-    tree.innerHTML = "";
-    if (!nodes.length) { tree.innerHTML = '<p class="placeholder">暂无活跃事件，点击上方「◆ 主干」开启主线。</p>'; return; }
+    const mainBtn = document.getElementById("ae-add-main");
+    if (mainBtn) mainBtn.disabled = mains.length > 0;
+    axis.innerHTML = "";
+    if (!mains.length) {
+        axis.innerHTML = '<div class="ae-empty">暂无活跃事件。点击「◆ 主干」开启主线，或在正文中选中文字 → 右键「🌿 记录为支线」。</div>';
+        return;
+    }
     mains.forEach(m => {
-        const wrap = document.createElement("div"); wrap.className = "timeline-item"; wrap.style.flexDirection = "column"; wrap.style.alignItems = "stretch";
+        const kids = nodes.filter(n => n.parent_id === m.id).sort((a, b) => (a.tick || 0) - (b.tick || 0));
+        const pts = [m.tick || 0, window.currentTick || 0];
+        if (m.end_tick !== null && m.end_tick !== undefined) pts.push(m.end_tick);
+        kids.forEach(c => pts.push(c.tick || 0));
+        let t0 = Math.min.apply(null, pts), t1 = Math.max.apply(null, pts);
+        if (t1 <= t0) t1 = t0 + 1;
+        const track = document.createElement("div"); track.className = "ae-track";
+        const spine = document.createElement("div"); spine.className = "ae-spine"; track.appendChild(spine);
+
         const endStr = (m.end_tick !== null && m.end_tick !== undefined) ? ` → ${_aeTickLabel(m.end_tick)}` : "";
-        wrap.innerHTML = `<div class="tl-title">◆ 主干：${e(m.title || '(无标题)')} <span class="tl-time">@${_aeTickLabel(m.tick)}${endStr}</span></div>`
-            + (m.content ? `<div style="font-size:.75rem;color:var(--text-muted);white-space:pre-wrap;">${e(m.content)}</div>` : "");
-        const bar = document.createElement("div"); bar.style.display = "flex"; bar.style.gap = "4px"; bar.style.marginTop = "3px";
-        bar.appendChild(_aeBtn("✏ 编辑", () => _aeEditNode(m)));
-        bar.appendChild(_aeBtn("🎓 毕业", () => _aeGraduate(m)));
-        bar.appendChild(_aeBtn("🗑", async () => { if (confirm("删除该主干及其所有分支/突发？")) { await apiDel("/api/active_events", m.id); loadActiveEvents(); } }));
-        wrap.appendChild(bar);
-        nodes.filter(n => n.parent_id === m.id).sort((a, b) => (a.tick || 0) - (b.tick || 0)).forEach(c => {
-            const meta = AE_KIND_META[c.kind] || AE_KIND_META.branch;
-            const k = document.createElement("div"); k.className = "timeline-item";
-            k.style.marginLeft = "14px"; k.style.cursor = "pointer";
-            k.innerHTML = `<span class="tl-title">${meta.icon} ${meta.label}：${e(c.title || '(无标题)')}</span> <span class="tl-time">@${_aeTickLabel(c.tick)}</span>`
-                + (c.content ? `<div style="font-size:.72rem;color:var(--text-muted);white-space:pre-wrap;">${e(c.content)}</div>` : "");
-            k.addEventListener("click", () => _aeEditNode(c));
-            k.appendChild(_aeBtn("🗑", async (ev) => { ev.stopPropagation(); if (confirm("删除？")) { await apiDel("/api/active_events", c.id); loadActiveEvents(); } }));
-            wrap.appendChild(k);
+        const label = document.createElement("div"); label.className = "ae-main-label";
+        label.textContent = `◆ 主干：${m.title || '(无标题)'}（${_aeTickLabel(m.tick)}${endStr}）`;
+        label.title = m.content || m.title || "";
+        label.addEventListener("click", () => _aeEditNode(m));
+        track.appendChild(label);
+
+        const ops = document.createElement("div");
+        ops.style.cssText = "position:absolute;right:0;top:50%;transform:translateY(-50%);display:flex;gap:4px;";
+        const gradBtn = document.createElement("button"); gradBtn.className = "sys-btn"; gradBtn.textContent = "🎓 毕业"; gradBtn.style.cssText = "font-size:.66rem;padding:1px 6px;";
+        gradBtn.addEventListener("click", ev => { ev.stopPropagation(); _aeGraduate(m); });
+        const delBtn = document.createElement("button"); delBtn.className = "sys-btn"; delBtn.textContent = "🗑"; delBtn.style.cssText = "font-size:.66rem;padding:1px 6px;";
+        delBtn.addEventListener("click", ev => { ev.stopPropagation(); if (confirm("删除该主干及其所有分支/突发？")) apiDel("/api/active_events", m.id).then(loadActiveEvents); });
+        ops.appendChild(gradBtn); ops.appendChild(delBtn); track.appendChild(ops);
+
+        kids.forEach(c => {
+            const ratio = Math.max(0.04, Math.min(0.96, ((c.tick || 0) - t0) / (t1 - t0)));
+            const isBurst = c.kind === "burst";
+            const node = document.createElement("div");
+            node.className = "ae-node " + (isBurst ? "burst" : "branch");
+            node.style.left = (ratio * 100) + "%";
+            const icon = isBurst ? "⚡" : "🌿";
+            const lbl = `<span class="ae-lbl">${icon} ${e(c.title || '(无标题)')}</span>`;
+            const stem = '<span class="ae-stem"></span>';
+            node.innerHTML = isBurst ? (stem + lbl) : (lbl + stem);
+            node.title = (c.content || c.title || "") + "\n(点击编辑 · 右键删除)";
+            node.addEventListener("click", () => _aeEditNode(c));
+            node.addEventListener("contextmenu", ev => { ev.preventDefault(); if (confirm("删除该节点？")) apiDel("/api/active_events", c.id).then(loadActiveEvents); });
+            track.appendChild(node);
         });
-        tree.appendChild(wrap);
+        axis.appendChild(track);
     });
 }
 async function _aeCreate(kind) {
@@ -492,6 +513,23 @@ async function _aeGraduate(m) {
 document.getElementById("ae-add-main")?.addEventListener("click", () => _aeCreate("main"));
 document.getElementById("ae-add-branch")?.addEventListener("click", () => _aeCreate("branch"));
 document.getElementById("ae-add-burst")?.addEventListener("click", () => _aeCreate("burst"));
+
+// 编辑区顶部事件轴：默认折叠，点标题展开并加载
+(function initAeBar() {
+    const bar = document.getElementById("ae-bar");
+    const toggle = document.getElementById("ae-bar-toggle");
+    const axis = document.getElementById("ae-axis");
+    const actions = document.getElementById("ae-bar-actions");
+    if (!bar || !toggle || !axis || !actions) return;
+    let expanded = false;
+    toggle.addEventListener("click", () => {
+        expanded = !expanded;
+        axis.classList.toggle("hidden", !expanded);
+        actions.classList.toggle("hidden", !expanded);
+        bar.classList.toggle("expanded", expanded);
+        if (expanded) loadActiveEvents();
+    });
+})();
 
 /* ═══════════ Writing ═══════════ */
 const volumeList = document.getElementById("volume-list"), titleInput = document.getElementById("title-input"), contentInput = document.getElementById("content-input");
@@ -1706,7 +1744,6 @@ document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", (
     document.querySelectorAll(".tab-btn").forEach(x => x.classList.remove("active")); b.classList.add("active");
     document.querySelectorAll("#right-sidebar .tab-content").forEach(x => x.classList.add("hidden"));
     document.getElementById(b.dataset.tab).classList.remove("hidden");
-    if (b.dataset.tab === "tab-events" && typeof loadActiveEvents === "function") loadActiveEvents();
     if (b.dataset.tab === "tab-timeline" && typeof loadTimeline === "function") loadTimeline(); }));
 
 /* ═══════════ Writing Copilot ═══════════ */
@@ -6466,7 +6503,8 @@ async function refreshAll() {
     else if (currentModule === "reasoning") await loadReasoningModule();
     else if (currentModule === "relations") await loadRelationsGraph();
     await loadCharacters(); swTimeline();
-    if (typeof loadActiveEvents === "function") await loadActiveEvents();
+    const _aeAxis = document.getElementById("ae-axis");
+    if (_aeAxis && !_aeAxis.classList.contains("hidden") && typeof loadActiveEvents === "function") await loadActiveEvents();
 }
 document.addEventListener("DOMContentLoaded", async () => {
     await loadNovels(); if (chainSelect) await loadChainSelect(); await refreshAll();
