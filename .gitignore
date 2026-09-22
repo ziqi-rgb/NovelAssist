@@ -51,3 +51,21 @@ ehthumbs.db
 *.swp
 *.swo
 *~
+
+# 本地数据 / 数据库
+.data/
+
+# 本地工具残留（codegraph / reasonix / opencode）
+.codegraph/
+.reasonix/
+.opencode/
+
+# 项目梳理临时工作区（不纳入版本控制）
+docs/项目总览/
+
+# 一次性调试脚本与打包备份（非源码）
+NovelAssist-source.zip
+NovelAssist/check_full.py
+NovelAssist/check_line.py
+NovelAssist/check_syntax.js
+NovelAssist/backend/_gen_chains.js
