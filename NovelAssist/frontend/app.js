@@ -209,8 +209,9 @@ const tlMap = { writing: "MAIN_STORY", outline: "HISTORY", map: "WORLD", reasoni
 let currentTimelineType = tlMap.writing;
 let _charNameCache = {};  // id → name
 function swTimeline() {
-    currentTimelineType = tlMap[currentModule] || "MAIN_STORY";
-    document.getElementById("timeline-title").textContent = { HISTORY: "历史时间线", MAIN_STORY: "正文时间线", WORLD: "世界时间线" }[currentTimelineType] || "时间线";
+    // #T006：时间线统一为「历法主轴 + history/main_story/world 三分支」，不再随模块切换过滤
+    currentTimelineType = tlMap[currentModule] || currentTimelineType;
+    document.getElementById("timeline-title").textContent = "⏳ 统一时间轴";
     loadTimeline();
 }
 async function loadTimeline() {
@@ -221,18 +222,23 @@ async function loadTimeline() {
         chars.forEach(c => { _charNameCache[c.id] = c.name; });
     } catch (e) { /* ignore */ }
     const list = document.getElementById("timeline-list");
-    const items = await (await fetch(`/api/timeline?novel_id=${currentNovelId}&event_type=${currentTimelineType}`)).json();
+    const items = await (await fetch(`/api/timeline?novel_id=${currentNovelId}`)).json();
+    // 统一时间轴按绝对 tick 排序（回退 timeline_index），三条分支线混排呈现
+    items.sort((a, b) => (a.absolute_tick || 0) - (b.absolute_tick || 0) || (a.timeline_index || 0) - (b.timeline_index || 0));
+    const typeMeta = { history: { icon: "📜", label: "历史" }, main_story: { icon: "📖", label: "主线" }, world: { icon: "🌍", label: "世界" } };
+    const catEmoji = { "地形变动":"🏔","人物生死":"💀","政治事件":"🏛","宝物现世":"💎","生物异动":"🐉","自然演变":"🌿","其他":"📋" };
     list.innerHTML = ""; if (!items.length) { list.innerHTML = '<p class="placeholder">暂无事件</p>'; return; }
     items.forEach(it => {
         const d = document.createElement("div"); d.className = "timeline-item";
         d.style.cursor = "pointer";
-        const catEmoji = { "地形变动":"🏔","人物生死":"💀","政治事件":"🏛","宝物现世":"💎","生物异动":"🐉","自然演变":"🌿","其他":"📋" };
+        const meta = typeMeta[it.event_type] || { icon: "📋", label: "其他" };
+        const typeBadge = `<span class="tl-cat" style="background:rgba(99,102,241,.16);">${meta.icon} ${meta.label}</span>`;
         const catBadge = `<span class="tl-cat">${catEmoji[it.category]||'📋'} ${e(it.category||'其他')}</span>`;
         const charPills = (it.character_ids || []).map(cid => {
             const name = _charNameCache[cid] || `ID:${cid}`;
             return `<span class="tl-char-pill">${e(name)}</span>`;
         }).join('');
-        d.innerHTML = `<span class="tl-index">#${it.timeline_index || '?'}</span> ${catBadge} <span class="tl-time">${e(it.time_label)}</span> <span class="tl-title">${e(it.title || '(无标题)')}</span>${charPills}`;
+        d.innerHTML = `${typeBadge} <span class="tl-index">#${it.timeline_index || '?'}</span> ${catBadge} <span class="tl-time">${e(it.time_label)}</span> <span class="tl-title">${e(it.title || '(无标题)')}</span>${charPills}`;
         d.addEventListener("click", () => openTimelineDetail(it));
         const del = document.createElement("button"); del.className = "tl-del"; del.innerHTML = "&#128465;";
         del.addEventListener("click", async (ev) => { ev.stopPropagation(); if (!confirm("删除？")) return; await apiDel("/api/timeline", it.id); loadTimeline(); });
@@ -395,6 +401,97 @@ document.getElementById("tl-detail-delete").addEventListener("click", async () =
     document.getElementById("tl-detail-modal").classList.add("hidden"); _tlEditId = null;
     loadTimeline();
 });
+
+/* ═══════════ ActiveEvents (事件树 #T005) ═══════════ */
+const AE_KIND_META = { main: { icon: "◆", label: "主干" }, branch: { icon: "🌿", label: "分支" }, burst: { icon: "⚡", label: "突发" } };
+
+async function loadActiveEvents() {
+    const tree = document.getElementById("events-tree");
+    if (!tree) return;
+    let nodes = [];
+    try { nodes = await (await fetch(`/api/active_events?novel_id=${currentNovelId}`)).json(); } catch (e) { nodes = []; }
+    renderEventsTree(nodes);
+}
+function _aeTickLabel(tick) {
+    try { return (typeof formatTickToLoreTime === "function") ? formatTickToLoreTime(tick) : ("tick " + tick); }
+    catch (e) { return "tick " + tick; }
+}
+function _aeBtn(label, onClick) {
+    const b = document.createElement("button"); b.className = "sys-btn"; b.style.fontSize = ".68rem"; b.style.padding = "1px 7px"; b.textContent = label;
+    b.addEventListener("click", onClick); return b;
+}
+function renderEventsTree(nodes) {
+    const tree = document.getElementById("events-tree");
+    const mains = nodes.filter(n => n.kind === "main");
+    document.getElementById("ae-add-main").disabled = mains.length > 0;
+    tree.innerHTML = "";
+    if (!nodes.length) { tree.innerHTML = '<p class="placeholder">暂无活跃事件，点击上方「◆ 主干」开启主线。</p>'; return; }
+    mains.forEach(m => {
+        const wrap = document.createElement("div"); wrap.className = "timeline-item"; wrap.style.flexDirection = "column"; wrap.style.alignItems = "stretch";
+        const endStr = (m.end_tick !== null && m.end_tick !== undefined) ? ` → ${_aeTickLabel(m.end_tick)}` : "";
+        wrap.innerHTML = `<div class="tl-title">◆ 主干：${e(m.title || '(无标题)')} <span class="tl-time">@${_aeTickLabel(m.tick)}${endStr}</span></div>`
+            + (m.content ? `<div style="font-size:.75rem;color:var(--text-muted);white-space:pre-wrap;">${e(m.content)}</div>` : "");
+        const bar = document.createElement("div"); bar.style.display = "flex"; bar.style.gap = "4px"; bar.style.marginTop = "3px";
+        bar.appendChild(_aeBtn("✏ 编辑", () => _aeEditNode(m)));
+        bar.appendChild(_aeBtn("🎓 毕业", () => _aeGraduate(m)));
+        bar.appendChild(_aeBtn("🗑", async () => { if (confirm("删除该主干及其所有分支/突发？")) { await apiDel("/api/active_events", m.id); loadActiveEvents(); } }));
+        wrap.appendChild(bar);
+        nodes.filter(n => n.parent_id === m.id).sort((a, b) => (a.tick || 0) - (b.tick || 0)).forEach(c => {
+            const meta = AE_KIND_META[c.kind] || AE_KIND_META.branch;
+            const k = document.createElement("div"); k.className = "timeline-item";
+            k.style.marginLeft = "14px"; k.style.cursor = "pointer";
+            k.innerHTML = `<span class="tl-title">${meta.icon} ${meta.label}：${e(c.title || '(无标题)')}</span> <span class="tl-time">@${_aeTickLabel(c.tick)}</span>`
+                + (c.content ? `<div style="font-size:.72rem;color:var(--text-muted);white-space:pre-wrap;">${e(c.content)}</div>` : "");
+            k.addEventListener("click", () => _aeEditNode(c));
+            k.appendChild(_aeBtn("🗑", async (ev) => { ev.stopPropagation(); if (confirm("删除？")) { await apiDel("/api/active_events", c.id); loadActiveEvents(); } }));
+            wrap.appendChild(k);
+        });
+        tree.appendChild(wrap);
+    });
+}
+async function _aeCreate(kind) {
+    const mains = (await (await fetch(`/api/active_events?novel_id=${currentNovelId}`)).json()).filter(n => n.kind === "main");
+    const title = prompt(kind === "main" ? "主干事件标题：" : (kind === "burst" ? "突发事件标题：" : "分支事件标题："), "");
+    if (!title) return;
+    const tickStr = prompt("时间点 tick（历法点，留空=当前时间）：", String(window.currentTick || 0));
+    if (tickStr === null) return;
+    const body = { kind: kind, parent_id: (kind !== "main" && mains.length) ? mains[0].id : null, title: title, content: "", tick: parseInt(tickStr) || 0 };
+    if (kind === "main") {
+        const endStr = prompt("主干结束 tick（可留空，写作中再定）：", "");
+        if (endStr) body.end_tick = parseInt(endStr) || null;
+    }
+    await fetch(`/api/active_events?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    loadActiveEvents();
+}
+async function _aeEditNode(n) {
+    const title = prompt("标题：", n.title || "");
+    if (title === null) return;
+    const content = prompt("内容：", n.content || "");
+    const tickStr = prompt("时间点 tick：", String(n.tick || 0));
+    const body = {
+        kind: n.kind, parent_id: n.parent_id, title: title,
+        content: content === null ? (n.content || "") : content,
+        tick: parseInt(tickStr) || 0, end_tick: n.end_tick, location_id: n.location_id, character_ids: n.character_ids || [],
+    };
+    if (n.kind === "main") {
+        const endStr = prompt("结束 tick（留空=进行中）：", (n.end_tick === null || n.end_tick === undefined) ? "" : String(n.end_tick));
+        body.end_tick = endStr ? (parseInt(endStr) || null) : null;
+    }
+    await fetch(`/api/active_events/${n.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    loadActiveEvents();
+}
+async function _aeGraduate(m) {
+    if (!confirm(`确认「毕业」主干「${m.title}」？\n将调用 AI 总结并写入「正文时间线」，随后该主干及其分支/突发将从事件树移除。`)) return;
+    const s = getSettings();
+    const res = await fetch(`/api/active_events/${m.id}/graduate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider }) });
+    const data = await res.json();
+    if (!res.ok) { alert("毕业失败: " + (data.detail || res.status)); return; }
+    loadActiveEvents(); loadTimeline();
+    showToast("✅ 主干已毕业并写入正文时间线");
+}
+document.getElementById("ae-add-main")?.addEventListener("click", () => _aeCreate("main"));
+document.getElementById("ae-add-branch")?.addEventListener("click", () => _aeCreate("branch"));
+document.getElementById("ae-add-burst")?.addEventListener("click", () => _aeCreate("burst"));
 
 /* ═══════════ Writing ═══════════ */
 const volumeList = document.getElementById("volume-list"), titleInput = document.getElementById("title-input"), contentInput = document.getElementById("content-input");
@@ -1608,7 +1705,9 @@ async function createNewCharacter() { const n = prompt("人物名称："); if (!
 document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach(x => x.classList.remove("active")); b.classList.add("active");
     document.querySelectorAll("#right-sidebar .tab-content").forEach(x => x.classList.add("hidden"));
-    document.getElementById(b.dataset.tab).classList.remove("hidden"); }));
+    document.getElementById(b.dataset.tab).classList.remove("hidden");
+    if (b.dataset.tab === "tab-events" && typeof loadActiveEvents === "function") loadActiveEvents();
+    if (b.dataset.tab === "tab-timeline" && typeof loadTimeline === "function") loadTimeline(); }));
 
 /* ═══════════ Writing Copilot ═══════════ */
 const copilotHistory = document.getElementById("copilot-history");
@@ -6367,6 +6466,7 @@ async function refreshAll() {
     else if (currentModule === "reasoning") await loadReasoningModule();
     else if (currentModule === "relations") await loadRelationsGraph();
     await loadCharacters(); swTimeline();
+    if (typeof loadActiveEvents === "function") await loadActiveEvents();
 }
 document.addEventListener("DOMContentLoaded", async () => {
     await loadNovels(); if (chainSelect) await loadChainSelect(); await refreshAll();
@@ -6562,6 +6662,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (ctxMenu) {
         textarea.addEventListener("contextmenu", function(e) {
             e.preventDefault();
+            window._ctxSelText = (window.getSelection() ? window.getSelection().toString() : "") || "";
             ctxMenu.style.left = e.clientX + "px";
             ctxMenu.style.top = e.clientY + "px";
             ctxMenu.classList.remove("hidden");
@@ -6582,6 +6683,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         ctxMenu.querySelector('.ctx-item[data-action="add-marker"]').addEventListener("click", function() {
             ctxMenu.classList.add("hidden");
             showModal();
+        });
+
+        ctxMenu.querySelector('.ctx-item[data-action="record-branch"]').addEventListener("click", async function() {
+            ctxMenu.classList.add("hidden");
+            const text = (window._ctxSelText || "").trim();
+            if (!text) { alert("请先在正文中选中要记录为支线的文字"); return; }
+            const s = getSettings();
+            let aeResp = [];
+            try { aeResp = await (await fetch(`/api/active_events?novel_id=${currentNovelId}`)).json(); } catch (e) { aeResp = []; }
+            const main = Array.isArray(aeResp) ? aeResp.find(n => n.kind === "main") : null;
+            const startStr = prompt("起始 tick（历法点）：", String(window.currentTick || 0));
+            if (startStr === null) return;
+            const endStr = prompt("结束 tick（可留空）：", startStr);
+            const body = {
+                text: text, start_tick: parseInt(startStr) || 0,
+                end_tick: endStr ? (parseInt(endStr) || null) : null,
+                parent_id: main ? main.id : null,
+                api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider,
+            };
+            try {
+                const res = await fetch(`/api/active_events/record-branch?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                if (!res.ok) { const d = await res.json(); alert("记录失败: " + (d.detail || res.status)); return; }
+                showToast("🌿 已记录为支线");
+                loadActiveEvents();
+            } catch (e) { alert("记录失败: " + e.message); }
         });
     }
 })();

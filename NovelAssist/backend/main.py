@@ -44,6 +44,7 @@ try:
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation, TimelineEventRelation, EventCategory,
+        ActiveEventNode, ActiveEventKind,
     )
     from .world_calendar import CalendarEngine  # noqa: E402
     from .constants import LocationScaleLevel, SYSTEM_CHAIN_NAMES  # noqa: E402
@@ -54,6 +55,7 @@ except ImportError:
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation, TimelineEventRelation, EventCategory,
+        ActiveEventNode, ActiveEventKind,
     )
     from world_calendar import CalendarEngine  # noqa: E402
     from constants import LocationScaleLevel, SYSTEM_CHAIN_NAMES  # noqa: E402
@@ -2151,6 +2153,281 @@ def delete_event_relation(relation_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+# ═══════════ ActiveEvents (事件树) ═══════════
+
+def _normalize_active_kind(raw: str) -> ActiveEventKind:
+    lower = (raw or "").strip().lower()
+    if lower == "main":
+        return ActiveEventKind.MAIN
+    if lower == "burst":
+        return ActiveEventKind.BURST
+    return ActiveEventKind.BRANCH
+
+
+def _delete_active_subtree(db: Session, node_id: int) -> None:
+    """递归删除节点及其全部子节点（分支/突发）"""
+    child_ids = db.scalars(select(ActiveEventNode.id).where(ActiveEventNode.parent_id == node_id)).all()
+    for cid in child_ids:
+        _delete_active_subtree(db, cid)
+    obj = db.get(ActiveEventNode, node_id)
+    if obj is not None:
+        db.delete(obj)
+
+
+def build_active_events_summary(db: Session, novel_id: int) -> str:
+    """汇总活跃事件树 → 注入写作/推演 LLM 的「正在发生的剧情」文本（易变区）"""
+    nodes = db.scalars(
+        select(ActiveEventNode).where(ActiveEventNode.novel_id == novel_id).order_by(ActiveEventNode.tick, ActiveEventNode.id)
+    ).all()
+    mains = [n for n in nodes if n.kind == ActiveEventKind.MAIN]
+    if not mains:
+        return ""
+    novel = db.get(Novel, novel_id)
+    cfg = novel.calendar_config if novel and novel.calendar_config else {}
+
+    def _fmt(tick: int) -> str:
+        try:
+            return CalendarEngine.format_tick_to_lore_time(tick, cfg)
+        except Exception:
+            return f"tick {tick}"
+
+    lines = ["【正在发生的剧情】"]
+    for m in mains:
+        loc = f"；地点：{m.location.name}" if m.location else ""
+        end = f"；结束：{_fmt(m.end_tick)}" if m.end_tick is not None else ""
+        lines.append(f"◆ 主干：{m.title}（起始：{_fmt(m.tick)}{end}{loc}）")
+        if m.content:
+            lines.append(f"  {m.content}")
+        kids = sorted([n for n in nodes if n.parent_id == m.id], key=lambda n: n.tick)
+        for c in kids:
+            marker = "⚡ 突发" if c.kind == ActiveEventKind.BURST else "🌿 分支"
+            suffix = f"：{c.content}" if c.content else ""
+            lines.append(f"  ├ {marker}@{_fmt(c.tick)}：{c.title}{suffix}")
+    return "\n".join(lines)
+
+
+class ActiveEventCreate(BaseModel):
+    kind: str = "branch"
+    parent_id: Optional[int] = None
+    title: str = ""
+    content: str = ""
+    tick: int = 0
+    end_tick: Optional[int] = None
+    location_id: Optional[int] = None
+    character_ids: list[int] = []
+    character_names: list[str] = []
+
+
+class ActiveEventOut(BaseModel):
+    id: int
+    novel_id: int
+    kind: str
+    parent_id: Optional[int] = None
+    title: str = ""
+    content: str = ""
+    tick: int = 0
+    end_tick: Optional[int] = None
+    location_id: Optional[int] = None
+    character_ids: list = []
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+
+class RecordBranchRequest(BaseModel):
+    text: str = ""
+    start_tick: int = 0
+    end_tick: Optional[int] = None
+    parent_id: Optional[int] = None
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    provider: str = ""
+
+
+class GraduateRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    provider: str = ""
+
+
+@app.get("/api/active_events", response_model=list[ActiveEventOut])
+def list_active_events(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    return db.scalars(
+        select(ActiveEventNode).where(ActiveEventNode.novel_id == novel_id).order_by(ActiveEventNode.tick, ActiveEventNode.id)
+    ).all()
+
+
+@app.post("/api/active_events", response_model=ActiveEventOut)
+def create_active_event(body: ActiveEventCreate, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    kind = _normalize_active_kind(body.kind)
+    node = ActiveEventNode(
+        novel_id=novel_id,
+        kind=kind,
+        parent_id=None if kind == ActiveEventKind.MAIN else body.parent_id,
+        title=body.title,
+        content=body.content,
+        tick=body.tick,
+        end_tick=body.end_tick,
+        location_id=body.location_id,
+        character_ids=_resolve_character_ids(db, novel_id, body.character_ids, body.character_names),
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+    return node
+
+
+@app.put("/api/active_events/{node_id}", response_model=ActiveEventOut)
+def update_active_event(node_id: int, body: ActiveEventCreate, db: Session = Depends(get_db)):
+    node = db.get(ActiveEventNode, node_id)
+    if node is None:
+        raise HTTPException(404, "活跃事件不存在")
+    kind = _normalize_active_kind(body.kind)
+    node.kind = kind
+    node.parent_id = None if kind == ActiveEventKind.MAIN else body.parent_id
+    node.title = body.title
+    node.content = body.content
+    node.tick = body.tick
+    node.end_tick = body.end_tick
+    node.location_id = body.location_id
+    if body.character_ids or body.character_names:
+        node.character_ids = _resolve_character_ids(db, node.novel_id, body.character_ids, body.character_names)
+    db.commit()
+    db.refresh(node)
+    return node
+
+
+@app.delete("/api/active_events/{node_id}")
+def delete_active_event(node_id: int, db: Session = Depends(get_db)):
+    node = db.get(ActiveEventNode, node_id)
+    if node is None:
+        raise HTTPException(404, "活跃事件不存在")
+    _delete_active_subtree(db, node_id)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/active_events/record-branch", response_model=ActiveEventOut)
+async def record_active_branch(body: RecordBranchRequest, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    """作者选中正文 → 右键「记录为支线」→ LLM 记录为分支节点"""
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "选中正文为空")
+    title = ""
+    summary = text
+    api_key = body.api_key or LLM_API_KEY
+    base_url = body.base_url or LLM_BASE_URL
+    model = body.model or LLM_MODEL
+    if api_key:
+        try:
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+            prompt = (
+                "你是小说编年史记录员。请将下面这段【正文片段】整理为一条支线记录。\n"
+                "返回纯 JSON（不要 markdown 代码块）：{\"title\": \"10字以内标题\", \"content\": \"150字以内、第三人称、客观凝练的记录\"}\n\n"
+                f"【正文片段】\n{text[:4000]}"
+            )
+            resp = await client.chat.completions.create(
+                model=model, messages=[{"role": "user", "content": prompt}], temperature=0.4,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            mj = re.search(r"\{[\s\S]*\}", raw)
+            if mj:
+                parsed = json.loads(mj.group(0))
+                title = str(parsed.get("title", "")).strip()
+                summary = str(parsed.get("content", "")).strip() or text
+        except Exception:
+            title = ""
+            summary = text
+    if not title:
+        title = (text[:20] or "支线记录").replace("\n", " ")
+    node = ActiveEventNode(
+        novel_id=novel_id,
+        kind=ActiveEventKind.BRANCH,
+        parent_id=body.parent_id,
+        title=title,
+        content=summary,
+        tick=body.start_tick,
+        end_tick=body.end_tick,
+        character_ids=[],
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+    return node
+
+
+@app.post("/api/active_events/{node_id}/graduate")
+async def graduate_active_event(node_id: int, body: GraduateRequest, db: Session = Depends(get_db)):
+    """主干事件毕业：LLM 总结 → 写入 main_story 时间线 → 从事件树移除"""
+    node = db.get(ActiveEventNode, node_id)
+    if node is None:
+        raise HTTPException(404, "活跃事件不存在")
+    if node.kind != ActiveEventKind.MAIN:
+        raise HTTPException(400, "只有主干事件可以毕业")
+    novel = db.get(Novel, node.novel_id)
+    cfg = novel.calendar_config if novel and novel.calendar_config else {}
+    end_tick = node.end_tick if node.end_tick is not None else node.tick
+    nodes = db.scalars(select(ActiveEventNode).where(ActiveEventNode.novel_id == node.novel_id)).all()
+    kids = sorted([n for n in nodes if n.parent_id == node.id], key=lambda n: n.tick)
+    blocks = [f"主干：{node.title}\n{node.content}"]
+    for c in kids:
+        tag = "突发" if c.kind == ActiveEventKind.BURST else "分支"
+        blocks.append(f"[{tag}] {c.title}\n{c.content}")
+    corpus = "\n\n".join(b for b in blocks if b.strip())
+
+    title = node.title
+    summary = corpus
+    api_key = body.api_key or LLM_API_KEY
+    base_url = body.base_url or LLM_BASE_URL
+    model = body.model or LLM_MODEL
+    if api_key:
+        try:
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+            prompt = (
+                "你是小说主线编年史主编。请将以下【主干事件及其分支/突发事件】总结为一条主线剧情记录。\n"
+                "返回纯 JSON（不要 markdown 代码块）：{\"title\": \"15字以内标题\", \"content\": \"300字以内、第三人称、凝练的主线事件记述\"}\n\n"
+                f"{corpus[:6000]}"
+            )
+            resp = await client.chat.completions.create(
+                model=model, messages=[{"role": "user", "content": prompt}], temperature=0.4,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            mj = re.search(r"\{[\s\S]*\}", raw)
+            if mj:
+                parsed = json.loads(mj.group(0))
+                title = str(parsed.get("title", "")).strip() or node.title
+                summary = str(parsed.get("content", "")).strip() or corpus
+        except Exception:
+            summary = corpus
+
+    max_idx = db.scalar(
+        select(func.max(TimelineEvent.timeline_index)).where(
+            TimelineEvent.novel_id == node.novel_id,
+            TimelineEvent.event_type == TimelineEventType.MAIN_STORY,
+        )
+    )
+    ev = TimelineEvent(
+        event_type=TimelineEventType.MAIN_STORY,
+        title=title,
+        time_label=CalendarEngine.format_tick_to_lore_time(end_tick, cfg),
+        category="其他",
+        content=summary,
+        timeline_index=(max_idx or 0) + 1,
+        absolute_tick=end_tick,
+        character_ids=list(node.character_ids or []),
+        related_location_id=node.location_id,
+        novel_id=node.novel_id,
+    )
+    db.add(ev)
+    _delete_active_subtree(db, node_id)
+    db.commit()
+    db.refresh(ev)
+    return {"ok": True, "timeline_event_id": ev.id, "title": ev.title}
+
+
 # ═══════════ Snapshots ═══════════
 
 @app.get("/api/characters/{char_id}/snapshots", response_model=list[SnapshotOut])
@@ -2907,6 +3184,10 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         else:
             volatile_parts.append("【活跃人物与当前坐标】: (暂无)")
 
+    active_summary = build_active_events_summary(db, req.novel_id)
+    if active_summary:
+        volatile_parts.append(active_summary)
+
     world_state = "==== 当前世界状态参考 ====\n" + "\n\n".join(stable_parts)
     if has_ctx:
         world_state += (
@@ -3205,6 +3486,9 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     title_part = f" — {e.title}" if e.title else ""
                     lines.append(f"{e.timeline_index}. [{e.time_label}]{title_part}")
                 parts.append("\n".join(lines))
+        active_summary = build_active_events_summary(db, novel_id)
+        if active_summary:
+            parts.append(active_summary)
         return "\n\n".join(parts) if parts else "(无上下文)"
 
     def _outline_tree_by_cat(cat_name: str) -> str:

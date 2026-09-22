@@ -522,11 +522,21 @@
                 <div class="tab-bar">
                     <button class="tab-btn active" data-tab="tab-characters">人物卡</button>
                     <button class="tab-btn" data-tab="tab-ai">AI助手</button>
+                    <button class="tab-btn" data-tab="tab-events">事件树</button>
                     <button class="tab-btn" data-tab="tab-timeline">时间线</button>
                 </div>
                 <div id="tab-characters" class="tab-content"><button id="new-character-btn">+ 新建人物</button><div id="character-list"></div></div>
+                <div id="tab-events" class="tab-content hidden">
+                    <div class="timeline-header" id="events-tree-title">🌳 活跃事件树</div>
+                    <div style="display:flex;gap:4px;padding:4px 0;">
+                        <button id="ae-add-main" class="sys-btn sys-btn-primary" style="flex:1;font-size:.72rem;">◆ 主干</button>
+                        <button id="ae-add-branch" class="sys-btn" style="flex:1;font-size:.72rem;">🌿 分支</button>
+                        <button id="ae-add-burst" class="sys-btn" style="flex:1;font-size:.72rem;">⚡ 突发</button>
+                    </div>
+                    <div id="events-tree"></div>
+                </div>
                 <div id="tab-timeline" class="tab-content hidden">
-                    <div class="timeline-header" id="timeline-title">时间线</div><div id="timeline-list"></div>
+                    <div class="timeline-header" id="timeline-title">⏳ 统一时间轴</div><div id="timeline-list"></div>
                     <div class="timeline-form"><input type="text" id="tl-title" placeholder="事件名称"><input type="text" id="tl-time-label" placeholder="时间标签"><input type="text" id="tl-content" placeholder="事件内容"><button id="tl-add-btn" class="sys-btn sys-btn-primary">新增</button></div>
                 </div>
                 <!-- 时间线详情/编辑弹窗 -->
@@ -888,6 +898,7 @@
     <!-- 编辑器右键菜单 -->
     <div id="editor-context-menu" class="context-menu hidden">
         <div class="ctx-item" data-action="add-marker">⏰ 添加时间流逝标记</div>
+        <div class="ctx-item" data-action="record-branch">🌿 记录为支线</div>
     </div>
 </body>
 </html>

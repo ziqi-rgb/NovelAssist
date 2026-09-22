@@ -33,6 +33,13 @@ class TimelineEventType(enum.Enum):
     WORLD = "world"
 
 
+class ActiveEventKind(enum.Enum):
+    """活跃事件树节点类型 — 三种时态 + 三种来源"""
+    MAIN = "main"      # 主干（主轴，现在时）
+    BRANCH = "branch"  # 分支（记录，过去时）
+    BURST = "burst"    # 突发（规划，未来时）
+
+
 class EventCategory(enum.Enum):
     TERRAIN = "地形变动"
     CHARACTER_LIFE = "人物生死"
@@ -66,6 +73,7 @@ class Novel(Base):
     locations: Mapped[list[Location]] = relationship(back_populates="novel")
     world_events: Mapped[list[WorldEvent]] = relationship(back_populates="novel")
     timeline_events: Mapped[list[TimelineEvent]] = relationship(back_populates="novel")
+    active_events: Mapped[list[ActiveEventNode]] = relationship(back_populates="novel")
     factions: Mapped[list[Faction]] = relationship(back_populates="novel")
     character_relations: Mapped[list[CharacterRelation]] = relationship(back_populates="novel")
 
@@ -195,6 +203,33 @@ class WorldEvent(Base):
 
     novel: Mapped[Novel] = relationship(back_populates="world_events")
     location: Mapped[Optional[Location]] = relationship(back_populates="events")
+
+
+class ActiveEventNode(Base):
+    """活跃事件树节点 — 主干(主轴) + 分支(记录) + 突发(规划)"""
+    __tablename__ = "active_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
+    kind: Mapped[ActiveEventKind] = mapped_column(
+        SAEnum(ActiveEventKind), nullable=False, default=ActiveEventKind.BRANCH
+    )
+    parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("active_events.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tick: Mapped[int] = mapped_column(Integer, nullable=False, default=0)          # 主轴=起点；分支/突发=挂载点
+    end_tick: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # 主轴结束点（作者写作时定）
+    location_id: Mapped[Optional[int]] = mapped_column(ForeignKey("locations.id"), nullable=True)
+    character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    novel: Mapped[Novel] = relationship(back_populates="active_events")
+    location: Mapped[Optional[Location]] = relationship()
+    parent: Mapped[Optional[ActiveEventNode]] = relationship(
+        back_populates="children", remote_side="ActiveEventNode.id"
+    )
+    children: Mapped[list[ActiveEventNode]] = relationship(back_populates="parent")
 
 
 class TimelineEvent(Base):
