@@ -5,8 +5,19 @@ conftest.py 已把工作目录切到临时目录，数据库落在隔离的临�
 """
 import asyncio
 
+import pytest
+
 from backend import main as M
 from backend.database import Base, engine, SessionLocal
+
+
+@pytest.fixture(autouse=True)
+def _clean_active_events():
+    """每个用例前清空事件树，避免跨用例的主干唯一冲突。"""
+    with SessionLocal() as db:
+        db.query(M.ActiveEventNode).delete()
+        db.commit()
+    yield
 
 
 def setup_module(module):
@@ -187,3 +198,27 @@ def test_sync_burst_to_branch_on_time_advance():
         assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BRANCH
         s90 = M.build_active_events_summary(db, 1)
         assert "未来事件" in s90 and "已发生" in s90
+
+
+def test_single_main_enforced():
+    """主干（主轴）全局唯一：已存在主干时拒绝新建（端点与 AI 工具都拒绝）。"""
+    with SessionLocal() as db:
+        db.query(M.ActiveEventNode).delete()
+        db.commit()
+        m1 = M.create_active_event(M.ActiveEventCreate(kind="main", title="主轴A", tick=0), novel_id=1, db=db)
+        try:
+            M.create_active_event(M.ActiveEventCreate(kind="main", title="主轴B", tick=5), novel_id=1, db=db)
+            raise AssertionError("不应允许第二条主干")
+        except M.HTTPException as exc:
+            assert exc.status_code == 400
+
+        r = M.execute_agent_tool(1, M.ToolExecuteReq(
+            tool_name="manage_active_event",
+            arguments={"action": "create", "kind": "main", "data": {"title": "主轴C", "tick": 1}},
+        ), db=db)
+        assert r["status"] == "error"
+
+        # 结束后（删除）可再建新主干
+        M.delete_active_event(m1.id, db=db)
+        m3 = M.create_active_event(M.ActiveEventCreate(kind="main", title="主轴D", tick=1), novel_id=1, db=db)
+        assert m3.kind == M.ActiveEventKind.MAIN

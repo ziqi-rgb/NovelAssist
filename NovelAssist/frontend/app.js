@@ -539,6 +539,36 @@ function _aeFmtUnits(v) {
     if (!isFinite(v)) return "";
     return String(Math.round(v * 1000) / 1000);
 }
+function _aeYearMax() {
+    const curY = tickToDate(Math.max(window.currentTick || 0, 0)).year;
+    return Math.max(curY + 20, 100);
+}
+function _aeFillCalSelects(pfx, d) {
+    const cfg = window.novelTimeConfig || {};
+    const hpd = cfg.hours_per_day || 24, dpm = cfg.days_per_month || 30, mpy = cfg.months_per_year || 12;
+    const fill = (id, from, to, sel, names, suffix) => {
+        const el = document.getElementById(id); el.innerHTML = "";
+        for (let v = from; v <= to; v++) {
+            const o = document.createElement("option"); o.value = String(v);
+            const nm = (names && names.length > (v - from)) ? names[v - from] : null;
+            o.textContent = nm ? nm : (v + suffix);
+            if (v === sel) o.selected = true;
+            el.appendChild(o);
+        }
+    };
+    fill(pfx + "y", 1, _aeYearMax(), d.year, cfg.year_names, "年");
+    fill(pfx + "m", 1, mpy, d.month, cfg.month_names, "月");
+    fill(pfx + "d", 1, dpm, d.day, cfg.day_names, "日");
+    fill(pfx + "h", 0, hpd - 1, d.hour, cfg.hour_names, "时");
+}
+function _aeReadCalSelects(pfx) {
+    return dateToTick(
+        parseInt(document.getElementById(pfx + "y").value),
+        parseInt(document.getElementById(pfx + "m").value),
+        parseInt(document.getElementById(pfx + "d").value),
+        parseInt(document.getElementById(pfx + "h").value),
+    );
+}
 async function _aePopulateCharSelect() {
     const sel = document.getElementById("ae-win-char-select");
     sel.innerHTML = '<option value="">— 选择角色库角色 —</option>';
@@ -593,23 +623,25 @@ async function _aeDetailOpen(node, kind, parentId) {
     const absTick = node ? (node.tick || 0) : (window.currentTick || 0);
     const absEnd = (node && node.end_tick !== null && node.end_tick !== undefined) ? node.end_tick : null;
     if (isMain) {
-        tickInput.step = String(tickStep.step);
-        endInput.step = String(tickStep.step);
-        tickInput.value = String(absTick);
-        endInput.value = (absEnd === null) ? "" : String(absEnd);
+        // 主干：完整历法下拉（年/月/日/时），取绝对时间
+        document.getElementById("ae-win-tickwrap").classList.add("hidden");
+        document.getElementById("ae-win-cal-wrap").classList.remove("hidden");
+        _aeFillCalSelects("ae-cal-s", tickToDate(absTick));
+        const hasEnd = absEnd !== null;
+        document.getElementById("ae-cal-hasend").checked = hasEnd;
+        document.getElementById("ae-cal-end-row").classList.toggle("hidden", !hasEnd);
+        _aeFillCalSelects("ae-cal-e", tickToDate(hasEnd ? absEnd : absTick));
     } else {
         // 分支/突发：以「刻度单位」计数（值 = 相对主干起点的偏移 ÷ 单位刻度）
+        document.getElementById("ae-win-tickwrap").classList.remove("hidden");
+        document.getElementById("ae-win-cal-wrap").classList.add("hidden");
         tickInput.step = "1";
         endInput.step = "1";
         tickInput.value = _aeFmtUnits((absTick - _aeWinMainTick) / tickStep.step);
         endInput.value = (absEnd === null) ? "" : _aeFmtUnits((absEnd - _aeWinMainTick) / tickStep.step);
+        document.getElementById("ae-win-tick-text").textContent = "相对时间点（单位：" + tickStep.unit + "，相对主干起点）";
+        document.getElementById("ae-win-end-text").textContent = "结束（单位：" + tickStep.unit + "，可留空）";
     }
-    document.getElementById("ae-win-tick-text").textContent = isMain
-        ? ("时间点 tick（绝对，最小刻度 1" + tickStep.unit + "）")
-        : ("相对时间点（单位：" + tickStep.unit + "，相对主干起点）");
-    document.getElementById("ae-win-end-text").textContent = isMain
-        ? "结束 tick（可留空）"
-        : ("结束（单位：" + tickStep.unit + "，可留空）");
     document.getElementById("ae-win-content").value = node ? (node.content || "") : "";
     document.getElementById("ae-win-end-wrap").classList.remove("hidden");
     document.getElementById("ae-win-newchar-form").classList.add("hidden");
@@ -631,8 +663,8 @@ async function _aeDetailSave() {
     const ev = document.getElementById("ae-win-end").value;
     let absTick, absEnd;
     if (isMain) {
-        absTick = isNaN(tickRaw) ? 0 : Math.round(tickRaw);
-        absEnd = (ev === "") ? null : (parseInt(ev) || 0);
+        absTick = _aeReadCalSelects("ae-cal-s");
+        absEnd = document.getElementById("ae-cal-hasend").checked ? _aeReadCalSelects("ae-cal-e") : null;
     } else {
         // 输入以「刻度单位」计 → 折算为相对 tick → 加主干起点得绝对 tick
         const base = _aeWinMainTick || 0;
@@ -681,6 +713,9 @@ async function _aeDetailSave() {
         if (!nm) return; _aeWinExtra.push(nm); inp.value = ""; _aeRenderWinPills();
     });
     document.getElementById("ae-win-newchar-btn").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.toggle("hidden"));
+    document.getElementById("ae-cal-hasend").addEventListener("change", (e) => {
+        document.getElementById("ae-cal-end-row").classList.toggle("hidden", !e.target.checked);
+    });
     document.getElementById("ae-win-nc-cancel").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.add("hidden"));
     document.getElementById("ae-win-nc-save").addEventListener("click", async () => {
         const name = document.getElementById("ae-win-nc-name").value.trim();

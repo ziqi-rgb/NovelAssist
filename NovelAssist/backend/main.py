@@ -2199,6 +2199,18 @@ def _normalize_active_kind(raw: str) -> ActiveEventKind:
     return ActiveEventKind.BRANCH
 
 
+def _ensure_single_main(db: Session, novel_id: int, exclude_id: Optional[int] = None) -> None:
+    """主干（主轴）全局唯一：已存在其它主干时拒绝新建/改写。"""
+    stmt = select(ActiveEventNode).where(
+        ActiveEventNode.novel_id == novel_id,
+        ActiveEventNode.kind == ActiveEventKind.MAIN,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(ActiveEventNode.id != exclude_id)
+    if db.scalars(stmt).first() is not None:
+        raise HTTPException(400, "已存在主干事件（全书唯一）；请先结束当前主干，再开启新主干。")
+
+
 def _delete_active_subtree(db: Session, node_id: int) -> None:
     """递归删除节点及其全部子节点（分支/突发）"""
     child_ids = db.scalars(select(ActiveEventNode.id).where(ActiveEventNode.parent_id == node_id)).all()
@@ -2353,6 +2365,8 @@ def list_active_events(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Sess
 @app.post("/api/active_events", response_model=ActiveEventOut)
 def create_active_event(body: ActiveEventCreate, novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
     kind = _normalize_active_kind(body.kind)
+    if kind == ActiveEventKind.MAIN:
+        _ensure_single_main(db, novel_id)
     node = ActiveEventNode(
         novel_id=novel_id,
         kind=kind,
@@ -2377,6 +2391,8 @@ def update_active_event(node_id: int, body: ActiveEventCreate, db: Session = Dep
     if node is None:
         raise HTTPException(404, "活跃事件不存在")
     kind = _normalize_active_kind(body.kind)
+    if kind == ActiveEventKind.MAIN:
+        _ensure_single_main(db, node.novel_id, exclude_id=node_id)
     node.kind = kind
     node.parent_id = None if kind == ActiveEventKind.MAIN else body.parent_id
     node.title = body.title
@@ -4419,6 +4435,12 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
 
         if action == "create":
             node_kind = _normalize_active_kind(kind)
+            if node_kind == ActiveEventKind.MAIN:
+                existing_main = db.scalars(select(ActiveEventNode).where(
+                    ActiveEventNode.novel_id == novel_id, ActiveEventNode.kind == ActiveEventKind.MAIN
+                )).first()
+                if existing_main is not None:
+                    return {"status": "error", "msg": "已存在主干事件（全书唯一）；请先结束当前主干再开启新主干"}
             parent_id = _g("parent_id")
             if node_kind != ActiveEventKind.MAIN and parent_id is None:
                 main_node = db.scalars(select(ActiveEventNode).where(

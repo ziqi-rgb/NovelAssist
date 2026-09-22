@@ -884,6 +884,9 @@
         .ae-win-pill button { background:none; border:none; color:inherit; cursor:pointer; font-size:.8rem; line-height:1; padding:0; }
         .ae-win-newchar { display:flex; flex-direction:column; gap:5px; padding:8px; border:1px dashed var(--border); border-radius:8px; margin-top:4px; }
         .ae-win-actions { display:flex; gap:6px; padding:8px 12px; border-top:1px solid var(--border); }
+        .ae-cal-row { display:flex; align-items:center; gap:3px; flex-wrap:wrap; margin-top:4px; }
+        .ae-cal-row select { padding:4px 6px; font-size:.8rem; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); }
+        .ae-cal-row span { font-size:.72rem; color:var(--text-muted); }
     </style>
 
     <div id="edge-edit-modal" class="modal hidden">
@@ -955,11 +958,23 @@
         <div class="ae-win-body">
             <label>事件名称</label>
             <input type="text" id="ae-win-title-input" placeholder="事件名称">
-            <label id="ae-win-tick-label"><span id="ae-win-tick-text">时间点 tick</span> <button type="button" id="ae-win-now" class="sys-btn" style="font-size:.65rem;padding:1px 6px;margin-left:6px;">📅 现在</button></label>
-            <input type="number" id="ae-win-tick" placeholder="0">
-            <div id="ae-win-end-wrap">
-                <label id="ae-win-end-label"><span id="ae-win-end-text">结束 tick（可留空）</span></label>
-                <input type="number" id="ae-win-end" placeholder="可留空">
+            <div id="ae-win-tickwrap">
+                <label id="ae-win-tick-label"><span id="ae-win-tick-text">时间点 tick</span> <button type="button" id="ae-win-now" class="sys-btn" style="font-size:.65rem;padding:1px 6px;margin-left:6px;">📅 现在</button></label>
+                <input type="number" id="ae-win-tick" placeholder="0">
+                <div id="ae-win-end-wrap">
+                    <label id="ae-win-end-label"><span id="ae-win-end-text">结束 tick（可留空）</span></label>
+                    <input type="number" id="ae-win-end" placeholder="可留空">
+                </div>
+            </div>
+            <div id="ae-win-cal-wrap" class="hidden">
+                <label>起始时间（历法）</label>
+                <div class="ae-cal-row">
+                    <select id="ae-cal-sy"></select><span>年</span><select id="ae-cal-sm"></select><span>月</span><select id="ae-cal-sd"></select><span>日</span><select id="ae-cal-sh"></select><span>时</span>
+                </div>
+                <label style="display:flex;align-items:center;gap:6px;margin-top:8px;"><input type="checkbox" id="ae-cal-hasend"> 设置结束时间</label>
+                <div class="ae-cal-row hidden" id="ae-cal-end-row" style="margin-top:6px;">
+                    <select id="ae-cal-ey"></select><span>年</span><select id="ae-cal-em"></select><span>月</span><select id="ae-cal-ed"></select><span>日</span><select id="ae-cal-eh"></select><span>时</span>
+                </div>
             </div>
             <label>事件内容</label>
             <textarea id="ae-win-content" placeholder="事件内容" style="min-height:70px;"></textarea>
