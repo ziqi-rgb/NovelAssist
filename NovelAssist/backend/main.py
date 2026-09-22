@@ -210,6 +210,39 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "manage_active_event",
+            "description": (
+                "管理「活跃事件轴」：主干(main，全书唯一主轴)、分支(branch，已发生的记录)、突发(burst，未来规划)。"
+                "作者对话中要求推进剧情/记录支线/规划后续时调用，可一句话创建或修改事件。"
+                "注意：『结束主干事件』不在此工具内，需提示作者在正文编辑区顶部事件轴操作。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create", "update", "delete", "list"]},
+                    "kind": {"type": "string", "enum": ["main", "branch", "burst"], "description": "事件类型；create 必填"},
+                    "id": {"type": "integer", "description": "update/delete 时必填（活跃事件 id）"},
+                    "data": {
+                        "type": "object",
+                        "description": (
+                            "事件数据（嵌套 JSON 对象）："
+                            "title(事件名称)/content(事件内容)/tick(时间点，整数历法 tick)/"
+                            "end_tick(主干结束 tick，可空)/"
+                            "character_names(参与角色名列表，会自动匹配角色库已有角色)/"
+                            "extra_characters(龙套角色名列表，仅存本事件不入库)/"
+                            "location_name(地点名)/"
+                            "parent_id(分支/爆发的挂载主轴 id，留空则自动挂到当前主轴)。"
+                        ),
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "generate_reasoning_chain",
             "description": "根据用户的需求，创建一个新的AI推理链方案，或覆盖已有的推理链。",
             "parameters": {
@@ -2191,18 +2224,31 @@ def build_active_events_summary(db: Session, novel_id: int) -> str:
         except Exception:
             return f"tick {tick}"
 
+    def _participants(node: ActiveEventNode) -> str:
+        names: list[str] = []
+        for cid in (node.character_ids or []):
+            ch = db.get(Character, cid)
+            if ch is not None:
+                names.append(ch.name)
+        names.extend(str(x) for x in (node.extra_characters or []))
+        return "、".join(names)
+
     lines = ["【正在发生的剧情】"]
     for m in mains:
         loc = f"；地点：{m.location.name}" if m.location else ""
         end = f"；结束：{_fmt(m.end_tick)}" if m.end_tick is not None else ""
-        lines.append(f"◆ 主干：{m.title}（起始：{_fmt(m.tick)}{end}{loc}）")
+        part = _participants(m)
+        part_str = f"；参与：{part}" if part else ""
+        lines.append(f"◆ 主干：{m.title}（起始：{_fmt(m.tick)}{end}{loc}{part_str}）")
         if m.content:
             lines.append(f"  {m.content}")
         kids = sorted([n for n in nodes if n.parent_id == m.id], key=lambda n: n.tick)
         for c in kids:
             marker = "⚡ 突发" if c.kind == ActiveEventKind.BURST else "🌿 分支"
             suffix = f"：{c.content}" if c.content else ""
-            lines.append(f"  ├ {marker}@{_fmt(c.tick)}：{c.title}{suffix}")
+            kpart = _participants(c)
+            kpart_str = f"（参与：{kpart}）" if kpart else ""
+            lines.append(f"  ├ {marker}@{_fmt(c.tick)}：{c.title}{suffix}{kpart_str}")
     return "\n".join(lines)
 
 
@@ -4312,6 +4358,83 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                 result["timeline"] = "\n".join(lines) if lines else "(无时间线事件)"
 
         return {"status": "success", "query_type": qtype, "data": result}
+
+    if req.tool_name == "manage_active_event":
+        action = req.arguments.get("action")
+        kind = req.arguments.get("kind", "branch")
+        aid = req.arguments.get("id")
+        data = req.arguments.get("data", {}) or {}
+
+        def _has(k: str) -> bool:
+            return k in data or k in req.arguments
+
+        def _g(k: str, default=None):
+            return data[k] if k in data else req.arguments.get(k, default)
+
+        if action in ("list", "query"):
+            return {"status": "success", "data": build_active_events_summary(db, novel_id) or "(无活跃事件)"}
+
+        if action == "create":
+            node_kind = _normalize_active_kind(kind)
+            parent_id = _g("parent_id")
+            if node_kind != ActiveEventKind.MAIN and parent_id is None:
+                main_node = db.scalars(select(ActiveEventNode).where(
+                    ActiveEventNode.novel_id == novel_id, ActiveEventNode.kind == ActiveEventKind.MAIN
+                ).order_by(ActiveEventNode.id)).first()
+                parent_id = main_node.id if main_node else None
+            loc_id = _g("location_id")
+            loc_name = _g("location_name")
+            if not loc_id and loc_name:
+                lo = db.query(Location).filter(Location.novel_id == novel_id, Location.name == str(loc_name).strip()).first()
+                loc_id = lo.id if lo else None
+            et = _g("end_tick")
+            node = ActiveEventNode(
+                novel_id=novel_id,
+                kind=node_kind,
+                parent_id=None if node_kind == ActiveEventKind.MAIN else parent_id,
+                title=str(_g("title", "") or ""),
+                content=str(_g("content", "") or ""),
+                tick=int(_g("tick", 0) or 0),
+                end_tick=(int(et) if et is not None else None),
+                location_id=loc_id,
+                character_ids=_resolve_character_ids(db, novel_id, None, _g("character_names") or []),
+                extra_characters=list(_g("extra_characters") or []),
+            )
+            db.add(node)
+            db.commit()
+            db.refresh(node)
+            return {"status": "success", "id": node.id, "msg": f"已创建事件「{node.title}」"}
+
+        if action in ("update", "modify"):
+            node = db.get(ActiveEventNode, aid) if aid else None
+            if node is None:
+                return {"status": "error", "msg": "事件不存在（请提供正确的 id）"}
+            if _has("title"):
+                node.title = str(_g("title") or "")
+            if _has("content"):
+                node.content = str(_g("content") or "")
+            if _has("tick"):
+                node.tick = int(_g("tick") or 0)
+            if _has("end_tick"):
+                et2 = _g("end_tick")
+                node.end_tick = int(et2) if et2 is not None else None
+            if _has("character_names"):
+                node.character_ids = _resolve_character_ids(db, novel_id, None, _g("character_names") or [])
+            if _has("extra_characters"):
+                node.extra_characters = list(_g("extra_characters") or [])
+            db.commit()
+            db.refresh(node)
+            return {"status": "success", "id": node.id, "msg": f"已更新事件「{node.title}」"}
+
+        if action == "delete":
+            node2 = db.get(ActiveEventNode, aid) if aid else None
+            if node2 is None:
+                return {"status": "error", "msg": "事件不存在（请提供正确的 id）"}
+            _delete_active_subtree(db, node2.id)
+            db.commit()
+            return {"status": "success", "msg": "已删除该事件及其子事件"}
+
+        return {"status": "error", "msg": f"未知 action: {action}"}
 
     if req.tool_name == "manage_world_element":
         etype = req.arguments.get("element_type")

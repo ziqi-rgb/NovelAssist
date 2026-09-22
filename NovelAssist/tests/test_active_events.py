@@ -120,3 +120,37 @@ def test_extra_characters_roundtrip():
             kind="branch", title="围观群众", tick=3, extra_characters=["群众丙"],
         ), db=db)
         assert list(upd.extra_characters) == ["群众丙"]
+
+
+def test_manage_active_event_tool():
+    """AI 助手工具 manage_active_event：create/update/list/delete（不含结束）。"""
+    with SessionLocal() as db:
+        def call(args):
+            return M.execute_agent_tool(1, M.ToolExecuteReq(tool_name="manage_active_event", arguments=args), db=db)
+
+        # create 主轴
+        r = call({"action": "create", "kind": "main", "data": {"title": "工具主干", "tick": 0, "end_tick": 20}})
+        assert r["status"] == "success"
+        mid = r["id"]
+
+        # create 分支（显式挂到主轴）
+        r2 = call({"action": "create", "kind": "branch", "data": {"title": "工具分支", "tick": 5, "extra_characters": ["路人甲"], "parent_id": mid}})
+        assert r2["status"] == "success"
+        bid = r2["id"]
+        branch = db.get(M.ActiveEventNode, bid)
+        assert branch.parent_id == mid
+        assert list(branch.extra_characters) == ["路人甲"]
+
+        # update
+        r3 = call({"action": "update", "id": bid, "data": {"title": "工具分支改", "tick": 9}})
+        assert r3["status"] == "success"
+        assert db.get(M.ActiveEventNode, bid).title == "工具分支改"
+
+        # list（返回汇总，含参与）
+        r4 = call({"action": "list"})
+        assert "工具主干" in r4["data"] and "工具分支改" in r4["data"]
+
+        # delete（级联子树）
+        r5 = call({"action": "delete", "id": mid})
+        assert r5["status"] == "success"
+        assert all(n.id != mid for n in M.list_active_events(novel_id=1, db=db))
