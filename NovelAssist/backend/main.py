@@ -2218,13 +2218,16 @@ def sync_active_bursts(db: Session, novel_id: int) -> int:
     bursts = db.scalars(select(ActiveEventNode).where(
         ActiveEventNode.novel_id == novel_id,
         ActiveEventNode.kind == ActiveEventKind.BURST,
-        ActiveEventNode.tick <= cur,
     )).all()
+    changed = 0
     for b in bursts:
-        b.kind = ActiveEventKind.BRANCH
-    if bursts:
+        end = b.end_tick if b.end_tick is not None else b.tick  # 以结束时间为准
+        if end < cur:  # 整个起止区间已过去 → 「规划」转为「已发生记录」
+            b.kind = ActiveEventKind.BRANCH
+            changed += 1
+    if changed:
         db.commit()
-    return len(bursts)
+    return changed
 
 
 def build_active_events_summary(db: Session, novel_id: int) -> str:
@@ -2253,18 +2256,31 @@ def build_active_events_summary(db: Session, novel_id: int) -> str:
         names.extend(str(x) for x in (node.extra_characters or []))
         return "、".join(names)
 
+    def _range(node: ActiveEventNode) -> str:
+        start = _fmt(node.tick or 0)
+        return f"{start} ~ {_fmt(node.end_tick)}" if node.end_tick is not None else start
+
     cur_tick = (novel.current_tick if novel else 0) or 0
+
+    def _phase(node: ActiveEventNode) -> str:
+        start = node.tick or 0
+        end = node.end_tick if node.end_tick is not None else start
+        if cur_tick < start:
+            return "待发生"
+        if cur_tick > end:
+            return "已发生"
+        return "正在发生"
+
     lines = [
         "【正在发生的剧情】",
-        "※ 请先以『当前世界时间』为基准确认时态——起点在此刻之前的为主干/已发生；标注『待发生』的尚未发生。",
+        "※ 请先以『当前世界时间』为基准确认各事件时态：起点未到=『待发生』，处于起止区间内=『正在发生』，区间已过=『已发生』。",
         f"当前世界时间：{_fmt(cur_tick)}",
     ]
     for m in mains:
         loc = f"；地点：{m.location.name}" if m.location else ""
-        end = f"；结束：{_fmt(m.end_tick)}" if m.end_tick is not None else ""
         part = _participants(m)
         part_str = f"；参与：{part}" if part else ""
-        lines.append(f"◆ 主干：{m.title}（起始：{_fmt(m.tick)}{end}{loc}{part_str}）")
+        lines.append(f"◆ 主干：{m.title}【{_phase(m)}】（{_range(m)}{loc}{part_str}）")
         if m.content:
             lines.append(f"  {m.content}")
         kids = sorted([n for n in nodes if n.parent_id == m.id], key=lambda n: n.tick)
@@ -2272,10 +2288,8 @@ def build_active_events_summary(db: Session, novel_id: int) -> str:
             suffix = f"：{c.content}" if c.content else ""
             kpart = _participants(c)
             kpart_str = f"（参与：{kpart}）" if kpart else ""
-            if c.kind == ActiveEventKind.BURST:
-                lines.append(f"  ├ ⚡ 突发@{_fmt(c.tick)}【待发生】：{c.title}{suffix}{kpart_str}")
-            else:
-                lines.append(f"  ├ 🌿 分支@{_fmt(c.tick)}【已发生】：{c.title}{suffix}{kpart_str}")
+            marker = "⚡ 突发" if c.kind == ActiveEventKind.BURST else "🌿 分支"
+            lines.append(f"  ├ {marker}@{_range(c)}【{_phase(c)}】：{c.title}{suffix}{kpart_str}")
     return "\n".join(lines)
 
 

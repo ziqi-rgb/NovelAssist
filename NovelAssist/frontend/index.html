@@ -861,13 +861,18 @@
         .ae-main-label { position:absolute; left:0; top:50%; transform:translateY(-50%); background:#fff; color:#000; border:2px solid #000; border-radius:12px; padding:3px 12px; font-size:.75rem; font-weight:700; line-height:1.3; white-space:normal; max-width:240px; cursor:pointer; z-index:2; display:flex; flex-direction:column; }
         .ae-main-label .ae-main-time { font-weight:400; font-size:.66rem; color:#333; }
         /* 分支/突发：圆角胶囊卡片 + 黑色竖线连向主轴 */
-        .ae-node { position:absolute; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; cursor:pointer; }
-        .ae-node .ae-lbl { border-radius:14px; border:2px solid #000; padding:2px 10px; font-size:.72rem; line-height:1.2; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis; color:#000; }
-        .ae-node .ae-stem { display:block; flex:0 0 auto; width:0; height:26px; border-left:2px solid #000; }
+        .ae-node { position:absolute; height:64px; cursor:pointer; }
         .ae-node.branch { bottom:50%; }
-        .ae-node.branch .ae-lbl { background:#86efac; }
         .ae-node.burst { top:50%; }
-        .ae-node.burst .ae-lbl { background:#fca5a5; }
+        .ae-node .ae-lbl { position:absolute; left:50%; transform:translateX(-50%); border-radius:14px; border:2px solid #000; padding:2px 10px; font-size:.72rem; line-height:1.2; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis; color:#000; z-index:1; }
+        .ae-node.branch .ae-lbl { top:0; background:#86efac; }
+        .ae-node.burst .ae-lbl { bottom:0; background:#fca5a5; }
+        /* 一起一止两条竖线，连接事件胶囊与主干轴 */
+        .ae-node .ae-leg { position:absolute; width:0; border-left:2px solid #000; }
+        .ae-node.branch .ae-leg { top:24px; bottom:0; }
+        .ae-node.burst .ae-leg { top:0; bottom:24px; }
+        .ae-node .ae-leg.start { left:0; }
+        .ae-node .ae-leg.end { right:0; }
         .ae-node:hover .ae-lbl { box-shadow:0 0 0 2px rgba(99,102,241,.65); }
         /* 事件详情浮动窗 */
         .ae-win { position:fixed; z-index:1200; display:flex; flex-direction:column; background:var(--bg); border:2px solid var(--border); border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,.4); overflow:hidden; }
@@ -956,9 +961,9 @@
             <input type="text" id="ae-win-title-input" placeholder="事件名称">
             <label>时间点 tick <button type="button" id="ae-win-now" class="sys-btn" style="font-size:.65rem;padding:1px 6px;margin-left:6px;">📅 现在</button></label>
             <input type="number" id="ae-win-tick" placeholder="0">
-            <div id="ae-win-end-wrap" class="hidden">
-                <label>结束 tick（主干，可留空）</label>
-                <input type="number" id="ae-win-end" placeholder="进行中">
+            <div id="ae-win-end-wrap">
+                <label>结束 tick（事件区间终点，可留空）</label>
+                <input type="number" id="ae-win-end" placeholder="可留空">
             </div>
             <label>事件内容</label>
             <textarea id="ae-win-content" placeholder="事件内容" style="min-height:70px;"></textarea>

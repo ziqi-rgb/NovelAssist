@@ -451,15 +451,19 @@ function renderEventsTree(nodes) {
         track.appendChild(label);
 
         kids.forEach(c => {
-            const ratio = Math.max(0.04, Math.min(0.96, ((c.tick || 0) - t0) / (t1 - t0)));
             const isBurst = c.kind === "burst";
+            const clampR = r => Math.max(0.02, Math.min(0.98, r));
+            const x1 = clampR(((c.tick || 0) - t0) / (t1 - t0));
+            const hasEnd = (c.end_tick !== null && c.end_tick !== undefined);
+            const x2 = hasEnd ? clampR((c.end_tick - t0) / (t1 - t0)) : x1;
             const node = document.createElement("div");
             node.className = "ae-node " + (isBurst ? "burst" : "branch");
-            node.style.left = (ratio * 100) + "%";
+            node.style.left = (Math.min(x1, x2) * 100) + "%";
+            node.style.width = (Math.abs(x2 - x1) * 100) + "%";  // 跨度 = 起→止
             const icon = isBurst ? "⚡" : "🌿";
-            const lbl = `<span class="ae-lbl">${icon} ${e(c.title || '(无标题)')}</span>`;
-            const stem = '<span class="ae-stem"></span>';
-            node.innerHTML = isBurst ? (stem + lbl) : (lbl + stem);
+            // 一起一止两条竖线连到主轴（无结束时间则单线）
+            const legs = hasEnd ? '<span class="ae-leg start"></span><span class="ae-leg end"></span>' : '<span class="ae-leg start"></span>';
+            node.innerHTML = `<span class="ae-lbl">${icon} ${e(c.title || '(无标题)')}</span>${legs}`;
             node.title = (c.content || c.title || "") + "\n(点击编辑 · 右键删除)";
             node.addEventListener("click", () => _aeDetailOpen(c));
             node.addEventListener("contextmenu", ev => { ev.preventDefault(); if (confirm("删除该节点？")) apiDel("/api/active_events", c.id).then(loadActiveEvents); });
@@ -518,7 +522,7 @@ async function _aeDetailOpen(node, kind, parentId) {
     document.getElementById("ae-win-title-input").value = node ? (node.title || "") : "";
     document.getElementById("ae-win-tick").value = node ? (node.tick || 0) : (window.currentTick || 0);
     document.getElementById("ae-win-content").value = node ? (node.content || "") : "";
-    document.getElementById("ae-win-end-wrap").classList.toggle("hidden", _aeWinKind !== "main");
+    document.getElementById("ae-win-end-wrap").classList.remove("hidden");
     document.getElementById("ae-win-end").value = (node && node.end_tick !== null && node.end_tick !== undefined) ? node.end_tick : "";
     document.getElementById("ae-win-newchar-form").classList.add("hidden");
     ["ae-win-nc-name", "ae-win-nc-alias", "ae-win-nc-desc"].forEach(id => { document.getElementById(id).value = ""; });
@@ -540,10 +544,8 @@ async function _aeDetailSave() {
         tick: parseInt(document.getElementById("ae-win-tick").value) || 0,
         character_ids: _aeWinCharIds, extra_characters: _aeWinExtra,
     };
-    if (_aeWinKind === "main") {
-        const ev = document.getElementById("ae-win-end").value;
-        body.end_tick = ev ? (parseInt(ev) || null) : null;
-    }
+    const ev = document.getElementById("ae-win-end").value;
+    body.end_tick = ev ? (parseInt(ev) || null) : null;
     let res;
     if (_aeWinNode) {
         res = await fetch(`/api/active_events/${_aeWinNode.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

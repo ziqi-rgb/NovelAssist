@@ -157,22 +157,33 @@ def test_manage_active_event_tool():
 
 
 def test_sync_burst_to_branch_on_time_advance():
-    """历法时间越过预定的「突发」后，自动转为「分支」。"""
+    """突发以「结束时间」判定：区间内=正在发生，越过结束点=转分支(已发生)。"""
     with SessionLocal() as db:
         novel = db.get(M.Novel, 1)
         novel.current_tick = 0
         db.commit()
         m = M.create_active_event(M.ActiveEventCreate(kind="main", title="时序主干", tick=0), novel_id=1, db=db)
-        b = M.create_active_event(M.ActiveEventCreate(kind="burst", parent_id=m.id, title="未来事件", tick=50), novel_id=1, db=db)
+        b = M.create_active_event(M.ActiveEventCreate(kind="burst", parent_id=m.id, title="未来事件", tick=50, end_tick=80), novel_id=1, db=db)
 
+        # 起点未到 → 待发生，仍是 burst
+        novel.current_tick = 10
+        db.commit()
         M.sync_active_bursts(db, 1)
-        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BURST  # 尚未越过
+        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BURST
+        assert "待发生" in M.build_active_events_summary(db, 1)
 
+        # 处于起止区间内 → 正在发生，仍为 burst（不转）
         novel.current_tick = 60
         db.commit()
-        assert M.sync_active_bursts(db, 1) >= 1
-        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BRANCH  # 已越过 → 转分支
+        M.sync_active_bursts(db, 1)
+        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BURST
+        s60 = M.build_active_events_summary(db, 1)
+        assert "未来事件" in s60 and "正在发生" in s60
 
-        summary = M.build_active_events_summary(db, 1)
-        assert "当前世界时间" in summary
-        assert "未来事件" in summary and "已发生" in summary
+        # 越过结束时间 → 转分支（已发生）
+        novel.current_tick = 90
+        db.commit()
+        assert M.sync_active_bursts(db, 1) >= 1
+        assert db.get(M.ActiveEventNode, b.id).kind == M.ActiveEventKind.BRANCH
+        s90 = M.build_active_events_summary(db, 1)
+        assert "未来事件" in s90 and "已发生" in s90
