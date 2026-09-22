@@ -1675,7 +1675,7 @@ async function copilotChat(instruction, forceScene, mode) {
 
     try {
         var currentAiResponse = "";
-        const body = { novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory, max_loops: s.agentMaxLoops };
+        const body = { novel_id: currentNovelId, current_chapter_content: content, selected_text: sel, instruction, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, scene: forceScene || document.getElementById("chat-scene-select")?.value || "chat", mode: mode || "chat", history: window.copilotChatHistory, max_loops: s.agentMaxLoops };
         const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
@@ -3118,7 +3118,7 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                 try {
                     var warmRes = await fetch("/api/reasoning/execute", {
                         method: "POST", headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify({ novel_id: currentNovelId, premise: "", prompt: "1", target: "", previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: {}, no_tools: true }),
+                        body: JSON.stringify({ novel_id: currentNovelId, premise: "", prompt: "1", target: "", previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, context_settings: {}, no_tools: true }),
                         signal: AbortSignal.timeout(8000)
                     });
                     if (warmRes.ok) { var wg = parseSSEStream(warmRes); while (true) { var wc = await wg.next(); if (wc.done) break; } }
@@ -3569,7 +3569,8 @@ async function runHeadlessChain(chainId, userInput, bubbleEl, onLogCallback = nu
                             previous_output: fullChainContext,
                             api_key: s.apiKey, base_url: s.baseUrl, model: s.model,
                             context_settings: (contextSettings != null) ? contextSettings : (rc.context_settings || {}),
-                            response_format: (/deepseek/i.test(s.model) && node.format) ? {type: "json_object"} : undefined,
+                            provider: s.provider,
+                            response_format: (getProviderCap(s.provider).supportsJsonObject && node.format) ? {type: "json_object"} : undefined,
                             no_tools: true,
                         }),
                         signal: genesisAbortController ? genesisAbortController.signal : undefined,
@@ -3831,7 +3832,7 @@ document.getElementById("chain-run-btn").addEventListener("click", async functio
             var premise = rawPremise2.replace(/\{content\}/g, chapterContent).replace(/\{selection\}/g, sel);
             var promptT = node.prompt || "";
             var targetT = compileTarget(node.target);
-            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined, max_loops: s.agentMaxLoops }) });
+            var res = await fetch("/api/reasoning/execute", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ novel_id: currentNovelId, premise, prompt: promptT, target: targetT, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: rc.context_settings || {}, write_to: node.write_to || null, chain_id: chainId, provider: s.provider, response_format: getProviderCap(s.provider).supportsJsonObject ? {type: "json_object"} : undefined, max_loops: s.agentMaxLoops }) });
             var txt = "";
             var gen = parseSSEStream(res);
             var chunkResult;
@@ -3915,7 +3916,7 @@ chainGenBtn.addEventListener("click", async () => {
     document.getElementById("copilot-history").appendChild(aiB);
     chainGenBtn.disabled = true; chainGenBtn.textContent = "生成中...";
     try {
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: getActiveContent(), instruction: "根据推演链结果生成正文", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: "chain_write", chain_data: chainData, max_loops: s.agentMaxLoops }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: getActiveContent(), instruction: "根据推演链结果生成正文", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, scene: "chain_write", chain_data: chainData, max_loops: s.agentMaxLoops }) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { aiB.appendChild(document.createTextNode(msg.content)); aiB.scrollIntoView(false); }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
@@ -3950,7 +3951,18 @@ chainGenBtn.addEventListener("click", async () => {
 } // end if(chainSelect)
 
 /* ═══════════ AI Settings ═══════════ */
-function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false", agentMaxLoops: parseInt(localStorage.getItem("agent_max_loops") || "5") || 5, markerShortcut: localStorage.getItem("marker_shortcut") || "" }; }
+const PROVIDERS = {
+    openai:     { label: "OpenAI", baseUrl: "https://api.openai.com/v1", supportsJsonObject: true, supportsJsonSchema: true, supportsPrefix: false },
+    deepseek:   { label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", supportsJsonObject: true, supportsJsonSchema: false, supportsPrefix: true },
+    moonshot:   { label: "Moonshot / Kimi", baseUrl: "https://api.moonshot.ai/v1", supportsJsonObject: true, supportsJsonSchema: false, supportsPrefix: true },
+    openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", supportsJsonObject: true, supportsJsonSchema: true, supportsPrefix: false },
+    gemini:     { label: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", supportsJsonObject: true, supportsJsonSchema: false, supportsPrefix: false },
+    qwen:       { label: "通义千问 (DashScope)", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsJsonObject: true, supportsJsonSchema: false, supportsPrefix: false },
+    glm:        { label: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", supportsJsonObject: true, supportsJsonSchema: false, supportsPrefix: false },
+    custom:     { label: "自定义 (OpenAI 兼容)", baseUrl: "", supportsJsonObject: true, supportsJsonSchema: false, supportsPrefix: false },
+};
+function getProviderCap(id) { return PROVIDERS[id] || PROVIDERS.custom; }
+function getSettings() { return { apiKey: localStorage.getItem("ai_api_key") || "", provider: localStorage.getItem("ai_provider") || "openai", baseUrl: localStorage.getItem("ai_base_url") || "", model: localStorage.getItem("ai_model") || "gpt-3.5-turbo", streamOutput: localStorage.getItem("ai_stream") !== "false", agentMaxLoops: parseInt(localStorage.getItem("agent_max_loops") || "5") || 5, markerShortcut: localStorage.getItem("marker_shortcut") || "" }; }
 function hasApiKey() { return getSettings().apiKey.trim().length > 0; }
 function requireApiKey() { if (!hasApiKey()) { document.getElementById("settings-modal").classList.remove("hidden"); return false; } return true; }
 continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return; const s = getSettings(); const content = contentInput.value; continueBtn.disabled = true; continueBtn.textContent = "生成中...";
@@ -3963,13 +3975,13 @@ continueBtn.addEventListener("click", async () => { if (!requireApiKey()) return
     copilotHistory.appendChild(aiB); copilotHistory.scrollTop = copilotHistory.scrollHeight;
     try {
         var currentAiResponse = "";
-        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, mode: "prefix" }) });
+        const res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, mode: "prefix" }) });
         for await (const msg of parseSSEStream(res)) {
             if (msg.type === "chunk") { currentAiResponse += msg.content; aiB.appendChild(document.createTextNode(msg.content)); copilotHistory.scrollTop = copilotHistory.scrollHeight; }
             else if (msg.type === "error") { aiB.appendChild(document.createTextNode("\n[错误: " + msg.message + "]")); }
             else if (msg.type === "done") {
                 currentAiResponse = currentAiResponse.trim();
-                if (!currentAiResponse) { aiB.appendChild(document.createTextNode("(模型未返回内容 — 请确认已使用 DeepSeek Beta 端点)")); break; }
+                if (!currentAiResponse) { aiB.appendChild(document.createTextNode("(模型未返回内容 — 请检查服务商/Base URL/模型配置)")); break; }
                 const row = document.createElement("div"); row.className = "cp-action-row";
                 const insBtn = document.createElement("button"); insBtn.className = "cp-insert-btn";
                 insBtn.textContent = "\u2B05 插入到当前光标处";
@@ -4857,7 +4869,7 @@ async function runNode(card, node) {
             var askPrompt = (node.premise || "请根据上下文") + "\n\n请基于以上内容生成一个精准的、需要向用户提问的问题。只输出问题本身，不要任何解释或前缀。";
             var res = await fetch("/api/reasoning/execute", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ novel_id: currentNovelId, premise: askPrompt, prompt: node.prompt || "", target: "", previous_output: prevOutput, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, chain_id: currentChainId || null, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined }),
+                body: JSON.stringify({ novel_id: currentNovelId, premise: askPrompt, prompt: node.prompt || "", target: "", previous_output: prevOutput, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, chain_id: currentChainId || null, provider: s.provider, response_format: getProviderCap(s.provider).supportsJsonObject ? {type: "json_object"} : undefined }),
             });
             var question = "";
             for await (const msg of parseSSEStream(res)) {
@@ -5138,7 +5150,7 @@ async function runNode(card, node) {
         const target = compileTarget(node.target);
         const res = await fetch("/api/reasoning/execute", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null, response_format: /deepseek/i.test(s.model) ? {type: "json_object"} : undefined, max_loops: s.agentMaxLoops }),
+            body: JSON.stringify({ novel_id: currentNovelId, premise, prompt, target, previous_output: "", api_key: s.apiKey, base_url: s.baseUrl, model: s.model, context_settings: (currentChain || {}).context_settings || {}, write_to: node.write_to || null, chain_id: currentChainId || null, provider: s.provider, response_format: getProviderCap(s.provider).supportsJsonObject ? {type: "json_object"} : undefined, max_loops: s.agentMaxLoops }),
         });
         let rawResult = "";
         for await (const msg of parseSSEStream(res)) {
@@ -5280,10 +5292,11 @@ document.getElementById("chain-restore-btn")?.addEventListener("click", async fu
 
 /* ═══════════ Settings ═══════════ */
 const sm = document.getElementById("settings-modal");
-document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; document.getElementById("settings-agent-loops").value = s.agentMaxLoops; document.getElementById("settings-marker-shortcut").value = s.markerShortcut; sm.classList.remove("hidden"); });
+document.getElementById("settings-provider").addEventListener("change", (e) => { var cap = getProviderCap(e.target.value); var cur = document.getElementById("settings-baseurl").value.trim(); if (cap.baseUrl && (!cur || Object.values(PROVIDERS).some(function(p){return p.baseUrl === cur;}))) { document.getElementById("settings-baseurl").value = cap.baseUrl; } });
+document.getElementById("settings-btn").addEventListener("click", () => { const s = getSettings(); document.getElementById("settings-provider").value = s.provider; document.getElementById("settings-apikey").value = s.apiKey; document.getElementById("settings-baseurl").value = s.baseUrl; document.getElementById("settings-model").value = s.model; document.getElementById("settings-stream").checked = s.streamOutput; document.getElementById("settings-agent-loops").value = s.agentMaxLoops; document.getElementById("settings-marker-shortcut").value = s.markerShortcut; sm.classList.remove("hidden"); });
 document.getElementById("settings-cancel").addEventListener("click", () => sm.classList.add("hidden"));
 sm.querySelector(".modal-backdrop").addEventListener("click", () => sm.classList.add("hidden"));
-document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); localStorage.setItem("agent_max_loops", String(parseInt(document.getElementById("settings-agent-loops").value) || 5)); var shortcutVal = document.getElementById("settings-marker-shortcut").value.trim(); localStorage.setItem("marker_shortcut", shortcutVal); sm.classList.add("hidden"); document.dispatchEvent(new CustomEvent("settings-updated", { detail: { markerShortcut: shortcutVal } })); });
+document.getElementById("settings-save").addEventListener("click", () => { localStorage.setItem("ai_provider", document.getElementById("settings-provider").value || "openai"); localStorage.setItem("ai_api_key", document.getElementById("settings-apikey").value.trim()); localStorage.setItem("ai_base_url", document.getElementById("settings-baseurl").value.trim()); localStorage.setItem("ai_model", document.getElementById("settings-model").value.trim() || "gpt-3.5-turbo"); localStorage.setItem("ai_stream", document.getElementById("settings-stream").checked ? "true" : "false"); localStorage.setItem("agent_max_loops", String(parseInt(document.getElementById("settings-agent-loops").value) || 5)); var shortcutVal = document.getElementById("settings-marker-shortcut").value.trim(); localStorage.setItem("marker_shortcut", shortcutVal); sm.classList.add("hidden"); document.dispatchEvent(new CustomEvent("settings-updated", { detail: { markerShortcut: shortcutVal } })); });
 
 /* ═══════════ Cheat Sheet ═══════════ */
 function showCheatSheet() { document.getElementById("cheat-sheet-modal").classList.remove("hidden"); }
@@ -5368,7 +5381,7 @@ document.getElementById("sandbox-start-btn").addEventListener("click", async fun
     var btn = document.getElementById("sandbox-start-btn");
     btn.disabled = true; btn.textContent = "推演中...";
     try {
-        var res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: scenario, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, scene: "sandbox_sim", max_loops: s.agentMaxLoops }) });
+        var res = await fetch("/api/writing/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId, current_chapter_content: content, selected_text: "", instruction: scenario, api_key: s.apiKey, base_url: s.baseUrl, model: s.model, provider: s.provider, scene: "sandbox_sim", max_loops: s.agentMaxLoops }) });
         logArea.innerHTML = "";
         var gen = parseSSEStream(res);
         for (;;) {

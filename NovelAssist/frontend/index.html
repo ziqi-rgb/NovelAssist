@@ -70,6 +70,17 @@
         <div class="modal-backdrop"></div>
         <div class="modal-box">
             <h3>API 设置</h3>
+            <label>服务商</label>
+            <select id="settings-provider">
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="moonshot">Moonshot / Kimi</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="qwen">通义千问 (DashScope)</option>
+                <option value="glm">智谱 GLM</option>
+                <option value="custom">自定义 (OpenAI 兼容)</option>
+            </select>
             <label>API Key</label>
             <input type="password" id="settings-apikey" placeholder="sk-...">
             <label>Base URL <span class="hint">(可选)</span></label>

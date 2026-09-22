@@ -61,6 +61,100 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
 
+
+# ═══════════════════ 多 Provider 适配层 ═══════════════════
+# 能力位仅用于「前缀续写」与「格式化输出」两处差异；普通聊天/工具调用均为 OpenAI 兼容。
+PROVIDERS: dict[str, dict] = {
+    "openai": {
+        "label": "OpenAI",
+        "default_base_url": "https://api.openai.com/v1",
+        "supports_json_object": True,
+        "supports_json_schema": True,
+        "json_object_hint": False,
+        "prefix_mode": None,
+        "prefix_base_url": None,
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "default_base_url": "https://api.deepseek.com/v1",
+        "supports_json_object": True,
+        "supports_json_schema": False,
+        "json_object_hint": True,
+        "prefix_mode": "prefix",
+        "prefix_base_url": "https://api.deepseek.com/beta",
+    },
+    "moonshot": {
+        "label": "Moonshot / Kimi",
+        "default_base_url": "https://api.moonshot.ai/v1",
+        "supports_json_object": True,
+        "supports_json_schema": False,
+        "json_object_hint": True,
+        "prefix_mode": "partial",
+        "prefix_base_url": None,
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "default_base_url": "https://openrouter.ai/api/v1",
+        "supports_json_object": True,
+        "supports_json_schema": True,
+        "json_object_hint": False,
+        "prefix_mode": None,
+        "prefix_base_url": None,
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "supports_json_object": True,
+        "supports_json_schema": False,
+        "json_object_hint": False,
+        "prefix_mode": None,
+        "prefix_base_url": None,
+    },
+    "qwen": {
+        "label": "通义千问 (DashScope)",
+        "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "supports_json_object": True,
+        "supports_json_schema": False,
+        "json_object_hint": False,
+        "prefix_mode": None,
+        "prefix_base_url": None,
+    },
+    "glm": {
+        "label": "智谱 GLM",
+        "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "supports_json_object": True,
+        "supports_json_schema": False,
+        "json_object_hint": False,
+        "prefix_mode": None,
+        "prefix_base_url": None,
+    },
+    "custom": {
+        "label": "自定义 (OpenAI 兼容)",
+        "default_base_url": "",
+        "supports_json_object": True,
+        "supports_json_schema": False,
+        "json_object_hint": False,
+        "prefix_mode": None,
+        "prefix_base_url": None,
+    },
+}
+
+
+def resolve_provider(provider_id: Optional[str], base_url: Optional[str]) -> dict:
+    """按前端传入的 provider_id 取能力位；缺省则从 base_url 推断，最终回落 custom。"""
+    if provider_id and provider_id in PROVIDERS:
+        return {"id": provider_id, **PROVIDERS[provider_id]}
+    bl = (base_url or "").lower()
+    if bl:
+        if "deepseek" in bl:
+            return {"id": "deepseek", **PROVIDERS["deepseek"]}
+        for pid, cfg in PROVIDERS.items():
+            default_url = str(cfg.get("default_base_url") or "")
+            if default_url and default_url.lower() in bl:
+                return {"id": pid, **cfg}
+    return {"id": "custom", **PROVIDERS["custom"]}
+
+
 AGENT_TOOLS = [
     {
         "type": "function",
@@ -2455,9 +2549,11 @@ class ReasoningExecuteRequest(BaseModel):
     response_format: dict | None = None  # {'type': 'json_object'} 用于 DeepSeek 结构化输出
     no_tools: bool = False  # 禁用工具调用（Genesis 建纲模式）
     max_loops: int = 5     # Agent 工具调用最大轮数
+    provider: str = ""     # provider id（多 provider 适配层，见 PROVIDERS）
 
 
-async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None, max_loops: int = 5) -> StreamingResponse:
+async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, model: str, tools: Optional[list[dict]] = None, response_format: Optional[dict] = None, novel_id: int = None, db: Optional[Session] = None, max_loops: int = 5, provider: Optional[str] = None) -> StreamingResponse:
+    prov = resolve_provider(provider, base_url)
 
     async def _execute_readonly_tool(tool_name: str, arguments: dict) -> str:
         if tool_name == "query_world_state" and novel_id and db:
@@ -2603,20 +2699,27 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
             else:
                 first_half = "请续写下文"
                 second_half = text
-            import random, time
-            nonce = f"{random.randint(100000,999999)}-{int(time.time()*1000)%1000000}"
-            msgs = [
-                {"role": "system", "content": system_context},
-                {"role": "user", "content": f"[#{nonce}] 请续写下文\n\n{first_half}"},
-                {"role": "assistant", "content": second_half, "prefix": True},
-            ]
-            api_key = LLM_API_KEY
-            beta_url = LLM_BASE_URL.rstrip("/").replace("/v1", "") + "/beta"
+            prefix_field = prov.get("prefix_mode")
+            user_content = f"请续写下文\n\n{first_half}"
+            if prefix_field:
+                msgs = [
+                    {"role": "system", "content": system_context},
+                    {"role": "user", "content": user_content},
+                    {"role": "assistant", "content": second_half, prefix_field: True},
+                ]
+                cont_url = str(prov.get("prefix_base_url") or base_url or "").rstrip("/") + "/chat/completions"
+            else:
+                # 该 provider 不支持前缀续写 → 退化为普通续写
+                msgs = [
+                    {"role": "system", "content": system_context},
+                    {"role": "user", "content": f"{user_content}\n\n（请自然地接着上文继续写下去）"},
+                ]
+                cont_url = (base_url or "").rstrip("/") + "/chat/completions"
             async with httpx.AsyncClient(timeout=120) as client:
                 resp = await client.post(
-                    f"{beta_url}/chat/completions",
+                    cont_url,
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    json={"model": LLM_MODEL, "messages": msgs, "temperature": 0.8, "stream": False},
+                    json={"model": model, "messages": msgs, "temperature": 0.8, "stream": False},
                 )
                 if resp.status_code != 200:
                     return f"续写引擎返回错误 [{resp.status_code}]: {resp.text[:500]}"
@@ -2633,11 +2736,14 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
             try:
                 client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
                 extra: dict = {}
-                if tools and not response_format:
+                rf = response_format
+                if rf and rf.get("type") == "json_schema" and not prov.get("supports_json_schema"):
+                    rf = {"type": "json_object"} if prov.get("supports_json_object") else None
+                if tools and not rf:
                     extra["tools"] = tools
                     extra["tool_choice"] = "auto"
-                if response_format:
-                    extra["response_format"] = response_format
+                if rf:
+                    extra["response_format"] = rf
                 stream = await client.chat.completions.create(
                     model=model, messages=messages, temperature=0.8, stream=True, **extra,
                 )
@@ -2829,7 +2935,7 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
         )},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=(None if req.no_tools else AGENT_TOOLS), response_format=req.response_format, max_loops=req.max_loops)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=(None if req.no_tools else AGENT_TOOLS), response_format=req.response_format, max_loops=req.max_loops, provider=req.provider)
 
 
 def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
@@ -3511,6 +3617,7 @@ class CopilotRequest(BaseModel):
     mode: str = "chat"  # "chat" | "prefix" (DeepSeek Beta prefix completion)
     chain_data: str = ""
     max_loops: int = 5     # Agent 工具调用最大轮数
+    provider: str = ""     # provider id（多 provider 适配层，见 PROVIDERS）
     history: list = []
 
 
@@ -3542,23 +3649,26 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
             first_half = "请续写下文"
             second_half = text
 
-        import random, time
-        nonce = f"{random.randint(100000,999999)}-{int(time.time()*1000)%1000000}"
-        msgs: list[dict] = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": f"[#{nonce}] 请续写下文\n\n{first_half}"},
-            {"role": "assistant", "content": second_half, "prefix": True},
-        ]
-        # Use raw httpx to preserve non-standard "prefix" key in message dict
         base_url = req.base_url or LLM_BASE_URL
-        beta_url = (base_url.rstrip("/").replace("/v1", "") + "/beta") if "deepseek" in base_url.lower() else base_url
         api_key = req.api_key or LLM_API_KEY
         model = req.model or LLM_MODEL
+        prov = resolve_provider(req.provider, base_url)
+        prefix_field = prov.get("prefix_mode")
+        msgs: list[dict] = [{"role": "system", "content": system_content}]
+        if prefix_field:
+            # 支持前缀续写的 provider（DeepSeek=prefix / Moonshot=partial）
+            msgs.append({"role": "user", "content": f"请续写下文\n\n{first_half}"})
+            msgs.append({"role": "assistant", "content": second_half, prefix_field: True})
+            cont_url = str(prov.get("prefix_base_url") or base_url).rstrip("/") + "/chat/completions"
+        else:
+            # 该 provider 不支持前缀续写 → 退化为普通续写
+            msgs.append({"role": "user", "content": f"请续写下文\n\n{first_half}\n\n（请自然地接着上文继续写下去）"})
+            cont_url = base_url.rstrip("/") + "/chat/completions"
 
         async def prefix_gen():
             async with httpx.AsyncClient(timeout=120) as client:
                 async with client.stream(
-                    "POST", f"{beta_url}/chat/completions",
+                    "POST", cont_url,
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                     json={"model": model, "messages": msgs, "temperature": 0.8, "stream": True},
                 ) as resp:
@@ -3601,7 +3711,7 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
     messages.append({"role": "user", "content": user_content})
-    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, novel_id=req.novel_id, db=db, max_loops=req.max_loops)
+    return await async_llm_stream(messages, req.api_key or LLM_API_KEY, req.base_url or LLM_BASE_URL, req.model or LLM_MODEL, tools=AGENT_TOOLS, novel_id=req.novel_id, db=db, max_loops=req.max_loops, provider=req.provider)
 
 
 # ═══════════ Agent Tool Execution ═══════════
