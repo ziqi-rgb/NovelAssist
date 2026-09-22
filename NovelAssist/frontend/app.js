@@ -585,6 +585,38 @@ function _aeReadCalSelects(pfx) {
         parseInt(document.getElementById(pfx + "h").value),
     );
 }
+async function _aeGetCharTemplate() {
+    try {
+        const nv = await (await fetch(`/api/novels/${currentNovelId}`)).json();
+        return nv.character_template || [];
+    } catch (e) { return []; }
+}
+async function _aeBuildNewCharFields() {
+    // 依当前角色模板生成 attributes 填写项（按分组）
+    const box = document.getElementById("ae-win-nc-fields");
+    box.innerHTML = "";
+    const tpl = await _aeGetCharTemplate();
+    tpl.forEach((g, gi) => {
+        const gname = (g && g.group) ? g.group : ("分组" + (gi + 1));
+        const head = document.createElement("label"); head.textContent = gname;
+        box.appendChild(head);
+        ((g && g.fields) || []).forEach(f => {
+            const inp = document.createElement("input");
+            inp.type = "text"; inp.placeholder = f;
+            inp.dataset.group = gname; inp.dataset.field = f;
+            box.appendChild(inp);
+        });
+    });
+}
+function _aeCollectNewCharAttributes() {
+    const attrs = {};
+    document.querySelectorAll("#ae-win-nc-fields input[data-field]").forEach(inp => {
+        const g = inp.dataset.group, f = inp.dataset.field;
+        if (!attrs[g]) attrs[g] = {};
+        attrs[g][f] = inp.value;
+    });
+    return attrs;
+}
 async function _aePopulateCharSelect() {
     const sel = document.getElementById("ae-win-char-select");
     sel.innerHTML = '<option value="">— 选择角色库角色 —</option>';
@@ -735,7 +767,11 @@ async function _aeDetailSave() {
         const inp = document.getElementById("ae-win-extra-input"); const nm = inp.value.trim();
         if (!nm) return; _aeWinExtra.push(nm); inp.value = ""; _aeRenderWinPills();
     });
-    document.getElementById("ae-win-newchar-btn").addEventListener("click", () => document.getElementById("ae-win-newchar-form").classList.toggle("hidden"));
+    document.getElementById("ae-win-newchar-btn").addEventListener("click", async () => {
+        const form = document.getElementById("ae-win-newchar-form");
+        if (form.classList.contains("hidden")) { await _aeBuildNewCharFields(); form.classList.remove("hidden"); }
+        else { form.classList.add("hidden"); }
+    });
     document.getElementById("ae-cal-hasend").addEventListener("change", (e) => {
         const on = e.target.checked;
         document.getElementById("ae-cal-end-row").classList.toggle("hidden", !on);
@@ -752,6 +788,7 @@ async function _aeDetailSave() {
             aliases: document.getElementById("ae-win-nc-alias").value.trim(),
             status: document.getElementById("ae-win-nc-status").value.trim() || "存活",
             description: document.getElementById("ae-win-nc-desc").value.trim(),
+            attributes: _aeCollectNewCharAttributes(),
         };
         const res = await fetch(`/api/characters?novel_id=${currentNovelId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         if (!res.ok) { alert("创建角色失败"); return; }

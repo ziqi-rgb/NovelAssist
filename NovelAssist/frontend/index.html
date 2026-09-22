@@ -884,7 +884,9 @@
         .ae-win-pill { display:inline-flex; align-items:center; gap:4px; background:rgba(99,102,241,.16); border-radius:12px; padding:1px 8px; font-size:.72rem; }
         .ae-win-pill.extra { background:rgba(148,163,184,.22); }
         .ae-win-pill button { background:none; border:none; color:inherit; cursor:pointer; font-size:.8rem; line-height:1; padding:0; }
-        .ae-win-newchar { display:flex; flex-direction:column; gap:5px; padding:8px; border:1px dashed var(--border); border-radius:8px; margin-top:4px; }
+        .ae-win-newchar { display:flex; flex-direction:column; gap:5px; padding:8px; border:1px dashed var(--border); border-radius:8px; margin-top:4px; max-height:42vh; overflow-y:auto; }
+        #ae-win-nc-fields { display:flex; flex-direction:column; gap:5px; }
+        #ae-win-nc-fields label { font-size:.72rem; font-weight:600; color:var(--text-muted); margin-top:4px; }
         .ae-win-actions { display:flex; gap:6px; padding:8px 12px; border-top:1px solid var(--border); }
         .ae-cal-row { display:flex; align-items:center; gap:3px; flex-wrap:wrap; margin-top:4px; }
         .ae-cal-row select { padding:4px 6px; font-size:.8rem; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); }
@@ -1004,6 +1006,7 @@
                 <input type="text" id="ae-win-nc-status" value="存活">
                 <label>简介</label>
                 <textarea id="ae-win-nc-desc" placeholder="角色简介 / 设定" style="min-height:50px;"></textarea>
+                <div id="ae-win-nc-fields"></div>
                 <div style="display:flex;gap:6px;">
                     <button type="button" id="ae-win-nc-save" class="sys-btn sys-btn-primary" style="font-size:.72rem;">创建并加入</button>
                     <button type="button" id="ae-win-nc-cancel" class="sys-btn" style="font-size:.72rem;">取消</button>
