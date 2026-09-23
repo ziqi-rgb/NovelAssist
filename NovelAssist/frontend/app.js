@@ -912,6 +912,39 @@ document.getElementById("ae-del-main")?.addEventListener("click", () => { if (_a
     modal.querySelector(".modal-backdrop")?.addEventListener("click", () => modal.classList.add("hidden"));
 })();
 
+/* ═══════════ 世界事件设置（时间线 tab 顶部） ═══════════ */
+(function initWorldEventSettings() {
+    const panel = document.getElementById("we-settings");
+    if (!panel) return;
+    const $ = (id) => document.getElementById(id);
+    window.loadWorldEventConfig = async function () {
+        try {
+            const c = await (await fetch(`/api/world_events/config?novel_id=${currentNovelId}`)).json();
+            $("we-set-enabled").checked = !!c.enabled;
+            $("we-set-prob").value = c.prob_per_month;
+            $("we-set-speed").value = c.spread_base_speed;
+        } catch (err) { /* ignore */ }
+    };
+    async function saveWorldEventConfig() {
+        const msg = $("we-set-msg");
+        const body = {
+            novel_id: currentNovelId,
+            enabled: $("we-set-enabled").checked,
+            prob_per_month: parseFloat($("we-set-prob").value) || 0,
+            spread_base_speed: parseFloat($("we-set-speed").value) || 2,
+        };
+        try {
+            const res = await fetch("/api/world_events/config", {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(res.status);
+            if (msg) { msg.textContent = "✅ 已保存"; setTimeout(() => { msg.textContent = ""; }, 2000); }
+        } catch (err) { if (msg) msg.textContent = "保存失败"; }
+    }
+    $("we-set-save")?.addEventListener("click", saveWorldEventConfig);
+    document.querySelector('[data-tab="tab-timeline"]')?.addEventListener("click", window.loadWorldEventConfig);
+})();
+
 // 编辑区顶部事件轴：默认折叠，点标题展开并加载
 (function initAeBar() {
     const bar = document.getElementById("ae-bar");
@@ -6908,6 +6941,7 @@ async function refreshAll() {
 document.addEventListener("DOMContentLoaded", async () => {
     await loadNovels(); if (chainSelect) await loadChainSelect(); await refreshAll();
     window.checkWorldEventsAndPopup && window.checkWorldEventsAndPopup();  // 打开应用时提示待审核世界事件
+    window.loadWorldEventConfig && window.loadWorldEventConfig();  // 加载世界事件设置（时间线 tab 顶部）
     document.getElementById("new-volume-btn").addEventListener("click", createNewVolume);
     document.getElementById("new-chapter-btn").addEventListener("click", createNewChapter);
     document.getElementById("new-character-btn").addEventListener("click", createNewCharacter);

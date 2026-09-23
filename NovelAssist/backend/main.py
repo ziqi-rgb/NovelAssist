@@ -1145,6 +1145,7 @@ def update_novel_time(novel_id: int, req: NovelTimeUpdate, db: Session = Depends
     db.commit()
     sync_active_bursts(db, novel_id)  # 时间推进后：到期的突发自动转分支
     check_world_event_triggers(db, novel_id, prev_tick, novel.current_tick)  # 离屏世界事件触发器
+    advance_rumor_spread(db, novel_id, prev_tick, novel.current_tick)  # 传闻扩散 + 角色中介知晓推进
     return {"msg": "OK"}
 
 @app.get("/api/status")
@@ -1558,6 +1559,7 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
         novel.current_tick += pending_tick_advance
         sync_active_bursts(db, novel.id)  # 时间推进后：到期的突发自动转分支
         check_world_event_triggers(db, novel.id, _prev_tick, novel.current_tick)  # 离屏世界事件触发器
+        advance_rumor_spread(db, novel.id, _prev_tick, novel.current_tick)  # 传闻扩散 + 角色中介知晓推进
 
     # Create timeline events
     for te in pending_timeline_events:
@@ -2122,6 +2124,7 @@ def accept_world_event(event_id: int, db: Session = Depends(get_db)):
     ev.is_rumor = True
     novel = db.get(Novel, ev.novel_id)
     if novel is not None:
+        _init_rumor_spread(db, novel, ev)  # 初始化传闻扩散参数（§2.3）
         cal = novel.calendar_config or {}
         max_idx = db.scalar(select(func.max(TimelineEvent.timeline_index)).where(TimelineEvent.novel_id == ev.novel_id))
         db.add(TimelineEvent(
@@ -2160,6 +2163,45 @@ def reject_world_event(event_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(ev)
     return ev
+
+
+class WorldEventSettings(BaseModel):
+    novel_id: int = NOVEL_ID_DEFAULT
+    enabled: bool = True
+    prob_per_month: float = 0.35
+    spread_base_speed: float = 2.0  # 传闻扩散基准速度（格/天），LLM 可在此基础上下调/上调
+
+
+@app.get("/api/world_events/config")
+def get_world_event_config(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    cfg = dict(novel.world_event_config or {})
+    return {
+        "enabled": bool(cfg.get("enabled", True)),
+        "prob_per_month": float(cfg.get("prob_per_month", 0.35)),
+        "spread_base_speed": float(cfg.get("spread_base_speed", 2.0)),
+    }
+
+
+@app.put("/api/world_events/config")
+def update_world_event_config(req: WorldEventSettings, db: Session = Depends(get_db)):
+    novel = db.get(Novel, req.novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    cfg = dict(novel.world_event_config or {})
+    cfg["enabled"] = bool(req.enabled)
+    cfg["prob_per_month"] = max(0.0, min(1.0, float(req.prob_per_month)))
+    cfg["spread_base_speed"] = max(0.1, float(req.spread_base_speed))
+    novel.world_event_config = cfg
+    flag_modified(novel, "world_event_config")
+    db.commit()
+    return {
+        "enabled": cfg["enabled"],
+        "prob_per_month": cfg["prob_per_month"],
+        "spread_base_speed": cfg["spread_base_speed"],
+    }
 
 
 # ═══════════ TimelineEvents ═══════════
@@ -2428,6 +2470,248 @@ def check_world_event_triggers(db: Session, novel_id: int, prev_tick: int, new_t
     for ev in created:
         db.refresh(ev)
     return created
+
+
+# ── 传闻扩散 + 角色中介可见性（#T007 §2.3/§2.4） ──
+
+def _manhattan(ax: Optional[int], ay: Optional[int], bx: Optional[int], by: Optional[int]) -> int:
+    return abs((ax or 0) - (bx or 0)) + abs((ay or 0) - (by or 0))
+
+
+def _child_entry(parent: Location, origin: Location) -> Optional[Location]:
+    """进入 parent 内部时的入口地点：若事件源在 parent 子树中，取链上那个子；否则取最靠近网格中心的子。"""
+    node: Optional[Location] = origin
+    guard = 0
+    while node is not None and node.parent_id != parent.id and guard < 20:
+        node = node.parent
+        guard += 1
+    if node is not None and node.parent_id == parent.id:
+        return node
+    children = list(parent.children or [])
+    if not children:
+        return None
+    return min(children, key=lambda c: _manhattan(c.grid_x, c.grid_y, 12, 12))
+
+
+def _compute_spread_reach(
+    db: Session, origin: Location, speed: float, base_tick: int, hpd: float, current_tick: int
+) -> list[dict]:
+    """分形扩散：从事件源地点出发，向『同层兄弟（25×25 网格曼哈顿距离）』扩散，
+    并『进入子层内部』（每进入一层速度 ×5，即后续成本 ÷5）逐级递归（§2.3 作者原话）。
+
+    - 成本以『等效格数』计；到达 tick = base_tick + 成本/speed × hpd。
+    - 返回已到达（tick ≤ current_tick）的地点 [{location_id, tick, depth}]。
+    """
+    if origin is None or speed <= 0:
+        return []
+    reached: dict[int, tuple[float, int]] = {origin.id: (0.0, 0)}  # loc_id -> (cost, depth)
+    queue: list[int] = [origin.id]
+    seen: set[int] = {origin.id}
+    while queue:
+        cur = db.get(Location, queue.pop(0))
+        if cur is None:
+            continue
+        cur_cost, cur_depth = reached[cur.id]
+        factor = 5.0 ** cur_depth
+        # 水平：同一父级下的兄弟地点，按网格曼哈顿距离扩散
+        if cur.parent_id is not None:
+            for s in db.scalars(select(Location).where(Location.parent_id == cur.parent_id)).all():
+                if s.id in seen:
+                    continue
+                d = _manhattan(cur.grid_x, cur.grid_y, s.grid_x, s.grid_y)
+                reached[s.id] = (cur_cost + d / factor, cur_depth)
+                seen.add(s.id)
+                queue.append(s.id)
+        # 垂直向下：进入子层（成本 +1 进入 + 入口到各子的距离）
+        children = list(cur.children or [])
+        if children:
+            entry = _child_entry(cur, origin)
+            for ch in children:
+                if ch.id in seen:
+                    continue
+                d = 0.0 if (entry is not None and ch.id == entry.id) else _manhattan(
+                    entry.grid_x if entry else None, entry.grid_y if entry else None, ch.grid_x, ch.grid_y
+                )
+                reached[ch.id] = (cur_cost + (1.0 + d) / factor, cur_depth + 1)
+                seen.add(ch.id)
+                queue.append(ch.id)
+    out: list[dict] = []
+    for loc_id, (cost, depth) in reached.items():
+        tick = int(base_tick + (cost / speed) * hpd)
+        if tick <= current_tick:
+            out.append({"location_id": loc_id, "tick": tick, "depth": depth})
+    return out
+
+
+def _char_visited_locations(db: Session, novel_id: int) -> dict[int, set[int]]:
+    """聚合『角色到达过的地点』：轨迹 location_id + 作息 location_id（§2.4 步骤1 前置）。"""
+    res: dict[int, set[int]] = {}
+    cids = [c.id for c in db.scalars(select(Character).where(Character.novel_id == novel_id)).all()]
+    if not cids:
+        return res
+    for t in db.scalars(select(CharacterTrajectory).where(CharacterTrajectory.character_id.in_(cids))).all():
+        res.setdefault(t.character_id, set()).add(t.location_id)
+    for r in db.scalars(select(CharacterRoutine).where(CharacterRoutine.character_id.in_(cids))).all():
+        res.setdefault(r.character_id, set()).add(r.location_id)
+    return res
+
+
+def _llm_decide_spread_speed(novel: Novel, ev: WorldEvent, creds: Optional[dict]) -> Optional[tuple[float, float]]:
+    """让 LLM 结合世界观为传闻决定扩散速度（格/天）与角色间传播概率。失败返回 None。"""
+    api_key, base_url, model = _world_event_creds(creds)
+    if not api_key:
+        return None
+    prompt = (
+        "你是小说世界的『传闻扩散』引擎。下列世界事件已成为传闻，请判断它的扩散速度与在角色间的传染概率。"
+        "只返回纯 JSON（不要 markdown）：{\"speed\": 数字(格/天,建议0.5~5), \"spread_prob\": 数字(0~1)}。\n\n"
+        f"【事件】{ev.title}\n{ev.description[:600]}"
+    )
+    base = (base_url or "https://api.openai.com/v1").rstrip("/")
+    try:
+        r = httpx.post(
+            f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.4},
+            timeout=40,
+        )
+        r.raise_for_status()
+        raw = (r.json()["choices"][0]["message"]["content"] or "").strip()
+        mj = re.search(r"\{[\s\S]*\}", raw)
+        if mj:
+            data = json.loads(mj.group(0))
+            speed = max(0.1, float(data.get("speed", 2.0)))
+            prob = max(0.0, min(1.0, float(data.get("spread_prob", 0.5))))
+            return speed, prob
+    except Exception:
+        return None
+    return None
+
+
+def _init_rumor_spread(db: Session, novel: Novel, ev: WorldEvent, creds: Optional[dict] = None) -> None:
+    """采纳时初始化传闻扩散参数（§2.3）：扩散速度由 LLM 结合世界观决定；无 key 用可复现默认。"""
+    cfg = novel.world_event_config or {}
+    base_speed = max(0.1, float(cfg.get("spread_base_speed", 2.0) or 2.0))
+    speed = base_speed
+    spread_prob = 0.5
+    api_key = (creds or {}).get("api_key") or LLM_API_KEY
+    decided = _llm_decide_spread_speed(novel, ev, creds) if api_key else None
+    if decided:
+        speed, spread_prob = decided
+    else:
+        rng = random.Random(f"spread:{novel.id}:{ev.id}")
+        speed = base_speed * (0.5 + rng.random())   # 0.5×~1.5×
+        spread_prob = 0.3 + rng.random() * 0.5       # 0.3~0.8
+    ev.spread_json = {
+        "origin_location_id": ev.location_id,
+        "origin_tick": ev.origin_tick,
+        "speed": round(speed, 3),
+        "spread_prob": round(spread_prob, 3),
+        "reached": [],
+        "knowers": [],
+        "updated_tick": ev.origin_tick,
+    }
+    flag_modified(ev, "spread_json")
+
+
+def advance_rumor_spread(db: Session, novel_id: int, prev_tick: int, new_tick: int) -> int:
+    """随时间推进，推进所有『已采纳传闻』的扩散与角色中介知晓（§2.3/§2.4）。
+
+    - 扩散：重算已达到地点（分形），写入 spread_json.reached。
+    - 可见性步骤1：到达过传闻地点的角色，以 spread_prob 概率被标记知晓（可复现）。
+    - 可见性步骤3：知晓者向与其同处过一地的角色传播（概率同 spread_prob，可复现）。
+    返回被更新的事件数。
+    """
+    novel = db.get(Novel, novel_id)
+    if novel is None or new_tick <= prev_tick:
+        return 0
+    cal = novel.calendar_config or {}
+    hpd = float(cal.get("hours_per_day", 24) or 24)
+    events = db.scalars(select(WorldEvent).where(
+        WorldEvent.novel_id == novel_id,
+        WorldEvent.status == "accepted",
+        WorldEvent.is_rumor.is_(True),
+    )).all()
+    if not events:
+        return 0
+    visited = _char_visited_locations(db, novel_id)
+    changed = 0
+    for ev in events:
+        sp = dict(ev.spread_json or {})
+        origin_id = sp.get("origin_location_id")
+        if not origin_id:
+            continue
+        origin = db.get(Location, origin_id)
+        if origin is None:
+            continue
+        speed = float(sp.get("speed", 2.0) or 2.0)
+        spread_prob = float(sp.get("spread_prob", 0.5) or 0.5)
+        reach = _compute_spread_reach(db, origin, speed, int(sp.get("origin_tick", ev.origin_tick)), hpd, new_tick)
+        sp["reached"] = reach
+        reached_ids = {r["location_id"] for r in reach}
+        knowers: set[int] = {int(x) for x in (sp.get("knowers") or [])}
+        # 步骤1：到达过传闻地点的角色 → 概率知晓
+        for cid, locs in visited.items():
+            if cid in knowers:
+                continue
+            if locs & reached_ids and random.Random(f"know:{ev.id}:{cid}").random() < spread_prob:
+                knowers.add(cid)
+        # 步骤3：已知晓者向与其同处过一地的角色传播
+        for cid in list(knowers):
+            clocs = visited.get(cid, set())
+            if not clocs:
+                continue
+            for other, olocs in visited.items():
+                if other in knowers or not (olocs & clocs):
+                    continue
+                if random.Random(f"assoc:{ev.id}:{cid}:{other}").random() < spread_prob:
+                    knowers.add(other)
+        sp["knowers"] = sorted(knowers)
+        sp["updated_tick"] = new_tick
+        ev.spread_json = sp
+        flag_modified(ev, "spread_json")
+        changed += 1
+    db.commit()
+    return changed
+
+
+def get_scene_rumors(db: Session, novel_id: int) -> str:
+    """当前『主线镜头』可感知的传闻文本（§2.4 步骤2：场景角色若知晓 → 认定镜头内存在该传闻）。
+
+    主线镜头 = 当前活跃主干事件的参与角色；无主干时退化为所有活跃角色。
+    """
+    events = db.scalars(select(WorldEvent).where(
+        WorldEvent.novel_id == novel_id,
+        WorldEvent.status == "accepted",
+        WorldEvent.is_rumor.is_(True),
+    )).all()
+    if not events:
+        return ""
+    scene_char_ids: set[int] = set()
+    for m in db.scalars(select(ActiveEventNode).where(
+        ActiveEventNode.novel_id == novel_id, ActiveEventNode.kind == "main"
+    )).all():
+        scene_char_ids.update(int(x) for x in (m.character_ids or []))
+    if not scene_char_ids:
+        scene_char_ids = {
+            c.id for c in db.scalars(select(Character).where(
+                Character.novel_id == novel_id, Character.is_active.is_(True)
+            )).all()
+        }
+    lines: list[str] = []
+    for ev in events:
+        knowers = {int(x) for x in ((ev.spread_json or {}).get("knowers") or [])}
+        if not (knowers & scene_char_ids):
+            continue
+        names = [
+            c.name for c in db.scalars(
+                select(Character).where(Character.id.in_(sorted(knowers & scene_char_ids)))
+            ).all()
+        ]
+        desc = f"：{ev.description}" if ev.description else ""
+        lines.append(f"- 🌍 **{ev.title or '世界事件'}**{desc}（由 {', '.join(names)} 听闻）")
+    if not lines:
+        return ""
+    return "## 传闻（角色中介获知 — 主线镜头之内可感知）\n" + "\n".join(lines)
 
 
 def build_active_events_summary(db: Session, novel_id: int) -> str:
@@ -3490,6 +3774,9 @@ async def reasoning_execute(req: ReasoningExecuteRequest, db: Session = Depends(
     active_summary = build_active_events_summary(db, req.novel_id)
     if active_summary:
         volatile_parts.append(active_summary)
+    scene_rumors = get_scene_rumors(db, req.novel_id)
+    if scene_rumors:
+        volatile_parts.append(scene_rumors)
 
     world_state = "==== 当前世界状态参考 ====\n" + "\n\n".join(stable_parts)
     if has_ctx:
@@ -3792,6 +4079,9 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
         active_summary = build_active_events_summary(db, novel_id)
         if active_summary:
             parts.append(active_summary)
+        scene_rumors = get_scene_rumors(db, novel_id)
+        if scene_rumors:
+            parts.append(scene_rumors)
         return "\n\n".join(parts) if parts else "(无上下文)"
 
     def _outline_tree_by_cat(cat_name: str) -> str:
@@ -4504,6 +4794,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
         db.commit()
         sync_active_bursts(db, novel.id)  # 时间推进后：到期的突发自动转分支
         check_world_event_triggers(db, novel.id, prev_tick, novel.current_tick)  # 离屏世界事件触发器
+        advance_rumor_spread(db, novel.id, prev_tick, novel.current_tick)  # 传闻扩散 + 角色中介知晓推进
         return {"status": "success", "msg": f"世界时间已推进 {days} 天 {hours} 小时"}
 
     if req.tool_name == "query_world_state":

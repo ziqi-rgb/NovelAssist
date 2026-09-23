@@ -415,6 +415,11 @@ html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;col
 .we-card-actions{display:flex;gap:8px;margin-top:10px;}
 .we-card-actions button{padding:5px 14px;font-size:.78rem;}
 
+/* ── 世界事件设置（时间线 tab 顶部） ── */
+.we-settings{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;background:var(--active-bg);font-size:.78rem;color:var(--text);}
+.we-settings label{display:flex;align-items:center;gap:4px;color:var(--text-muted);}
+.we-settings #we-set-msg{color:var(--accent);font-size:.74rem;}
+
 /* ── Time Marker Modal & Capsule Cards ── */
 .time-marker-box{width:420px;max-width:95vw}
 .time-marker-capsules{display:flex;gap:12px;justify-content:center;margin:16px 0}
