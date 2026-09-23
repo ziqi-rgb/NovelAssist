@@ -31,7 +31,7 @@ def _clean():
             db.add(nv)
         nv.current_tick = 0
         nv.calendar_config = {"months_per_year": 12, "days_per_month": 30, "hours_per_day": HPD}
-        nv.world_event_config = {"enabled": True, "prob_per_month": 1.0, "pending_days": 0.0, "spread_base_speed": 2.0}
+        nv.world_event_config = {"enabled": True, "prob_per_month": 1.0, "pending_days": 0.0, "spread_base_speed": 0.5}
         db.commit()
     yield
 
@@ -47,7 +47,7 @@ def _mk_loc(db, name, parent=None, gx=0, gy=0):
 def test_config_roundtrip():
     with SessionLocal() as db:
         cfg = M.get_world_event_config(novel_id=1, db=db)
-        assert cfg["enabled"] is True and cfg["spread_base_speed"] == 2.0
+        assert cfg["enabled"] is True and cfg["spread_base_speed"] == 0.5
         out = M.update_world_event_config(
             M.WorldEventSettings(novel_id=1, enabled=False, prob_per_month=0.5, spread_base_speed=3.0), db=db
         )
@@ -63,15 +63,15 @@ def test_spread_reach_horizontal_and_downward():
         c = _mk_loc(db, "城C", root, 10, 0)
         _mk_loc(db, "街区a1", a, 0, 0)
         a2 = _mk_loc(db, "街区a2", a, 2, 0)
-        reach = M._compute_spread_reach(db, a, speed=2.0, base_tick=0, hpd=HPD, current_tick=1000)
+        reach = M._compute_spread_reach(db, a, speed=0.5, base_tick=0, hpd=HPD, current_tick=1000)
         by = {r["location_id"]: r for r in reach}
         assert by[a.id]["tick"] == 0
-        assert by[b.id]["tick"] == int(3 / 2.0 * HPD)   # 同层曼哈顿 cost=3
-        assert by[c.id]["tick"] == int(10 / 2.0 * HPD)  # cost=10
+        assert by[b.id]["tick"] == int(3 * 0.5 * HPD)   # 同层曼哈顿 cost=3，speed=0.5 天/格
+        assert by[c.id]["tick"] == int(10 * 0.5 * HPD)  # cost=10
         assert by[a2.id]["depth"] == 1                  # 进入子层
-        assert by[a2.id]["tick"] == int(1 / 2.0 * HPD)  # 入口 cost=1
+        assert by[a2.id]["tick"] == int(1 * 0.5 * HPD)  # 入口 cost=1
         # current_tick 上限：到达 tick 超过则不计
-        limited = M._compute_spread_reach(db, a, speed=2.0, base_tick=0, hpd=HPD, current_tick=int(3 / 2.0 * HPD))
+        limited = M._compute_spread_reach(db, a, speed=0.5, base_tick=0, hpd=HPD, current_tick=int(3 * 0.5 * HPD))
         assert c.id not in {r["location_id"] for r in limited}
 
 
@@ -87,7 +87,7 @@ def test_advance_marks_knowers_via_visit():
         db.add(M.CharacterTrajectory(character_id=ch.id, location_id=a.id, start_tick=0))
         ev = M.WorldEvent(
             novel_id=1, title="A城火灾", status="accepted", is_rumor=True, origin_tick=0, location_id=a.id,
-            spread_json={"origin_location_id": a.id, "origin_tick": 0, "speed": 100.0, "spread_prob": 1.0,
+            spread_json={"origin_location_id": a.id, "origin_tick": 0, "speed": 1.0, "spread_prob": 1.0,
                          "reached": [], "knowers": []},
         )
         db.add(ev)
@@ -110,7 +110,7 @@ def test_scene_rumors_injection():
         ev = M.WorldEvent(
             novel_id=1, title="A城火灾", description="大火", status="accepted", is_rumor=True,
             origin_tick=0, location_id=a.id,
-            spread_json={"origin_location_id": a.id, "origin_tick": 0, "speed": 2.0, "spread_prob": 1.0,
+            spread_json={"origin_location_id": a.id, "origin_tick": 0, "speed": 0.5, "spread_prob": 1.0,
                          "reached": [], "knowers": [ch.id]},
         )
         db.add(ev)

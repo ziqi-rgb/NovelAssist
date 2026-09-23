@@ -2169,7 +2169,7 @@ class WorldEventSettings(BaseModel):
     novel_id: int = NOVEL_ID_DEFAULT
     enabled: bool = True
     prob_per_month: float = 0.35
-    spread_base_speed: float = 2.0  # 传闻扩散基准速度（格/天），LLM 可在此基础上下调/上调
+    spread_base_speed: float = 0.5  # 传闻扩散基准速度（天/格，每格的耗时天数；值越大传播越慢）
 
 
 @app.get("/api/world_events/config")
@@ -2181,7 +2181,7 @@ def get_world_event_config(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: 
     return {
         "enabled": bool(cfg.get("enabled", True)),
         "prob_per_month": float(cfg.get("prob_per_month", 0.35)),
-        "spread_base_speed": float(cfg.get("spread_base_speed", 2.0)),
+        "spread_base_speed": float(cfg.get("spread_base_speed", 0.5)),
     }
 
 
@@ -2499,7 +2499,7 @@ def _compute_spread_reach(
     """分形扩散：从事件源地点出发，向『同层兄弟（25×25 网格曼哈顿距离）』扩散，
     并『进入子层内部』（每进入一层速度 ×5，即后续成本 ÷5）逐级递归（§2.3 作者原话）。
 
-    - 成本以『等效格数』计；到达 tick = base_tick + 成本/speed × hpd。
+    - 成本以『等效格数』计；到达 tick = base_tick + 成本 × speed（天/格）× hpd。
     - 返回已到达（tick ≤ current_tick）的地点 [{location_id, tick, depth}]。
     """
     if origin is None or speed <= 0:
@@ -2537,7 +2537,7 @@ def _compute_spread_reach(
                 queue.append(ch.id)
     out: list[dict] = []
     for loc_id, (cost, depth) in reached.items():
-        tick = int(base_tick + (cost / speed) * hpd)
+        tick = int(base_tick + cost * speed * hpd)
         if tick <= current_tick:
             out.append({"location_id": loc_id, "tick": tick, "depth": depth})
     return out
@@ -2557,13 +2557,13 @@ def _char_visited_locations(db: Session, novel_id: int) -> dict[int, set[int]]:
 
 
 def _llm_decide_spread_speed(novel: Novel, ev: WorldEvent, creds: Optional[dict]) -> Optional[tuple[float, float]]:
-    """让 LLM 结合世界观为传闻决定扩散速度（格/天）与角色间传播概率。失败返回 None。"""
+    """让 LLM 结合世界观为传闻决定扩散速度（天/格）与角色间传播概率。失败返回 None。"""
     api_key, base_url, model = _world_event_creds(creds)
     if not api_key:
         return None
     prompt = (
         "你是小说世界的『传闻扩散』引擎。下列世界事件已成为传闻，请判断它的扩散速度与在角色间的传染概率。"
-        "只返回纯 JSON（不要 markdown）：{\"speed\": 数字(格/天,建议0.5~5), \"spread_prob\": 数字(0~1)}。\n\n"
+        "只返回纯 JSON（不要 markdown）：{\"speed\": 数字(天/格,每格耗时,建议0.1~2), \"spread_prob\": 数字(0~1)}。\n\n"
         f"【事件】{ev.title}\n{ev.description[:600]}"
     )
     base = (base_url or "https://api.openai.com/v1").rstrip("/")
@@ -2579,7 +2579,7 @@ def _llm_decide_spread_speed(novel: Novel, ev: WorldEvent, creds: Optional[dict]
         mj = re.search(r"\{[\s\S]*\}", raw)
         if mj:
             data = json.loads(mj.group(0))
-            speed = max(0.1, float(data.get("speed", 2.0)))
+            speed = max(0.01, float(data.get("speed", 0.5)))
             prob = max(0.0, min(1.0, float(data.get("spread_prob", 0.5))))
             return speed, prob
     except Exception:
@@ -2590,7 +2590,7 @@ def _llm_decide_spread_speed(novel: Novel, ev: WorldEvent, creds: Optional[dict]
 def _init_rumor_spread(db: Session, novel: Novel, ev: WorldEvent, creds: Optional[dict] = None) -> None:
     """采纳时初始化传闻扩散参数（§2.3）：扩散速度由 LLM 结合世界观决定；无 key 用可复现默认。"""
     cfg = novel.world_event_config or {}
-    base_speed = max(0.1, float(cfg.get("spread_base_speed", 2.0) or 2.0))
+    base_speed = max(0.01, float(cfg.get("spread_base_speed", 0.5) or 0.5))
     speed = base_speed
     spread_prob = 0.5
     api_key = (creds or {}).get("api_key") or LLM_API_KEY
@@ -2643,7 +2643,7 @@ def advance_rumor_spread(db: Session, novel_id: int, prev_tick: int, new_tick: i
         origin = db.get(Location, origin_id)
         if origin is None:
             continue
-        speed = float(sp.get("speed", 2.0) or 2.0)
+        speed = float(sp.get("speed", 0.5) or 0.5)
         spread_prob = float(sp.get("spread_prob", 0.5) or 0.5)
         reach = _compute_spread_reach(db, origin, speed, int(sp.get("origin_tick", ev.origin_tick)), hpd, new_tick)
         sp["reached"] = reach

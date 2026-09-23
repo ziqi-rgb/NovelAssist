@@ -931,7 +931,7 @@ document.getElementById("ae-del-main")?.addEventListener("click", () => { if (_a
             novel_id: currentNovelId,
             enabled: $("we-set-enabled").checked,
             prob_per_month: parseFloat($("we-set-prob").value) || 0,
-            spread_base_speed: parseFloat($("we-set-speed").value) || 2,
+            spread_base_speed: parseFloat($("we-set-speed").value) || 0.5,
         };
         try {
             const res = await fetch("/api/world_events/config", {
@@ -942,6 +942,7 @@ document.getElementById("ae-del-main")?.addEventListener("click", () => { if (_a
         } catch (err) { if (msg) msg.textContent = "保存失败"; }
     }
     $("we-set-save")?.addEventListener("click", saveWorldEventConfig);
+    $("we-set-toggle")?.addEventListener("click", () => panel.classList.toggle("collapsed"));
     document.querySelector('[data-tab="tab-timeline"]')?.addEventListener("click", window.loadWorldEventConfig);
 })();
 
