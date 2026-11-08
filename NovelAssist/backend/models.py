@@ -251,7 +251,8 @@ class TimelineEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
     event_type: Mapped[TimelineEventType] = mapped_column(
-        SAEnum(TimelineEventType), nullable=False, default=TimelineEventType.MAIN_STORY
+        SAEnum(TimelineEventType, values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default=TimelineEventType.MAIN_STORY,
     )
     timeline_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="")

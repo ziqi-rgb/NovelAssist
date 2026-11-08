@@ -2342,6 +2342,63 @@ document.getElementById("outline-export-btn")?.addEventListener("click", async f
         }
     } catch (e2) { console.error(e2); }
 });
+/* ═══════════ 设定集导入导出（#T008） ═══════════ */
+function downloadSettingsFile(text, filename, mime) {
+    var blob = new Blob([text], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a"); link.href = url; link.setAttribute("download", filename);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+document.getElementById("outline-export-json-btn")?.addEventListener("click", async function() {
+    if (!currentNovelId) return;
+    showToast("⏳ 正在编译 JSON 设定集...");
+    try {
+        var res = await fetch("/api/novels/" + currentNovelId + "/export-settings?fmt=json");
+        if (res.ok) {
+            downloadSettingsFile(await res.text(), "设定集.json", "application/json;charset=utf-8;");
+            showToast("📤 JSON 设定集下载成功！");
+        } else { showToast("❌ 导出失败"); }
+    } catch (e) { console.error(e); showToast("❌ 导出失败"); }
+});
+document.getElementById("outline-import-btn")?.addEventListener("click", function() {
+    var fi = document.getElementById("outline-import-file");
+    if (fi) fi.click();
+});
+document.getElementById("outline-import-file")?.addEventListener("change", async function() {
+    var fi = this;
+    var file = fi.files && fi.files[0];
+    fi.value = "";
+    if (!file) return;
+    var content;
+    try { content = await file.text(); } catch (e) { showToast("❌ 文件读取失败"); return; }
+    if (!content.trim()) { showToast("❌ 文件为空"); return; }
+    var doCommit = function() {
+        fetch("/api/novels/" + currentNovelId + "/import-settings", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: content, dry_run: false })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ok) {
+                showToast("📥 导入完成：新建 " + d.preview.created + "，更新 " + d.preview.updated +
+                    (d.preview.deleted ? "，删除 " + d.preview.deleted : "") +
+                    (d.preview.skipped ? "，跳过 " + d.preview.skipped : ""));
+                loadOutlineNotes(); loadCharacters(); loadLocationTree();
+            } else { showToast("❌ " + (d.detail || "导入失败")); }
+        }).catch(function() { showToast("❌ 导入请求失败"); });
+    };
+    fetch("/api/novels/" + currentNovelId + "/import-settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: content, dry_run: true })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (!d.ok) { showToast("❌ " + (d.detail || "无法解析该文件")); return; }
+        var p = d.preview;
+        var msg = "📥 预览：新建 " + p.created + "，更新 " + p.updated +
+            (p.deleted ? "，删除 " + p.deleted + "（导入后不再存在的实体）" : "") +
+            (p.skipped ? "，跳过 " + p.skipped : "") + "；是否执行导入？";
+        if (confirm(msg)) doCommit();
+    }).catch(function() { showToast("❌ 预览请求失败"); });
+});
+
 document.getElementById("import-close-btn")?.addEventListener("click", function() {
     // 运行中关闭窗口：建纲继续后台运行，保存控制台快照以便恢复
     if (isGenesisRunning) {

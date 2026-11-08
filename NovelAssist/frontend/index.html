@@ -230,9 +230,12 @@
                 <!-- 大纲模块：分类导航 -->
                 <div id="module-outline" class="module-panel hidden">
                     <div class="sidebar-header"><h2>大纲分类</h2>
-                        <div style="display: flex; gap: 8px; align-items: center;">
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                             <button id="outline-genesis-btn" class="sys-btn sys-btn-primary" style="font-size: 0.75rem; background: linear-gradient(135deg, #4f46e5, #9333ea); font-weight: 700;">🌌智能建纲</button>
-                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;">📤 导出 MD</button>
+                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导出 MD（含机读标记块）">📤 导出 MD</button>
+                            <button id="outline-export-json-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导出 JSON 设定集">📤 导出 JSON</button>
+                            <button id="outline-import-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导入设定集（MD/JSON，按名增量 upsert）">📥 导入</button>
+                            <input type="file" id="outline-import-file" accept=".md,.markdown,.json,.txt" class="hidden">
                         </div>
                     </div>
                     <ul id="outline-category-nav" class="category-nav">

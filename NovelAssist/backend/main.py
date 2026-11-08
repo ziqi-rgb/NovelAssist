@@ -41,7 +41,7 @@ load_dotenv()
 try:
     from .database import Base, engine, get_db, run_migration  # noqa: E402
     from .models import (  # noqa: E402
-        Chapter, Character, Outline, Location,
+        Chapter, Character, Outline, Location, LocationScale,
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation, TimelineEventRelation, EventCategory,
@@ -52,7 +52,7 @@ try:
 except ImportError:
     from database import Base, engine, get_db, run_migration  # noqa: E402
     from models import (  # noqa: E402
-        Chapter, Character, Outline, Location,
+        Chapter, Character, Outline, Location, LocationScale,
         WorldEvent, Novel, Volume, TimelineEvent, CharacterSnapshot, ReasoningChain, GlobalSettings,
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation, TimelineEventRelation, EventCategory,
@@ -2058,6 +2058,529 @@ def export_novel_zip(novel_id: int, db: Session = Depends(get_db)):
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
     )
+
+
+# ═══════════ 设定集导入导出（#T008：MD/JSON 双格式，按名增量 upsert） ═══════════
+# 设计：
+# - 导出 = 全量设定 JSON（novel 配置 + 地点/人物/势力/大纲/时间线），每实体携带 id + name 稳定锚点
+# - MD 导出 = 人类可读文档 + 嵌入 ```settings-json 标记块（可机读），解析优先取标记块，缺失时宽松解析标题/字段行
+# - 导入 = 按名 upsert（同 manage_world_element 语义）：同名实体更新字段，缺失的创建；时间线按 time_label+event_type 匹配；
+#   父级（outline/location）按导入集内名称解析，缺失回退已有同名，再缺失则不挂父级
+# - 导入不推进 current_tick（时钟由作者手动控制）
+
+_SETTINGS_JSON_FENCE = "settings-json"
+
+
+def _collect_settings_bundle(db: Session, novel: Novel) -> dict:
+    """全量设定快照 — JSON 可序列化，id/name 稳定锚点"""
+    locs = db.scalars(select(Location).where(Location.novel_id == novel.id).order_by(Location.id)).all()
+    chars = db.scalars(select(Character).where(Character.novel_id == novel.id).order_by(Character.id)).all()
+    facs = db.scalars(select(Faction).where(Faction.novel_id == novel.id).order_by(Faction.id)).all()
+    outs = db.scalars(select(Outline).where(Outline.novel_id == novel.id).order_by(Outline.order_index, Outline.id)).all()
+    try:
+        rows = db.execute(
+            text("SELECT event_type, timeline_index, title, time_label, category, character_ids, content, absolute_tick, related_location_id "
+                 "FROM timeline_events WHERE novel_id = :nid ORDER BY timeline_index"),
+            {"nid": novel.id},
+        ).fetchall()
+    except Exception:
+        rows = []
+
+    def _parse_json(v, default):
+        if v is None:
+            return default
+        if isinstance(v, (dict, list)):
+            return v
+        try:
+            out = json.loads(v)
+            return out if isinstance(out, (dict, list)) else default
+        except Exception:
+            return default
+
+    # 外键 id → 名称（同一 novel 内解析，导入文件自包含）
+    loc_name = {lc.id: lc.name for lc in locs}
+    fac_name = {f.id: f.name for f in facs}
+    out_name = {o.id: o.title for o in outs}
+    locations = [
+        {"id": lc.id, "name": lc.name, "description": lc.description,
+         "parent_name": loc_name.get(lc.parent_id),
+         "scale_level": lc.scale_level, "scale": lc.scale.value if lc.scale else "REGION",
+         "grid_x": lc.grid_x, "grid_y": lc.grid_y, "map_x": lc.map_x, "map_y": lc.map_y,
+         "attributes": lc.attributes or {}}
+        for lc in locs
+    ]
+    characters = [
+        {"id": c.id, "name": c.name, "aliases": c.aliases, "description": c.description,
+         "status": c.status, "is_active": c.is_active, "is_always_context": c.is_always_context,
+         "attributes": c.attributes or {}, "faction_name": fac_name.get(c.faction_id),
+         "faction_role": c.faction_role}
+        for c in chars
+    ]
+    factions = [
+        {"id": f.id, "name": f.name, "description": f.description,
+         "base_location_name": loc_name.get(f.base_location_id)}
+        for f in facs
+    ]
+    outlines = [
+        {"id": o.id, "title": o.title, "description": o.description, "category": o.category,
+         "parent_name": out_name.get(o.parent_id),
+         "order_index": o.order_index, "is_always_context": o.is_always_context}
+        for o in outs
+    ]
+    timeline = [
+        {"event_type": str(r[0]).lower(), "timeline_index": r[1], "title": r[2], "time_label": r[3],
+         "category": r[4], "character_ids": _parse_json(r[5], []), "content": r[6],
+         "absolute_tick": r[7], "related_location_name": loc_name.get(r[8])}
+        for r in rows
+    ]
+
+    return {
+        "format": "novel-assist-settings",
+        "version": 1,
+        "exported_at": datetime.utcnow().isoformat(),
+        "novel": {
+            "id": novel.id,
+            "title": novel.title,
+            "character_template": novel.character_template,
+            "location_templates": novel.location_templates,
+            "calendar_config": novel.calendar_config,
+            "world_event_config": novel.world_event_config,
+        },
+        "locations": locations,
+        "characters": characters,
+        "factions": factions,
+        "outlines": outlines,
+        "timeline": timeline,
+    }
+
+
+def _render_settings_markdown(bundle: dict) -> str:
+    """人类可读 MD + 嵌入机读标记块（导入时优先解析标记块）"""
+    meta = json.dumps(bundle, ensure_ascii=False, indent=2)
+    lines: list[str] = [
+        "# 📖 设定集",
+        "",
+        f"> 项目: {bundle['novel']['title']}　|　导出: {bundle['exported_at']}",
+        "",
+        "```" + _SETTINGS_JSON_FENCE,
+        meta,
+        "```",
+        "",
+    ]
+    if bundle["locations"]:
+        lines += ["## 🗺️ 地点", ""]
+        for lc in bundle["locations"]:
+            lines.append(f"### {lc['name']} ({lc['scale_level']})")
+            if lc["description"]:
+                lines.append(f"*{lc['description']}*")
+            for k, v in (lc["attributes"] or {}).items():
+                lines.append(f"- **{k}**: {v}")
+            lines.append("")
+    if bundle["characters"]:
+        lines += ["## 👤 人物", ""]
+        for c in bundle["characters"]:
+            lines.append(f"### {c['name']}")
+            if c["aliases"]:
+                lines.append(f"别名: {c['aliases']}")
+            if c["description"]:
+                lines.append(f"*{c['description']}*")
+            lines.append(f"状态: {c['status']}")
+            if isinstance(c["attributes"], dict):
+                for group, fields in c["attributes"].items():
+                    if isinstance(fields, dict):
+                        for k, v in fields.items():
+                            if v:
+                                lines.append(f"- {group}.{k}: {v}")
+            lines.append("")
+    if bundle["factions"]:
+        lines += ["## 🏛️ 势力", ""]
+        for f in bundle["factions"]:
+            lines.append(f"### {f['name']}")
+            if f["description"]:
+                lines.append(f"*{f['description']}*")
+            lines.append("")
+    if bundle["outlines"]:
+        lines += ["## 📋 大纲", ""]
+        for o in bundle["outlines"]:
+            lines.append(f"### {o['title']} ({o['category']})")
+            if o["description"]:
+                lines.append(o["description"])
+            lines.append("")
+    if bundle["timeline"]:
+        lines += ["## 🕐 时间线", ""]
+        for t in bundle["timeline"]:
+            label = t["time_label"] or ""
+            lines.append(f"- [{t['event_type']}] **{label}**: {t['content']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _parse_settings_markdown(md: str) -> dict:
+    """宽松解析 — 优先机读标记块；缺失时从标题/字段行重建（容忍手改）"""
+    m = re.search(r"```" + _SETTINGS_JSON_FENCE + r"[ \t]*\n(.*?)```", md, re.DOTALL)
+    if m:
+        try:
+            fenced = json.loads(m.group(1))
+            if isinstance(fenced, dict) and fenced.get("format") == "novel-assist-settings":
+                return fenced
+        except json.JSONDecodeError:
+            pass  # 标记块损坏 → 回退宽松解析
+    if not md.lstrip().startswith("#"):
+        raise ValueError("无法识别的设定集：缺少标题行")
+    title = md.lstrip().splitlines()[0].lstrip("#").strip() or "导入项目"
+    bundle: dict = {
+        "format": "novel-assist-settings", "version": 1, "exported_at": datetime.utcnow().isoformat(),
+        "novel": {"id": None, "title": title, "character_template": [], "location_templates": {},
+                  "calendar_config": {}, "world_event_config": {}},
+        "locations": [], "characters": [], "factions": [], "outlines": [], "timeline": [],
+    }
+    section = None
+    cur: dict = {}
+
+    def flush():
+        if cur:
+            key = {"地点": "locations", "人物": "characters", "势力": "factions", "大纲": "outlines", "时间线": "timeline"}.get(section)
+            if key:
+                bundle[key].append(dict(cur))
+        cur.clear()
+
+    for raw in md.splitlines():
+        line = raw.rstrip()
+        h2 = re.match(r"^##\s+(.+)$", line)
+        if h2:
+            flush()
+            name = h2.group(1)
+            section = next((k for k in ("地点", "人物", "势力", "大纲", "时间线") if k in name), None)
+            continue
+        if section is None:
+            continue
+        h3 = re.match(r"^###\s+(.+)$", line)
+        if h3:
+            flush()
+            label = h3.group(1).strip()
+            if section == "大纲":
+                mm = re.match(r"^(.*?)\s*[\(（]([^\)）]+)[\)）]\s*$", label)
+                cur = {"title": mm.group(1).strip() if mm else label,
+                       "category": mm.group(2).strip() if mm else "剧情", "description": ""}
+            else:
+                cur = {"name": label, "description": ""}
+            if section == "地点":
+                cur["scale_level"] = LocationScaleLevel.PLANET.value
+                mm = re.match(r"^(.*?)\s*[\(（]([^\)）]+)[\)）]\s*$", label)
+                if mm:
+                    cur["name"] = mm.group(1).strip()
+                    cur["scale_level"] = mm.group(2).strip() or cur["scale_level"]
+            continue
+        if not cur and section != "时间线":
+            continue
+        t = line.strip()
+        if section == "时间线":
+            bm = re.match(r"^-\s*\[(history|main_story|world)\]\s*\*\*(.+?)\*\*\s*[:：]\s*(.*)$", t)
+            if bm:
+                bundle["timeline"].append({"event_type": bm.group(1), "time_label": bm.group(2).strip(), "content": bm.group(3).strip()})
+                continue
+            continue
+        if section == "人物":
+            am = re.match(r"^别名[:：]\s*(.+)$", t)
+            if am:
+                cur["aliases"] = am.group(1).strip()
+                continue
+            sm = re.match(r"^状态[:：]\s*(.+)$", t)
+            if sm:
+                cur["status"] = sm.group(1).strip()
+                continue
+            if t.startswith("###") is False and t.startswith("*") and t.endswith("*") and len(t) > 2:
+                cur["description"] = t[1:-1]
+                continue
+            fm = re.match(r"^-\s*([\w.]+)\s*[:：]\s*(.+)$", t)
+            if fm and "." in fm.group(1):
+                group, key = fm.group(1).split(".", 1)
+                cur.setdefault("attributes", {}).setdefault(group, {})[key] = fm.group(2).strip()
+                continue
+        elif t.startswith("*") and t.endswith("*") and len(t) > 2:
+            cur["description"] = t[1:-1]
+            continue
+        fm = re.match(r"^-\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)$", t)
+        if fm:
+            cur.setdefault("attributes", {})[fm.group(1).strip()] = fm.group(2).strip()
+            continue
+        pm = re.match(r"^-\s*([\w.]+?)\s*[:：]\s*(.+)$", t)
+        if pm and section != "人物":
+            cur.setdefault("attributes", {})[pm.group(1).strip()] = pm.group(2).strip()
+            continue
+        if section == "大纲" and t:
+            cur["description"] = ((cur.get("description") or "") + "\n" + t).strip()
+    flush()
+    return bundle
+
+
+def _upsert_settings_bundle(db: Session, novel: Novel, src: dict) -> dict:
+    """按名增量 upsert — 返回 {created, updated, deleted, skipped} 统计"""
+    stats = {"created": 0, "updated": 0, "deleted": 0, "skipped": 0}
+    src_locs = {lc.get("name"): lc for lc in src.get("locations", []) if lc.get("name")}
+    src_facs = {f.get("name"): f for f in src.get("factions", []) if f.get("name")}
+    src_chars = {c.get("name"): c for c in src.get("characters", []) if c.get("name")}
+    src_outs = {o.get("title"): o for o in src.get("outlines", []) if o.get("title")}
+    src_tles = {(str(t.get("event_type", "")).lower(), t.get("time_label")): t
+                for t in src.get("timeline", []) if (t.get("time_label") or t.get("title"))}
+
+    # novel 配置（不改 id / current_tick）
+    s_novel = src.get("novel") or {}
+    if s_novel.get("title"):
+        novel.title = s_novel["title"]
+    for key in ("character_template", "location_templates", "calendar_config", "world_event_config"):
+        if isinstance(s_novel.get(key), (dict, list)):
+            setattr(novel, key, s_novel[key])
+
+    # 地点（父级：导入集内名称 → 已有同名 → 不挂）
+    existing_locs = {lc.name: lc for lc in novel.locations}
+    loc_id: dict[str, int] = {}
+    for name, s in src_locs.items():
+        lc = existing_locs.get(name)
+        if lc is None:
+            lc = Location(novel_id=novel.id, name=name)
+            db.add(lc)
+            stats["created"] += 1
+            is_new = True
+        else:
+            is_new = False
+        changed = False
+        for attr in ("description", "scale_level", "grid_x", "grid_y", "map_x", "map_y"):
+            if s.get(attr) is not None and getattr(lc, attr) != s[attr]:
+                setattr(lc, attr, s[attr])
+                changed = True
+        scale_val = s.get("scale")
+        if scale_val:
+            try:
+                target_scale = LocationScale(scale_val)
+                if lc.scale != target_scale:
+                    lc.scale = target_scale
+                    changed = True
+            except ValueError:
+                pass
+        if isinstance(s.get("attributes"), dict) and (lc.attributes or {}) != s["attributes"]:
+            lc.attributes = s["attributes"]
+            changed = True
+        parent_name = s.get("parent_name")
+        if parent_name and parent_name != name:
+            parent = loc_id.get(parent_name)
+            if parent is None:
+                pl = existing_locs.get(parent_name)
+                parent = pl.id if (pl is not None and pl.name in src_locs) else None
+            if lc.parent_id != parent:
+                lc.parent_id = parent
+                changed = True
+        loc_id[name] = lc.id
+        if not is_new and changed:
+            stats["updated"] += 1
+    # 第二轮：同批父子关系（此时 loc_id 全量可用）
+    for name, s in src_locs.items():
+        parent_name = s.get("parent_name")
+        if parent_name and parent_name in loc_id and parent_name != name:
+            lc = next((x for x in novel.locations if x.name == name), None)
+            if lc is not None and lc.parent_id != loc_id[parent_name]:
+                lc.parent_id = loc_id[parent_name]
+    for lc in existing_locs.values():
+        if lc.name not in src_locs:
+            db.query(TimelineEvent).filter(TimelineEvent.related_location_id == lc.id).update({"related_location_id": None})
+            db.query(Faction).filter(Faction.base_location_id == lc.id).update({"base_location_id": None})
+            db.delete(lc)
+            stats["deleted"] += 1
+
+    # 势力（base_location：导入名称 → 已有 → 不挂）
+    existing_facs = {f.name: f for f in novel.factions}
+    fac_id: dict[str, int] = {}
+    for name, s in src_facs.items():
+        f = existing_facs.get(name)
+        if f is None:
+            f = Faction(novel_id=novel.id, name=name)
+            db.add(f)
+            stats["created"] += 1
+        if s.get("description") is not None and f.description != s["description"]:
+            f.description = s["description"]
+        loc_name = s.get("base_location_name")
+        target = loc_id.get(loc_name) if loc_name else None
+        if target is None and loc_name:
+            pl = existing_locs.get(loc_name)
+            target = pl.id if pl is not None else None
+        if f.base_location_id != target:
+            f.base_location_id = target
+        fac_id[name] = f.id
+    for f in existing_facs.values():
+        if f.name not in src_facs:
+            db.query(Character).filter(Character.faction_id == f.id).update({"faction_id": None, "faction_role": ""})
+            db.delete(f)
+            stats["deleted"] += 1
+
+    # 人物（faction：导入名称 → 不挂）
+    existing_chars = {c.name: c for c in novel.characters}
+    for name, s in src_chars.items():
+        c = existing_chars.get(name)
+        if c is None:
+            c = Character(novel_id=novel.id, name=name)
+            db.add(c)
+            stats["created"] += 1
+            is_new = True
+        else:
+            is_new = False
+        changed = False
+        for attr in ("aliases", "description", "status", "is_active", "is_always_context", "faction_role"):
+            if s.get(attr) is not None and getattr(c, attr) != s[attr]:
+                setattr(c, attr, s[attr])
+                changed = True
+        if isinstance(s.get("attributes"), dict) and (c.attributes or {}) != s["attributes"]:
+            c.attributes = s["attributes"]
+            changed = True
+        fac_name = s.get("faction_name")
+        target = fac_id.get(fac_name) if fac_name else None
+        if c.faction_id != target:
+            c.faction_id = target
+            changed = True
+        if not is_new and changed:
+            stats["updated"] += 1
+    for c in existing_chars.values():
+        if c.name not in src_chars:
+            db.query(CharacterSnapshot).filter(CharacterSnapshot.character_id == c.id).delete()
+            db.query(CharacterRoutine).filter(CharacterRoutine.character_id == c.id).delete()
+            db.query(CharacterTrajectory).filter(CharacterTrajectory.character_id == c.id).delete()
+            db.query(CharacterRelation).filter(
+                (CharacterRelation.source_id == c.id) | (CharacterRelation.target_id == c.id)
+            ).delete()
+            db.delete(c)
+            stats["deleted"] += 1
+
+    # 大纲（父级：导入名称 → 已有 → 不挂；两轮）
+    existing_outs = {o.title: o for o in novel.outlines}
+    out_id: dict[str, int] = {}
+    for title, s in src_outs.items():
+        o = existing_outs.get(title)
+        if o is None:
+            o = Outline(novel_id=novel.id, title=title)
+            db.add(o)
+            stats["created"] += 1
+            is_new = True
+        else:
+            is_new = False
+        changed = False
+        for attr in ("description", "category", "order_index", "is_always_context"):
+            if s.get(attr) is not None and getattr(o, attr) != s[attr]:
+                setattr(o, attr, s[attr])
+                changed = True
+        parent_name = s.get("parent_name")
+        target = None
+        if parent_name and parent_name != title:
+            target = out_id.get(parent_name)
+            if target is None:
+                po = existing_outs.get(parent_name)
+                target = po.id if (po is not None and po.title in src_outs) else None
+        if o.parent_id != target:
+            o.parent_id = target
+            changed = True
+        out_id[title] = o.id
+        if not is_new and changed:
+            stats["updated"] += 1
+    for title, s in src_outs.items():
+        parent_name = s.get("parent_name")
+        if parent_name and parent_name in out_id and parent_name != title:
+            o = next((x for x in novel.outlines if x.title == title), None)
+            if o is not None and o.parent_id != out_id[parent_name]:
+                o.parent_id = out_id[parent_name]
+    for o in existing_outs.values():
+        if o.title not in src_outs:
+            db.delete(o)
+            stats["deleted"] += 1
+
+    # 时间线（按 event_type + time_label 匹配；character_ids / 地点 按名称解析）
+    char_id = {c.name: c.id for c in novel.characters}
+    existing_tles = {(str(t.event_type.value).lower(), t.time_label): t for t in novel.timeline_events}
+    for (etype, label), s in src_tles.items():
+        te = existing_tles.get((etype, label))
+        if te is None:
+            if etype not in ("history", "main_story", "world"):
+                stats["skipped"] += 1
+                continue
+            te = TimelineEvent(
+                novel_id=novel.id,
+                event_type=TimelineEventType(etype),
+                time_label=label or "", title=s.get("title") or "",
+            )
+            db.add(te)
+            stats["created"] += 1
+            is_new = True
+        else:
+            is_new = False
+        changed = False
+        for attr in ("title", "category", "content", "absolute_tick", "timeline_index"):
+            if s.get(attr) is not None and getattr(te, attr) != s[attr]:
+                setattr(te, attr, s[attr])
+                changed = True
+        if isinstance(s.get("character_ids"), list):
+            ids = [char_id[n] for n in s["character_ids"] if n in char_id]
+            if list(te.character_ids or []) != ids:
+                te.character_ids = ids
+                changed = True
+        loc_name = s.get("related_location_name")
+        target = loc_id.get(loc_name) if loc_name else None
+        if te.related_location_id != target:
+            te.related_location_id = target
+            changed = True
+        if not is_new and changed:
+            stats["updated"] += 1
+    for tkey, te in existing_tles.items():
+        if tkey not in src_tles:
+            db.query(TimelineEventRelation).filter(
+                (TimelineEventRelation.source_event_id == te.id) | (TimelineEventRelation.target_event_id == te.id)
+            ).delete()
+            db.delete(te)
+            stats["deleted"] += 1
+
+    return stats
+
+
+@app.get("/api/novels/{novel_id}/export-settings")
+def export_settings_bundle(novel_id: int, fmt: str = "json", db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    bundle = _collect_settings_bundle(db, novel)
+    if fmt == "md":
+        return Response(content=_render_settings_markdown(bundle), media_type="text/markdown; charset=utf-8")
+    return Response(content=json.dumps(bundle, ensure_ascii=False, indent=2), media_type="application/json; charset=utf-8")
+
+
+class ImportSettingsReq(BaseModel):
+    content: str
+    dry_run: bool = False
+
+
+@app.post("/api/novels/{novel_id}/import-settings")
+def import_settings_bundle(novel_id: int, req: ImportSettingsReq, db: Session = Depends(get_db)):
+    novel = db.get(Novel, novel_id)
+    if novel is None:
+        raise HTTPException(404, "小说不存在")
+    content = (req.content or "").strip()
+    if not content:
+        raise HTTPException(400, "导入内容为空")
+    if content.startswith("{") or content.startswith("["):
+        try:
+            bundle = json.loads(content)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "JSON 解析失败")
+    else:
+        try:
+            bundle = _parse_settings_markdown(content)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    if not isinstance(bundle, dict) or not (bundle.get("locations") or bundle.get("characters")
+                                           or bundle.get("outlines") or bundle.get("timeline")
+                                           or bundle.get("factions")):
+        raise HTTPException(400, "未识别到任何可导入的设定实体")
+    stats = _upsert_settings_bundle(db, novel, bundle)
+    if req.dry_run:
+        db.rollback()
+        return {"ok": True, "dry_run": True, "preview": stats}
+    db.commit()
+    return {"ok": True, "dry_run": False, "preview": stats}
 
 
 # ═══════════ WorldEvents ═══════════
