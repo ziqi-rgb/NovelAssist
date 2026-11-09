@@ -346,12 +346,17 @@
                         <div id="char-dynamic-form" style="flex: 1; overflow-y: auto; min-height: 0; padding: 16px 24px; background: var(--bg-card);"></div>
                         <!-- 🏛️ 势力归属（不属于模板，固定显示） -->
                         <div id="char-faction-row" style="flex-shrink: 0; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg-card); display: flex; gap: 12px; align-items: center;">
-                            <label style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">🏛️ 所属势力</label>
+                            <label style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">🏛️ 主势力</label>
                             <select id="char-faction-sel" style="flex: 1; padding: 6px 8px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
                                 <option value="">-- 散修 / 无势力 --</option>
                             </select>
                             <label style="font-weight: 600; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap;">职位</label>
                             <input id="char-faction-role-inp" type="text" placeholder="如：宗主、长老、散修" style="flex: 1; padding: 6px 8px; font-size: 0.78rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg);">
+                            <button id="char-faction-add-btn" style="flex-shrink: 0; font-size: 0.75rem; padding: 6px 10px; border: 1px dashed var(--border); border-radius: 4px; background: none; color: var(--text-muted); cursor: pointer;" title="加入第二个势力（#T009 多对多）">+ 附属势力</button>
+                        </div>
+                        <!-- 🏛️ 附属势力列表（#T009 多对多） -->
+                        <div id="char-faction-extra-wrap" style="flex-shrink: 0; padding: 4px 24px 10px; background: var(--bg-card);">
+                            <div id="char-faction-extra-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
                         </div>
                         <!-- 🔗 人物关系连线 -->
                         <div id="char-relations-section" style="flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg-card);">

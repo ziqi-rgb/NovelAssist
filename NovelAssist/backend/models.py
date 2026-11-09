@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text, DateTime, JSON, Boolean
+from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text, DateTime, JSON, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
@@ -144,12 +144,34 @@ class Character(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     is_always_context: Mapped[bool] = mapped_column(default=False)
     attributes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # 主势力（一人多势力见 character_factions 中间表，#T009）
     faction_id: Mapped[Optional[int]] = mapped_column(ForeignKey("factions.id"), nullable=True)
+    # 主势力中的职位/身份
     faction_role: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
 
     novel: Mapped[Novel] = relationship(back_populates="characters")
     faction: Mapped[Optional[Faction]] = relationship(back_populates="members")
+    faction_members: Mapped[list[CharacterFaction]] = relationship(
+        back_populates="character", cascade="all, delete-orphan"
+    )
+
+
+class CharacterFaction(Base):
+    """角色 ↔ 势力 多对多中间表（#T009）— 一人可属多个势力，每势力各有一个职位"""
+    __tablename__ = "character_factions"
+    __table_args__ = (
+        UniqueConstraint("character_id", "faction_id", name="uq_cf_character_faction"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id"), nullable=False, default=1)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), nullable=False)
+    faction_id: Mapped[int] = mapped_column(ForeignKey("factions.id"), nullable=False)
+    faction_role: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+
+    character: Mapped[Character] = relationship(back_populates="faction_members")
+    faction: Mapped[Faction] = relationship(back_populates="member_links")
 
 
 class Faction(Base):
@@ -165,6 +187,9 @@ class Faction(Base):
     novel: Mapped[Novel] = relationship(back_populates="factions")
     base_location: Mapped[Optional[Location]] = relationship()
     members: Mapped[list[Character]] = relationship(back_populates="faction")
+    member_links: Mapped[list[CharacterFaction]] = relationship(
+        back_populates="faction", cascade="all, delete-orphan"
+    )
 
 
 class Location(Base):

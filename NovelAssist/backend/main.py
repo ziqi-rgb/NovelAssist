@@ -46,6 +46,7 @@ try:
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation, TimelineEventRelation, EventCategory,
         ActiveEventNode, ActiveEventKind,
+        CharacterFaction,
     )
     from .world_calendar import CalendarEngine  # noqa: E402
     from .constants import LocationScaleLevel, SYSTEM_CHAIN_NAMES  # noqa: E402
@@ -57,6 +58,7 @@ except ImportError:
         CharacterRoutine, CharacterTrajectory,
         DEFAULT_PROMPT_TEMPLATES, TimelineEventType, Faction, CharacterRelation, TimelineEventRelation, EventCategory,
         ActiveEventNode, ActiveEventKind,
+        CharacterFaction,
     )
     from world_calendar import CalendarEngine  # noqa: E402
     from constants import LocationScaleLevel, SYSTEM_CHAIN_NAMES  # noqa: E402
@@ -843,6 +845,13 @@ class CharacterCreate(BaseModel):
     faction_id: Optional[int] = None
     faction_role: str = ""
 
+class CharacterFactionOut(BaseModel):
+    id: int
+    faction_id: int
+    faction_role: str = ""
+    class Config:
+        from_attributes = True
+
 class CharacterOut(BaseModel):
     id: int
     name: str
@@ -855,6 +864,7 @@ class CharacterOut(BaseModel):
     novel_id: int
     faction_id: Optional[int] = None
     faction_role: str = ""
+    faction_members: list[CharacterFactionOut] = []
     class Config:
         from_attributes = True
 
@@ -1516,29 +1526,36 @@ async def archive_chapter(chapter_id: int, req: ArchiveRequest, db: Session = De
                             else:
                                 updated_names.append(f"⚠️ {name} 试图去往 [{loc_name}] (地理库中无匹配地点)")
 
-                        # Handle faction_change
+                        # Handle faction_change（#T009 多对多：加入势力=新增关联并设为主势力）
                         fac_change = upd.get("faction_change")
                         if fac_change:
                             fac_name = str(fac_change).strip()
                             if fac_name in ["无", "None", "退出", "叛逃", "脱离"]:
                                 target.faction_id = None
+                                target.faction_role = ""
+                                db.query(CharacterFaction).filter_by(character_id=target.id).delete()
                             else:
                                 faction_obj = db.query(Faction).filter(
                                     Faction.novel_id == ch.novel_id,
                                     Faction.name == fac_name,
                                 ).first()
-                                if faction_obj:
-                                    target.faction_id = faction_obj.id
-                                else:
-                                    new_fac = Faction(
+                                if not faction_obj:
+                                    faction_obj = Faction(
                                         novel_id=ch.novel_id,
                                         name=fac_name,
                                         description=f"由归档事件自动创建：{fac_name}",
                                     )
-                                    db.add(new_fac)
+                                    db.add(faction_obj)
                                     db.flush()
-                                    db.refresh(new_fac)
-                                    target.faction_id = new_fac.id
+                                link = db.query(CharacterFaction).filter_by(
+                                    character_id=target.id, faction_id=faction_obj.id
+                                ).first()
+                                if link is None:
+                                    db.add(CharacterFaction(
+                                        novel_id=ch.novel_id, character_id=target.id,
+                                        faction_id=faction_obj.id, faction_role="",
+                                    ))
+                                target.faction_id = faction_obj.id
 
     except HTTPException:
         raise
@@ -1677,12 +1694,55 @@ def update_character(char_id: int, body: CharacterCreate, db: Session = Depends(
         c.faction_id = body.faction_id
     if body.faction_role:
         c.faction_role = body.faction_role
+    # 主势力同步到多对多中间表（#T009）
+    if body.faction_id:
+        link = db.query(CharacterFaction).filter_by(
+            character_id=c.id, faction_id=body.faction_id
+        ).first()
+        if link is None:
+            db.add(CharacterFaction(
+                novel_id=c.novel_id, character_id=c.id,
+                faction_id=body.faction_id, faction_role=body.faction_role,
+            ))
+        elif link.faction_role != body.faction_role:
+            link.faction_role = body.faction_role
     db.commit()
     db.refresh(c)
     return c
 
 
 # ═══════════ Locations ═══════════
+
+class CharacterFactionLinkIn(BaseModel):
+    faction_id: int
+    faction_role: str = ""
+
+@app.put("/api/characters/{char_id}/factions")
+def set_character_factions(char_id: int, body: list[CharacterFactionLinkIn], db: Session = Depends(get_db)):
+    """#T009 整体替换角色↔势力多对多关联；首个势力为主势力（写回 Character.faction_id）"""
+    c = db.get(Character, char_id)
+    if c is None:
+        raise HTTPException(404, "人物不存在")
+    for item in body:
+        if db.get(Faction, item.faction_id) is None:
+            raise HTTPException(404, f"势力 {item.faction_id} 不存在")
+    for link in c.faction_members:
+        db.delete(link)
+    db.flush()
+    for item in body:
+        db.add(CharacterFaction(
+            novel_id=c.novel_id, character_id=c.id,
+            faction_id=item.faction_id, faction_role=item.faction_role,
+        ))
+    if body:
+        c.faction_id = body[0].faction_id
+        c.faction_role = body[0].faction_role
+    else:
+        c.faction_id = None
+        c.faction_role = ""
+    db.commit()
+    db.refresh(c)
+    return c
 
 @app.get("/api/locations", response_model=list[LocationOut])
 def list_locations(
@@ -2103,6 +2163,15 @@ def _collect_settings_bundle(db: Session, novel: Novel) -> dict:
     loc_name = {lc.id: lc.name for lc in locs}
     fac_name = {f.id: f.name for f in facs}
     out_name = {o.id: o.title for o in outs}
+    # 角色↔势力多对多（#T009）
+    cf_rows = db.execute(
+        text("SELECT character_id, faction_id, faction_role FROM character_factions WHERE novel_id=:nid"),
+        {"nid": novel.id},
+    ).fetchall()
+    char_faction: dict[int, list[dict]] = {c.id: [] for c in chars}
+    for cid, fid, role in cf_rows:
+        if cid in char_faction:
+            char_faction[cid].append({"faction_name": fac_name.get(fid), "faction_role": role})
     locations = [
         {"id": lc.id, "name": lc.name, "description": lc.description,
          "parent_name": loc_name.get(lc.parent_id),
@@ -2115,7 +2184,8 @@ def _collect_settings_bundle(db: Session, novel: Novel) -> dict:
         {"id": c.id, "name": c.name, "aliases": c.aliases, "description": c.description,
          "status": c.status, "is_active": c.is_active, "is_always_context": c.is_always_context,
          "attributes": c.attributes or {}, "faction_name": fac_name.get(c.faction_id),
-         "faction_role": c.faction_role}
+         "faction_role": c.faction_role,
+         "faction_members": [m for m in char_faction.get(c.id, []) if m["faction_name"]]}
         for c in chars
     ]
     factions = [
@@ -2182,11 +2252,15 @@ def _render_settings_markdown(bundle: dict) -> str:
             if c["description"]:
                 lines.append(f"*{c['description']}*")
             lines.append(f"状态: {c['status']}")
-            if c["faction_name"]:
-                if c["faction_role"]:
-                    lines.append(f"势力: {c['faction_name']} ({c['faction_role']})")
+            # 全势力（#T009 多对多：faction_members 优先，回退 faction_name）
+            members = c.get("faction_members") or []
+            if not members and c["faction_name"]:
+                members = [{"faction_name": c["faction_name"], "faction_role": c["faction_role"]}]
+            for m in members:
+                if m.get("faction_role"):
+                    lines.append(f"势力: {m['faction_name']} ({m['faction_role']})")
                 else:
-                    lines.append(f"势力: {c['faction_name']}")
+                    lines.append(f"势力: {m['faction_name']}")
             if isinstance(c["attributes"], dict):
                 for group, fields in c["attributes"].items():
                     if isinstance(fields, dict):
@@ -2297,11 +2371,13 @@ def _parse_settings_markdown(md: str) -> dict:
             if gm:
                 v = gm.group(1).strip()
                 mm = re.match(r"^(.*?)\s*[\(（]([^\)）]+)[\)）]\s*$", v)
-                if mm:
-                    cur["faction_name"] = mm.group(1).strip()
-                    cur["faction_role"] = mm.group(2).strip()
-                else:
-                    cur["faction_name"] = v
+                fname = mm.group(1).strip() if mm else v
+                frole = mm.group(2).strip() if mm else ""
+                cur.setdefault("faction_members", []).append({"faction_name": fname, "faction_role": frole})
+                # 首个势力为主势力（兼容旧字段）
+                if not cur.get("faction_name"):
+                    cur["faction_name"] = fname
+                    cur["faction_role"] = frole
                 continue
             if t.startswith("###") is False and t.startswith("*") and t.endswith("*") and len(t) > 2:
                 cur["description"] = t[1:-1]
@@ -2427,6 +2503,7 @@ def _upsert_settings_bundle(db: Session, novel: Novel, src: dict) -> dict:
         fac_id[name] = f.id
     for f in existing_facs.values():
         if f.name not in src_facs:
+            db.query(CharacterFaction).filter(CharacterFaction.faction_id == f.id).delete()
             db.query(Character).filter(Character.faction_id == f.id).update({"faction_id": None, "faction_role": ""})
             db.delete(f)
             stats["deleted"] += 1
@@ -2455,10 +2532,30 @@ def _upsert_settings_bundle(db: Session, novel: Novel, src: dict) -> dict:
         if c.faction_id != target:
             c.faction_id = target
             changed = True
+        # 多对多中间表（#T009：faction_members 优先，回退 faction_name）
+        members = s.get("faction_members") or []
+        if not members and target:
+            members = [{"faction_name": s.get("faction_name"), "faction_role": s.get("faction_role") or ""}]
+        member_ids: list[int] = []
+        for m in members:
+            mid = fac_id.get(m.get("faction_name")) if m.get("faction_name") else None
+            if mid is not None:
+                member_ids.append(mid)
+        existing_links = list(c.faction_members)
+        target_state = {mid: next((m["faction_role"] for m in members if fac_id.get(m.get("faction_name")) == mid), "") for mid in member_ids}
+        current_state = {lf.faction_id: lf.faction_role for lf in existing_links}
+        if current_state != target_state:
+            changed = True
+            for lf in existing_links:
+                db.delete(lf)
+            db.flush()
+            for mid, m_role in target_state.items():
+                db.add(CharacterFaction(novel_id=novel.id, character_id=c.id, faction_id=mid, faction_role=m_role))
         if not is_new and changed:
             stats["updated"] += 1
     for c in existing_chars.values():
         if c.name not in src_chars:
+            db.query(CharacterFaction).filter(CharacterFaction.character_id == c.id).delete()
             db.query(CharacterSnapshot).filter(CharacterSnapshot.character_id == c.id).delete()
             db.query(CharacterRoutine).filter(CharacterRoutine.character_id == c.id).delete()
             db.query(CharacterTrajectory).filter(CharacterTrajectory.character_id == c.id).delete()
@@ -3803,21 +3900,13 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True}
 
-@app.delete("/api/timeline/{event_id}")
-def delete_timeline(event_id: int, db: Session = Depends(get_db)):
-    t = db.get(TimelineEvent, event_id)
-    if t is None:
-        raise HTTPException(404, "时间线事件不存在")
-    db.delete(t)
-    db.commit()
-    return {"ok": True}
-
 @app.delete("/api/characters/{char_id}")
 def delete_character(char_id: int, db: Session = Depends(get_db)):
     c = db.get(Character, char_id)
     if c is None:
         raise HTTPException(404, "人物不存在")
     # 级联清理关联数据（FK 未开 CASCADE，手动清理避免孤儿行）
+    db.query(CharacterFaction).filter_by(character_id=char_id).delete()
     db.query(CharacterRoutine).filter_by(character_id=char_id).delete()
     db.query(CharacterTrajectory).filter_by(character_id=char_id).delete()
     db.query(CharacterSnapshot).filter_by(character_id=char_id).delete()
@@ -3998,7 +4087,7 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                 lines = []
                 for c in chars:
                     if filt and not _m(c.name): continue
-                    f2 = db.get(Faction,c.faction_id) if c.faction_id else None
+                    f2 = db.get(Faction, c.faction_id) if c.faction_id else None
                     fs = f" [势力: {f2.name} / {c.faction_role}]" if f2 and c.faction_role else ""
                     lines.append(f"• [ID:{c.id}] {c.name}({c.status}){fs} — {c.description or ''}")
                 result["characters"] = "\n".join(lines) if lines else "(无)"
@@ -4007,8 +4096,11 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
                 lines = []
                 for f in factions:
                     if filt and not _m(f.name): continue
-                    m2 = db.query(Character).filter(Character.faction_id==f.id).all()
-                    ms = ", ".join(f"{x.name}({x.faction_role})" for x in m2 if x.faction_role) or "暂无成员"
+                    m_rows = db.execute(
+                        text("SELECT c.name, f.faction_role FROM character_factions f JOIN characters c ON c.id = f.character_id WHERE f.novel_id=:nid AND f.faction_id=:fid"),
+                        {"nid": novel_id, "fid": f.id},
+                    ).fetchall()
+                    ms = ", ".join(f"{r[0]}({r[1]})" for r in m_rows if r[1]) or ("暂无成员" if not m_rows else "(无职位信息)")
                     lines.append(f"【[ID:{f.id}] {f.name}】{f.description or ''} | 成员: {ms}")
                 result["factions"] = "\n".join(lines) if lines else "(无)"
             if qtype in ("relations","all"):
@@ -4114,22 +4206,22 @@ async def async_llm_stream(messages: list[dict], api_key: str, base_url: str, mo
             if not chapter_content.strip():
                 return "错误：chapter_content 为空，无法续写"
             # Split at nearest period to midpoint
-            text = chapter_content
-            if len(text) > 60:
-                mid = len(text) // 2
-                left = text.rfind("。", 0, mid)
-                right = text.find("。", mid)
+            chapter_text = chapter_content
+            if len(chapter_text) > 60:
+                mid = len(chapter_text) // 2
+                left = chapter_text.rfind("。", 0, mid)
+                right = chapter_text.find("。", mid)
                 if left >= 0 and (right < 0 or (mid - left) <= (right - mid)):
                     split_at = left + 1
                 elif right >= 0:
                     split_at = right + 1
                 else:
                     split_at = mid
-                first_half = text[:split_at].rstrip()
-                second_half = text[split_at:].lstrip()
+                first_half = chapter_text[:split_at].rstrip()
+                second_half = chapter_text[split_at:].lstrip()
             else:
                 first_half = "请续写下文"
-                second_half = text
+                second_half = chapter_text
             prefix_field = prov.get("prefix_mode")
             user_content = f"请续写下文\n\n{first_half}"
             if prefix_field:
@@ -4461,9 +4553,15 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             if cls._faction_members is None:
                 cls._faction_members = {}
                 cls._ensure_chars()
-                for c in cls._chars.values():
-                    if c.faction_id:
-                        cls._faction_members.setdefault(c.faction_id, []).append(c)
+                links = db.scalars(
+                    select(CharacterFaction).where(
+                        CharacterFaction.novel_id == novel_id
+                    )
+                ).all()
+                for lf in links:
+                    c = cls._chars.get(lf.character_id)
+                    if c is not None:
+                        cls._faction_members.setdefault(lf.faction_id, []).append(c)
 
         @classmethod
         def char_status(cls, char_id: int) -> dict:
@@ -4542,6 +4640,33 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
         def faction_members_of(cls, faction_id: int) -> list[Character]:
             cls._ensure_faction_members()
             return cls._faction_members.get(faction_id, [])
+
+        @classmethod
+        def faction_links_of_char(cls, char_id: int) -> list[CharacterFaction]:
+            cls._ensure_faction_members()
+            links = db.scalars(
+                select(CharacterFaction).where(
+                    CharacterFaction.novel_id == novel_id,
+                    CharacterFaction.character_id == char_id,
+                )
+            ).all()
+            primary = cls._chars.get(char_id)
+            primary_id = primary.faction_id if primary is not None else None
+            return sorted(links, key=lambda lf: (lf.faction_id != primary_id, lf.faction_id))
+
+        @classmethod
+        def faction_tag_str(cls, char_id: int) -> str:
+            """角色全势力展示串：主势力在前，如「🏛️ 青云宗(宗主) 🏛️ 暗影会(内应)」"""
+            tags = []
+            for lf in cls.faction_links_of_char(char_id):
+                f = cls.get_faction(lf.faction_id)
+                if f is None:
+                    continue
+                t = f"🏛️ {f.name}"
+                if lf.faction_role:
+                    t += f"({lf.faction_role})"
+                tags.append(t)
+            return " ".join(tags)
 
     # ═══════════ End cache ═══════════
 
@@ -4678,12 +4803,9 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                 active_tag = "🏃活跃" if c.is_active else "🚪退场(常驻)"
                 status_info = _Cache.char_status(c.id)
                 faction_info = ""
-                if c.faction_id:
-                    faction = _Cache.get_faction(c.faction_id)
-                    if faction:
-                        faction_info = f" | 🏛️ {faction.name}"
-                        if c.faction_role:
-                            faction_info += f" - {c.faction_role}"
+                ftag = _Cache.faction_tag_str(c.id)
+                if ftag:
+                    faction_info = f" | {ftag}"
                 lines.append(f"- **{name}** [{c.status}] {active_tag} | 📍 {status_info['location_name']} ({status_info['desc']}){faction_info}")
             return "\n".join(lines)
 
@@ -4711,7 +4833,10 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
             for c in chars:
                 lines.append(f"### 👤 {c.name} [ID: {c.id}] (当前状态: {c.status or '活跃'}, 生命周期: {'存活/活跃' if c.is_active else '退场/冷冻'})")
                 if hasattr(c, "faction") and c.faction:
-                    lines.append(f"- **所属势力**: {c.faction.name}")
+                    lines.append(f"- **所属势力**: {c.faction.name}" + (f" ({c.faction_role})" if c.faction_role else ""))
+                    extra = [lf for lf in c.faction_members if lf.faction_id != c.faction_id]
+                    for lf in extra:
+                        lines.append(f"- **附属势力**: {lf.faction.name}" + (f" ({lf.faction_role})" if lf.faction_role else ""))
                 else:
                     lines.append("- **所属势力**: 无")
                 lines.append(f"- **人物基本描述**: {c.description or '无'}")
@@ -4884,7 +5009,8 @@ def resolve_placeholders(text: str, novel_id: int, db: Session) -> str:
                     res.append("- 驻地: 无固定驻地")
                 members = _Cache.faction_members_of(f.id)
                 if members:
-                    mem_strs = [f"{m.name}({m.faction_role})" for m in members if m.faction_role]
+                    member_role = {m.id: lf for m in members for lf in m.faction_members if lf.faction_id == f.id}
+                    mem_strs = [f"{m.name}({member_role[m.id].faction_role})" for m in members if member_role.get(m.id) and member_role[m.id].faction_role]
                     mem_info = f"- 成员({len(members)}): {', '.join(mem_strs)}" if mem_strs else f"- 成员({len(members)}): (无职位信息)"
                 else:
                     mem_info = "- 成员: 暂无成员"
@@ -5188,7 +5314,23 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/factions")
 def get_factions(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
-    return db.query(Faction).filter(Faction.novel_id == novel_id).all()
+    rows = db.execute(
+        text("SELECT f.id, f.novel_id, f.name, f.description, f.base_location_id, c.id, c.name, cf.faction_role "
+             "FROM factions f "
+             "LEFT JOIN character_factions cf ON cf.faction_id = f.id "
+             "LEFT JOIN characters c ON c.id = cf.character_id "
+             "WHERE f.novel_id=:nid"),
+        {"nid": novel_id},
+    ).fetchall()
+    facs: dict[int, dict] = {}
+    for fid, fnid, fname, fdesc, floc, cid, cname, crole in rows:
+        f = facs.setdefault(fid, {
+            "id": fid, "novel_id": fnid, "name": fname, "description": fdesc,
+            "base_location_id": floc, "faction_members": [],
+        })
+        if cid is not None:
+            f["faction_members"].append({"character_id": cid, "name": cname, "faction_role": crole})
+    return list(facs.values())
 
 
 @app.post("/api/factions")
@@ -5226,6 +5368,7 @@ def delete_faction(faction_id: int, db: Session = Depends(get_db)):
     faction = db.get(Faction, faction_id)
     if not faction:
         raise HTTPException(404, "Faction not found")
+    db.query(CharacterFaction).filter(CharacterFaction.faction_id == faction_id).delete()
     db.query(Character).filter(Character.faction_id == faction_id).update({"faction_id": None})
     db.delete(faction)
     db.commit()
@@ -5334,8 +5477,11 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
             for f in factions:
                 if filt and not _match(f.name):
                     continue
-                members = db.query(Character).filter(Character.faction_id == f.id).all()
-                mem_str = ", ".join(f"{m.name}({m.faction_role})" for m in members if m.faction_role) or "暂无成员"
+                m_rows = db.execute(
+                    text("SELECT c.name, f.faction_role FROM character_factions f JOIN characters c ON c.id = f.character_id WHERE f.novel_id=:nid AND f.faction_id=:fid"),
+                    {"nid": novel_id, "fid": f.id},
+                ).fetchall()
+                mem_str = ", ".join(f"{r[0]}({r[1]})" for r in m_rows if r[1]) or ("暂无成员" if not m_rows else "(无职位信息)")
                 lines.append(f"【{f.name}】{f.description or ''} | 成员: {mem_str}")
             result["factions"] = "\n".join(lines) if lines else "(无匹配势力)"
 
@@ -5970,7 +6116,7 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     eid = existing_char.id
 
             if action == "add":
-                db.add(Character(
+                new_char = Character(
                     novel_id=novel_id,
                     name=data.get("name", ""),
                     aliases=data.get("aliases", ""),
@@ -5981,7 +6127,14 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                     faction_id=faction_id,
                     faction_role=data.get("faction_role", ""),
                     attributes=normalized_attrs,
-                ))
+                )
+                db.add(new_char)
+                db.flush()
+                if faction_id:
+                    db.add(CharacterFaction(
+                        novel_id=novel_id, character_id=new_char.id,
+                        faction_id=faction_id, faction_role=data.get("faction_role", ""),
+                    ))
             elif action == "update" and eid:
                 char = db.get(Character, eid)
                 if char:
@@ -6044,6 +6197,20 @@ def execute_agent_tool(novel_id: int, req: ToolExecuteReq, db: Session = Depends
                         char.is_active = data["is_active"]
                     if "faction_id" in data or "faction_name" in data:
                         char.faction_id = faction_id
+                        db.query(CharacterFaction).filter_by(character_id=char.id).delete()
+                        db.flush()
+                        if faction_id:
+                            db.add(CharacterFaction(
+                                novel_id=novel_id, character_id=char.id,
+                                faction_id=faction_id,
+                                faction_role=data.get("faction_role", char.faction_role or ""),
+                            ))
+                    elif "faction_role" in data and char.faction_id:
+                        link = db.query(CharacterFaction).filter_by(
+                            character_id=char.id, faction_id=char.faction_id
+                        ).first()
+                        if link is not None:
+                            link.faction_role = data["faction_role"]
                     if "faction_role" in data:
                         char.faction_role = data["faction_role"]
                     if "is_always_context" in data:
