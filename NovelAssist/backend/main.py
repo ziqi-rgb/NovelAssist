@@ -2234,6 +2234,13 @@ def _render_settings_markdown(bundle: dict) -> str:
         f"> 项目: {bundle['novel']['title']}　|　导出: {bundle['exported_at']}",
         "",
     ]
+    cfg = {k: bundle["novel"].get(k) for k in ("character_template", "location_templates", "calendar_config", "world_event_config")}
+    if any(cfg.values()):
+        lines += ["## ⚙️ 项目配置", ""]
+        for k, v in cfg.items():
+            if v:
+                lines.append(f"- {k}: {json.dumps(v, ensure_ascii=False)}")
+        lines.append("")
     if bundle["locations"]:
         lines += ["## 🗺️ 地点", ""]
         for lc in bundle["locations"]:
@@ -2328,9 +2335,20 @@ def _parse_settings_markdown(md: str) -> dict:
         if h2:
             flush()
             name = h2.group(1)
-            section = next((k for k in ("地点", "人物", "势力", "大纲", "时间线") if k in name), None)
+            if "项目配置" in name:
+                section = "项目配置"
+            else:
+                section = next((k for k in ("地点", "人物", "势力", "大纲", "时间线") if k in name), None)
             continue
         if section is None:
+            continue
+        if section == "项目配置":
+            cm = re.match(r"^-\s*(character_template|location_templates|calendar_config|world_event_config)\s*[:：]\s*(.+)$", line.strip())
+            if cm:
+                try:
+                    bundle["novel"][cm.group(1)] = json.loads(cm.group(2).strip())
+                except (ValueError, TypeError):
+                    pass
             continue
         h3 = re.match(r"^###\s+(.+)$", line)
         if h3:
@@ -2424,8 +2442,10 @@ def _upsert_settings_bundle(db: Session, novel: Novel, src: dict) -> dict:
     if s_novel.get("title"):
         novel.title = s_novel["title"]
     for key in ("character_template", "location_templates", "calendar_config", "world_event_config"):
-        if isinstance(s_novel.get(key), (dict, list)):
-            setattr(novel, key, s_novel[key])
+        val = s_novel.get(key)
+        # 空值守卫：导出集若未含该配置（空 list / 空 dict），不覆盖目标，避免模板丢失
+        if isinstance(val, (dict, list)) and val:
+            setattr(novel, key, val)
 
     # 地点（父级：导入集内名称 → 已有同名 → 不挂）
     existing_locs = {lc.name: lc for lc in novel.locations}

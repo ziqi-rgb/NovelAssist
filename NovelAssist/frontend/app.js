@@ -1248,6 +1248,7 @@ function loadCharEditUI() {
 /* #T009 势力多对多（附属势力管理）状态 */
 let charExtraFactionLinks = [];
 let charFactionOptions = [];
+let charLoadedPrimaryId = null;
 
 async function renderDynamicForm() {
     const container = document.getElementById("char-dynamic-form"); container.innerHTML = "";
@@ -1289,6 +1290,7 @@ async function renderDynamicForm() {
     charExtraFactionLinks = [];
     try {
         const factions = await (await fetch("/api/factions?novel_id=" + currentNovelId)).json();
+        charFactionOptions = factions; // 同步缓存供附属条目下拉使用
         const sel = document.getElementById("char-faction-sel");
         if (sel) {
             sel.innerHTML = '<option value="">-- 散修 / 无势力 --</option>';
@@ -1300,10 +1302,27 @@ async function renderDynamicForm() {
                 if (ch.faction_id) sel.value = ch.faction_id;
                 const roleInp = document.getElementById("char-faction-role-inp");
                 if (roleInp) roleInp.value = ch.faction_role || "";
-                // #T009 多对多：附属势力列表
+                // #T009 多对多：附属势力列表（原主势力记录在 charLoadedPrimaryId，切换时回迁）
+                charLoadedPrimaryId = ch.faction_id || null;
                 charExtraFactionLinks = (ch.faction_members || []).filter(function(m) { return m.faction_id !== ch.faction_id; });
                 renderExtraFactions();
             }
+            // 更换主势力联动：原主势力降为附属（保留原职位），新主势力职位上移
+            if (currentCharId) sel.onchange = function() {
+                const newId = sel.value ? parseInt(sel.value) : null;
+                const oldId = charLoadedPrimaryId;
+                if (oldId !== null && oldId !== newId && !charExtraFactionLinks.some(function(m) { return m.faction_id === oldId; })) {
+                    const oldF = charFactionOptions.find(function(f) { return f.id === oldId; });
+                    charExtraFactionLinks.push({ faction_id: oldId, faction_role: document.getElementById("char-faction-role-inp")?.value || "", name: oldF ? oldF.name : ("#" + oldId) });
+                }
+                if (newId !== null) {
+                    const m = charExtraFactionLinks.find(function(x) { return x.faction_id === newId; });
+                    const roleInp = document.getElementById("char-faction-role-inp");
+                    if (roleInp && m) roleInp.value = m.faction_role || "";
+                    charExtraFactionLinks = charExtraFactionLinks.filter(function(x) { return x.faction_id !== newId; });
+                }
+                renderExtraFactions();
+            };
         }
     } catch(e) { /* 势力列表加载失败不影响编辑 */ }
     // 🔗 加载人物关系连线
@@ -1563,6 +1582,21 @@ async function loadFactionOptions() {
     return charFactionOptions;
 }
 
+function extraFactionRowHtml(m) {
+    const isPlaceholder = !m.faction_id;
+    const currentPrimary = document.getElementById("char-faction-sel")?.value ? parseInt(document.getElementById("char-faction-sel").value) : null;
+    let selHtml = "";
+    charFactionOptions.forEach(function(f) {
+        if (f.id === currentPrimary) return; // 主势力由上方下拉管理
+        if (f.id === m.faction_id) selHtml += '<option value="' + f.id + '" selected>' + e(m.name || ("#" + f.id)) + '</option>';
+        else selHtml += '<option value="' + f.id + '">' + e(f.name) + '</option>';
+    });
+    if (isPlaceholder) selHtml = '<option value="">-- 选择势力 --</option>' + selHtml;
+    return '<select data-ef-fid="' + m.faction_id + '" style="flex:1;padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);">' + selHtml + '</select>'
+        + '<input data-role-fid="' + m.faction_id + '" type="text" placeholder="职位（如：内应）" style="flex:1;padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);" value="' + e(m.faction_role || "") + '">'
+        + '<button data-del-ef="' + m.faction_id + '" style="font-size:.65rem;padding:2px 6px;border:1px solid var(--border);background:none;border-radius:4px;cursor:pointer;color:var(--text-muted);">移除</button>';
+}
+
 function renderExtraFactions() {
     const wrap = document.getElementById("char-faction-extra-wrap");
     const list = document.getElementById("char-faction-extra-list");
@@ -1573,15 +1607,21 @@ function renderExtraFactions() {
     charExtraFactionLinks.forEach(function(m) {
         const row = document.createElement("div");
         row.style.cssText = "display:flex;gap:8px;align-items:center;padding:2px 0;";
-        row.innerHTML = '<span style="font-size:.72rem;color:var(--text-muted);white-space:nowrap;">└ 🏛️ ' + e(m.name || ("#" + m.faction_id)) + '</span>'
-            + '<input data-role-fid="' + m.faction_id + '" type="text" placeholder="在该势力的职位（如：内应）" style="flex:1;padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);" value="' + e(m.faction_role || "") + '">'
-            + '<button data-del-ef="' + m.faction_id + '" style="font-size:.65rem;padding:2px 6px;border:1px solid var(--border);background:none;border-radius:4px;cursor:pointer;color:var(--text-muted);">移除</button>';
+        row.innerHTML = '<span style="font-size:.72rem;color:var(--text-muted);white-space:nowrap;">└ 🏛️</span>' + extraFactionRowHtml(m);
         list.appendChild(row);
     });
     list.querySelectorAll("[data-del-ef]").forEach(function(btn) {
         btn.addEventListener("click", function() {
             const fid = parseInt(btn.dataset.delEf);
             charExtraFactionLinks = charExtraFactionLinks.filter(function(m) { return m.faction_id !== fid; });
+            renderExtraFactions();
+        });
+    });
+    list.querySelectorAll("[data-ef-fid]").forEach(function(sel) {
+        sel.addEventListener("change", function() {
+            const m = charExtraFactionLinks.find(function(x) { return x.faction_id === parseInt(sel.dataset.efFid); });
+            const f = charFactionOptions.find(function(x) { return x.id === parseInt(sel.value); });
+            if (m && f) { m.faction_id = f.id; m.name = f.name; }
             renderExtraFactions();
         });
     });
@@ -1592,23 +1632,19 @@ async function addExtraFaction() {
     const currentPrimary = document.getElementById("char-faction-sel")?.value ? parseInt(document.getElementById("char-faction-sel").value) : null;
     const available = opts.filter(function(f) { return f.id !== currentPrimary && !charExtraFactionLinks.some(function(m) { return m.faction_id === f.id; }); });
     if (!available.length) { showToast("没有可加入的其他势力（可在势力关系图中新建）"); return; }
-    let idx = prompt("选择要加入的势力编号：" + available.map(function(f) { return f.id + "." + f.name; }).join("\n"), "1");
-    idx = parseInt(idx);
-    const target = available[idx - 1];
-    if (!target) { if (idx) showToast("编号无效"); return; }
-    const role = prompt("该角色在「" + target.name + "」中的职位/身份：", "") || "";
-    charExtraFactionLinks.push({ id: 0, faction_id: target.id, faction_role: role, name: target.name });
+    charExtraFactionLinks.push({ faction_id: 0, faction_role: "", name: "" });
     renderExtraFactions();
 }
 
 function collectExtraFactionsFromDom() {
     const list = document.getElementById("char-faction-extra-list");
-    if (!list) return charExtraFactionLinks;
-    list.querySelectorAll("[data-role-fid]").forEach(function(inp) {
-        const m = charExtraFactionLinks.find(function(x) { return x.faction_id === parseInt(inp.dataset.roleFid); });
-        if (m) m.faction_role = inp.value;
-    });
-    return charExtraFactionLinks;
+    if (list) {
+        list.querySelectorAll("[data-role-fid]").forEach(function(inp) {
+            const m = charExtraFactionLinks.find(function(x) { return x.faction_id === parseInt(inp.dataset.roleFid); });
+            if (m) m.faction_role = inp.value;
+        });
+    }
+    return charExtraFactionLinks.filter(function(m) { return m.faction_id; });
 }
 
 document.getElementById("char-faction-add-btn")?.addEventListener("click", addExtraFaction);

@@ -212,6 +212,50 @@ def test_dry_run_no_commit():
         assert "幻影城" not in names
 
 
+def test_import_md_preserves_character_template():
+    """UAT 回归：导入设定集不得清空角色模板（MD 项目配置区块往返 + 空值守卫双保险）"""
+    with SessionLocal() as db:
+        _seed(db)
+        nv = db.get(M.Novel, 1)
+        nv.character_template = [{"group": "基础信息", "fields": ["姓名", "年龄"]}]
+        db.commit()
+        md = M.export_settings_bundle(1, fmt="md", db=db).body.decode("utf-8")
+        assert "## ⚙️ 项目配置" in md
+        assert "character_template" in md
+        d = M.import_settings_bundle(1, M.ImportSettingsReq(content=md, fmt="md", dry_run=False), db=db)
+        assert d["ok"] is True
+        tmpl = db.get(M.Novel, 1).character_template
+        assert tmpl == [{"group": "基础信息", "fields": ["姓名", "年龄"]}]
+        # 旧版 MD（无项目配置区块）导入也不覆盖模板
+        old_md = "# 旧设定集\n\n## 🗺️ 地点\n\n### 某地 (城池)\n"
+        d2 = M.import_settings_bundle(1, M.ImportSettingsReq(content=old_md, fmt="md", dry_run=False), db=db)
+        assert d2["ok"] is True
+        assert db.get(M.Novel, 1).character_template == [{"group": "基础信息", "fields": ["姓名", "年龄"]}]
+
+
+def test_import_json_clears_character_template_when_explicit():
+    """显式导出（含模板字段的 JSON 集）更新模板；空集不清空（守卫行为）"""
+    with SessionLocal() as db:
+        _seed(db)
+        nv = db.get(M.Novel, 1)
+        nv.character_template = [{"group": "旧组", "fields": ["旧字段"]}]
+        db.commit()
+        new_tmpl = [{"group": "新组", "fields": ["新字段"]}]
+        d = M.import_settings_bundle(
+            1, M.ImportSettingsReq(content=json.dumps({"novel": {"title": "测试小说", "character_template": new_tmpl},
+                                                       "locations": [{"name": "某地", "description": "", "attributes": {}}]}), dry_run=False),
+            db=db)
+        assert d["ok"] is True
+        assert db.get(M.Novel, 1).character_template == new_tmpl
+        # 空模板导入 → 守卫拦截，不清空
+        d2 = M.import_settings_bundle(
+            1, M.ImportSettingsReq(content=json.dumps({"novel": {"title": "测试小说", "character_template": []},
+                                                       "locations": [{"name": "某地", "description": "", "attributes": {}}]}), dry_run=False),
+            db=db)
+        assert d2["ok"] is True
+        assert db.get(M.Novel, 1).character_template == new_tmpl
+
+
 def test_invalid_content_rejected():
     with SessionLocal() as db:
         with pytest.raises(M.HTTPException):
