@@ -60,8 +60,9 @@ ehthumbs.db
 .reasonix/
 .opencode/
 
-# 项目梳理临时工作区（不纳入版本控制）
-docs/项目总览/
+# AI 开发辅助文档（不纳入版本控制）
+docs/
+NovelAssist/docs/
 
 # 一次性调试脚本与打包备份（非源码）
 NovelAssist-source.zip
