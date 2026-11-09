@@ -521,6 +521,9 @@
                                     <div style="flex:1;"><label style="font-size:.7rem;">职位</label>
                                     <input type="text" id="quick-char-faction-role" placeholder="如：宗主、长老" style="width:100%;padding:4px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;font-size:.72rem;"></div>
                                 </div>
+                                <div id="quick-char-ef-wrap" style="display:none;margin-bottom:6px;">
+                                    <div id="quick-char-ef-list" style="display:flex;flex-direction:column;gap:3px;"></div>
+                                </div>
                                 <!-- 关系连线（可折叠） -->
                                 <div style="border-top:1px solid var(--border);padding-top:5px;">
                                     <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="var b=document.getElementById('quick-char-relations-body');b.classList.toggle('hidden');this.querySelector('.toggle-arrow').textContent=b.classList.contains('hidden')?'▶':'▼';">
@@ -986,6 +989,24 @@
                 <button id="faction-cancel-btn">取消</button>
             </div>
         </div>
+    </div>
+
+    <!-- 势力成员列表（左键弹出） -->
+    <div id="faction-member-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-box" style="width:360px;max-height:70vh;display:flex;flex-direction:column;">
+            <h3 id="faction-member-title">🏛️ 势力成员</h3>
+            <ul id="faction-member-list" style="overflow-y:auto;flex:1;margin-top:8px;"></ul>
+            <div class="modal-actions" style="margin-top:12px;">
+                <button id="faction-member-close">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 势力右键自定义菜单 -->
+    <div id="faction-ctx-menu" class="hidden" style="position:fixed;z-index:100;min-width:120px;background:var(--active-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:4px;font-size:.78rem;">
+        <div id="faction-ctx-fid" data-fid="0" style="display:none;"></div>
+        <button id="faction-ctx-edit" style="display:block;width:100%;text-align:left;border:none;background:none;cursor:pointer;padding:6px 10px;border-radius:5px;font-size:.78rem;color:var(--text);">✏️ 编辑</button>
     </div>
 
     <!-- 编辑器右键菜单 -->

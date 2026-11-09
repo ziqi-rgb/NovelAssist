@@ -1604,6 +1604,13 @@ function renderExtraFactions() {
     list.innerHTML = "";
     if (!charExtraFactionLinks.length) { if (wrap) wrap.style.display = "none"; return; }
     if (wrap) wrap.style.display = "";
+    // 渲染前用前端势力缓存补全 name（API 返回的 faction_members 不含 name）
+    charExtraFactionLinks.forEach(function(m) {
+        if (!m.name) {
+            const f = charFactionOptions.find(function(x) { return x.id === m.faction_id; });
+            if (f) m.name = f.name;
+        }
+    });
     charExtraFactionLinks.forEach(function(m) {
         const row = document.createElement("div");
         row.style.cssText = "display:flex;gap:8px;align-items:center;padding:2px 0;";
@@ -6217,9 +6224,11 @@ async function loadRelationsGraph() {
 
         var ul = document.getElementById("factions-list-ul");
         if (ul) {
-            ul.innerHTML = (factions || []).map(function(_, i) {
-                var f = factions[i];
-                return '<li style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer;" data-fid="' + f.id + '" onclick="openFactionModal(' + f.id + ')"><strong>' + e(f.name) + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
+            window.__factionsCache = factions || [];
+            ul.innerHTML = (factions || []).map(function(f) {
+                return '<li style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer;" data-fid="' + f.id + '">'
+                    + '<strong>' + e(f.name) + '</strong><br>'
+                    + '<span style="font-size:0.75rem;color:var(--text-muted);">' + e(f.description || "无描述") + '</span></li>';
             }).join("") || "<li>(无势力)</li>";
         }
     } catch (err) {
@@ -6377,6 +6386,41 @@ document.getElementById("btn-refresh-graph")?.addEventListener("click", loadRela
 
 /* ═══════════ Character Quick-Edit Panel (拓扑图点击触发，浮动面板，跟随缩放/平移) ═══════════ */
 let quickEditCharId = null;
+let quickEfLinks = [];
+
+function renderQuickExtraFactions() {
+    var wrap = document.getElementById("quick-char-ef-wrap");
+    var list = document.getElementById("quick-char-ef-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!quickEfLinks.length) { if (wrap) wrap.style.display = "none"; return; }
+    if (wrap) wrap.style.display = "";
+    quickEfLinks.forEach(function(m) {
+        var row = document.createElement("div");
+        row.style.cssText = "display:flex;gap:4px;align-items:center;";
+        row.innerHTML = '<span style="font-size:.66rem;color:var(--text-muted);white-space:nowrap;">└ 🏛️ ' + e(m.name || ("#" + m.faction_id)) + '</span>'
+            + '<input data-q-ef-role="' + m.faction_id + '" type="text" placeholder="职位" style="flex:1;padding:2px 4px;font-size:.66rem;border:1px solid var(--border);border-radius:3px;background:var(--bg);" value="' + e(m.faction_role || "") + '">'
+            + '<button data-q-ef-del="' + m.faction_id + '" style="font-size:.6rem;padding:1px 4px;border:1px solid var(--border);background:none;border-radius:3px;cursor:pointer;color:var(--text-muted);">移除</button>';
+        list.appendChild(row);
+    });
+    list.querySelectorAll("[data-q-ef-del]").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            quickEfLinks = quickEfLinks.filter(function(x) { return x.faction_id !== parseInt(btn.dataset.qEfDel); });
+            renderQuickExtraFactions();
+        });
+    });
+}
+
+function collectQuickExtraFactions() {
+    var list = document.getElementById("quick-char-ef-list");
+    if (list) {
+        list.querySelectorAll("[data-q-ef-role]").forEach(function(inp) {
+            var m = quickEfLinks.find(function(x) { return x.faction_id === parseInt(inp.dataset.qEfRole); });
+            if (m) m.faction_role = inp.value;
+        });
+    }
+    return quickEfLinks;
+}
 
 async function openCharQuickEdit(charId) {
     quickEditCharId = charId;
@@ -6408,6 +6452,14 @@ async function openCharQuickEdit(charId) {
         });
         if (ch.faction_id) sel.value = ch.faction_id;
         document.getElementById("quick-char-faction-role").value = ch.faction_role || "";
+
+        // #T009 附属势力
+        quickEfLinks = (ch.faction_members || []).filter(function(m) { return m.faction_id !== ch.faction_id; })
+            .map(function(m) {
+                const f = factions.find(function(x) { return x.id === m.faction_id; });
+                return { faction_id: m.faction_id, faction_role: m.faction_role || "", name: f ? f.name : ("#" + m.faction_id) };
+            });
+        renderQuickExtraFactions();
 
         // 渲染模板字段
         var tplContainer = document.getElementById("quick-char-template-fields");
@@ -6599,6 +6651,15 @@ document.getElementById("quick-char-save-btn")?.addEventListener("click", async 
                 faction_role: document.getElementById("quick-char-faction-role").value || "",
             })
         });
+        // #T009 附属势力
+        var primaryId = document.getElementById("quick-char-faction").value ? parseInt(document.getElementById("quick-char-faction").value) : null;
+        await fetch("/api/characters/" + quickEditCharId + "/factions", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+                (primaryId ? [{ faction_id: primaryId, faction_role: document.getElementById("quick-char-faction-role").value || "" }] : []).concat(collectQuickExtraFactions())
+            )
+        });
         closeCharQuickEdit();
         loadRelationsGraph();
     } catch (err) {
@@ -6777,6 +6838,57 @@ document.getElementById("faction-delete-btn")?.addEventListener("click", async f
     } catch(e) { console.error(e); }
 });
 document.querySelector("#faction-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("faction-modal").classList.add("hidden"); });
+
+/* ═══════════ Faction Member List (左键弹列表 / 自定义右键菜单含编辑) ═══════════ */
+function findCachedFaction(fid) {
+    var arr = window.__factionsCache || [];
+    for (var i = 0; i < arr.length; i++) { if (arr[i].id === fid) return arr[i]; }
+    return null;
+}
+
+function openFactionMemberList(fid) {
+    var f = findCachedFaction(fid);
+    if (!f) return;
+    var members = f.faction_members || [];
+    var rows = members.length ? members.map(function(m) {
+        return '<li style="padding:6px 0;border-bottom:1px solid var(--border);font-size:.8rem;">👤 <b>' + e(m.name) + '</b>'
+            + (m.faction_role ? ' <span style="color:var(--text-muted);">· ' + e(m.faction_role) + '</span>' : '') + '</li>';
+    }).join("") : '<li style="padding:6px 0;font-size:.75rem;color:var(--text-muted);">（无成员）</li>';
+    document.getElementById("faction-member-title").textContent = "🏛️ " + (f.name || "势力") + " · 成员 " + members.length;
+    document.getElementById("faction-member-list").innerHTML = rows;
+    document.getElementById("faction-member-modal").classList.remove("hidden");
+}
+
+function showFactionCtxMenu(ev, fid) {
+    var menu = document.getElementById("faction-ctx-menu");
+    document.getElementById("faction-ctx-fid").dataset.fid = fid;
+    menu.classList.remove("hidden");
+    menu.style.left = Math.min(ev.clientX, window.innerWidth - 140) + "px";
+    menu.style.top = Math.min(ev.clientY, window.innerHeight - 110) + "px";
+}
+
+function hideFactionCtxMenu() {
+    document.getElementById("faction-ctx-menu").classList.add("hidden");
+}
+
+document.getElementById("factions-list-ul")?.addEventListener("click", function(ev) {
+    var li = ev.target.closest("li[data-fid]");
+    if (li) openFactionMemberList(parseInt(li.dataset.fid));
+});
+document.getElementById("factions-list-ul")?.addEventListener("contextmenu", function(ev) {
+    var li = ev.target.closest("li[data-fid]");
+    if (li) { ev.preventDefault(); showFactionCtxMenu(ev, parseInt(li.dataset.fid)); }
+});
+document.getElementById("faction-ctx-edit")?.addEventListener("click", function() {
+    var fid = parseInt(document.getElementById("faction-ctx-fid").dataset.fid);
+    hideFactionCtxMenu();
+    if (fid) openFactionModal(fid);
+});
+document.addEventListener("click", hideFactionCtxMenu, true);
+document.addEventListener("scroll", hideFactionCtxMenu, true);
+document.addEventListener("keydown", function(ev) { if (ev.key === "Escape") { hideFactionCtxMenu(); document.getElementById("faction-member-modal").classList.add("hidden"); } });
+document.getElementById("faction-member-close")?.addEventListener("click", function() { document.getElementById("faction-member-modal").classList.add("hidden"); });
+document.querySelector("#faction-member-modal .modal-backdrop")?.addEventListener("click", function() { document.getElementById("faction-member-modal").classList.add("hidden"); });
 
 /* ═══════════ Export ═══════════ */
 document.getElementById("export-btn").addEventListener("click", async () => {
