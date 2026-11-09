@@ -5186,42 +5186,6 @@ async def writing_copilot(req: CopilotRequest, db: Session = Depends(get_db)):
 
 # ═══════════ Agent Tool Execution ═══════════
 
-@app.post("/api/outlines/export-markdown")
-def export_outlines_markdown(data: dict, db: Session = Depends(get_db)):
-    novel_id = data.get("novel_id")
-    if not novel_id:
-        raise HTTPException(400, "novel_id is required")
-    items = db.scalars(select(Outline).where(Outline.novel_id == novel_id).order_by(Outline.order_index)).all()
-    by_parent: dict = {}
-    for it in items:
-        by_parent.setdefault(it.parent_id, []).append(it)
-    lines: list[str] = []
-    categories = ["世界观", "世界势力", "地理", "能力体系设定", "人物设定", "剧情大纲"]
-    lines.append("# 📖 小说设定大纲全本设定集")
-    lines.append("> 生成时间: 基于创世重构引擎实时导出\n")
-
-    def render_branch(node, depth):
-        indent = "  " * depth
-        lines.append(f"{indent}- **{node.title}**")
-        if node.description:
-            for desc_line in node.description.splitlines():
-                lines.append(f"{indent}  {desc_line}")
-        for child in by_parent.get(node.id, []):
-            render_branch(child, depth + 1)
-
-    for cat in categories:
-        cat_items = [it for it in items if it.category == cat]
-        if not cat_items:
-            continue
-        lines.append(f"## 📁 {cat}")
-        lines.append("---")
-        cat_ids = {it.id for it in cat_items}
-        roots = [it for it in cat_items if it.parent_id not in cat_ids]
-        for rt in roots:
-            render_branch(rt, 0)
-        lines.append("")
-    return {"markdown": "\n".join(lines)}
-
 @app.get("/api/factions")
 def get_factions(novel_id: int = Query(default=NOVEL_ID_DEFAULT), db: Session = Depends(get_db)):
     return db.query(Faction).filter(Faction.novel_id == novel_id).all()
