@@ -64,6 +64,9 @@ ehthumbs.db
 docs/
 NovelAssist/docs/
 
+# 测试隔离工作区（临时数据库目录，任务残留）
+novelassist_t010_*/
+
 # 一次性调试脚本与打包备份（非源码）
 NovelAssist-source.zip
 NovelAssist/check_full.py
