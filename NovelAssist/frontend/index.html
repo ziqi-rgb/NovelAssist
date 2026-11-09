@@ -232,10 +232,18 @@
                     <div class="sidebar-header"><h2>大纲分类</h2>
                         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                             <button id="outline-genesis-btn" class="sys-btn sys-btn-primary" style="font-size: 0.75rem; background: linear-gradient(135deg, #4f46e5, #9333ea); font-weight: 700;">🌌智能建纲</button>
-                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导出 MD（含机读标记块）">📤 导出 MD</button>
+                            <button id="outline-export-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导出纯人类可读 MD，便于手改后重新导入">📤 导出 MD</button>
                             <button id="outline-export-json-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导出 JSON 设定集">📤 导出 JSON</button>
-                            <button id="outline-import-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导入设定集（MD/JSON，按名增量 upsert）">📥 导入</button>
-                            <input type="file" id="outline-import-file" accept=".md,.markdown,.json,.txt" class="hidden">
+                            <div id="outline-import-split" style="position: relative; display: flex; align-items: stretch;">
+                                <button id="outline-import-btn" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); font-weight: 700;" title="导入 JSON 设定集">📥 导入</button>
+                                <button id="outline-import-caret" class="sys-btn sys-btn-ghost" style="font-size: 0.75rem; border: 1px solid var(--border); border-left: none; padding: 0 5px; font-weight: 700;" title="展开格式选择">›</button>
+                                <div id="outline-import-menu" class="hidden" style="position: absolute; top: 100%; left: 0; min-width: 150px; z-index: 60; background: var(--active-bg, #1e1e2e); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.25); padding: 4px; display: flex; flex-direction: column; gap: 2px;">
+                                    <button id="outline-import-json-opt" style="text-align: left; background: none; border: none; color: inherit; font-size: 0.75rem; padding: 5px 10px; cursor: pointer; border-radius: 5px;" title="导入 JSON 设定集">导入 JSON</button>
+                                    <button id="outline-import-md-opt" style="text-align: left; background: none; border: none; color: inherit; font-size: 0.75rem; padding: 5px 10px; cursor: pointer; border-radius: 5px;" title="导入 MD 设定集（手改后重新导入）">导入 MD</button>
+                                </div>
+                            </div>
+                            <input type="file" id="outline-import-file" accept=".json" data-fmt="json" class="hidden">
+                            <input type="file" id="outline-import-md-file" accept=".md,.markdown,.txt" data-fmt="md" class="hidden">
                         </div>
                     </div>
                     <ul id="outline-category-nav" class="category-nav">

@@ -2361,39 +2361,65 @@ document.getElementById("outline-import-btn")?.addEventListener("click", functio
     var fi = document.getElementById("outline-import-file");
     if (fi) fi.click();
 });
-document.getElementById("outline-import-file")?.addEventListener("change", async function() {
-    var fi = this;
+document.getElementById("outline-import-caret")?.addEventListener("click", function(e) {
+    e.stopPropagation();
+    var menu = document.getElementById("outline-import-menu");
+    if (menu) menu.classList.toggle("hidden");
+});
+document.addEventListener("click", function(e) {
+    var menu = document.getElementById("outline-import-menu");
+    var split = document.getElementById("outline-import-split");
+    if (menu && !menu.classList.contains("hidden") && split && !split.contains(e.target)) {
+        menu.classList.add("hidden");
+    }
+});
+function importSettingsFromInput(inputId) {
+    var fi = document.getElementById(inputId);
+    if (fi) fi.click();
+}
+document.getElementById("outline-import-json-opt")?.addEventListener("click", function() {
+    importSettingsFromInput("outline-import-file");
+});
+document.getElementById("outline-import-md-opt")?.addEventListener("click", function() {
+    importSettingsFromInput("outline-import-md-file");
+});
+function importSettingsFromFile(fi) {
+    var menu = document.getElementById("outline-import-menu");
+    if (menu) menu.classList.add("hidden");
     var file = fi.files && fi.files[0];
     fi.value = "";
-    if (!file) return;
-    var content;
-    try { content = await file.text(); } catch (e) { showToast("❌ 文件读取失败"); return; }
-    if (!content.trim()) { showToast("❌ 文件为空"); return; }
-    var doCommit = function() {
+    if (!file || !currentNovelId) return;
+    var fmt = fi.dataset.fmt === "md" ? "md" : "json";
+    file.text().then(function(content) {
+        if (!content.trim()) { showToast("❌ 文件为空"); return; }
+        var doCommit = function() {
+            fetch("/api/novels/" + currentNovelId + "/import-settings", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content: content, fmt: fmt, dry_run: false })
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d.ok) {
+                    showToast("📥 导入完成：新建 " + d.preview.created + "，更新 " + d.preview.updated +
+                        (d.preview.deleted ? "，删除 " + d.preview.deleted : "") +
+                        (d.preview.skipped ? "，跳过 " + d.preview.skipped : ""));
+                    loadOutlineNotes(); loadCharacters(); loadLocationTree();
+                } else { showToast("❌ " + (d.detail || "导入失败")); }
+            }).catch(function() { showToast("❌ 导入请求失败"); });
+        };
         fetch("/api/novels/" + currentNovelId + "/import-settings", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: content, dry_run: false })
+            body: JSON.stringify({ content: content, fmt: fmt, dry_run: true })
         }).then(function(r) { return r.json(); }).then(function(d) {
-            if (d.ok) {
-                showToast("📥 导入完成：新建 " + d.preview.created + "，更新 " + d.preview.updated +
-                    (d.preview.deleted ? "，删除 " + d.preview.deleted : "") +
-                    (d.preview.skipped ? "，跳过 " + d.preview.skipped : ""));
-                loadOutlineNotes(); loadCharacters(); loadLocationTree();
-            } else { showToast("❌ " + (d.detail || "导入失败")); }
-        }).catch(function() { showToast("❌ 导入请求失败"); });
-    };
-    fetch("/api/novels/" + currentNovelId + "/import-settings", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: content, dry_run: true })
-    }).then(function(r) { return r.json(); }).then(function(d) {
-        if (!d.ok) { showToast("❌ " + (d.detail || "无法解析该文件")); return; }
-        var p = d.preview;
-        var msg = "📥 预览：新建 " + p.created + "，更新 " + p.updated +
-            (p.deleted ? "，删除 " + p.deleted + "（导入后不再存在的实体）" : "") +
-            (p.skipped ? "，跳过 " + p.skipped : "") + "；是否执行导入？";
-        if (confirm(msg)) doCommit();
-    }).catch(function() { showToast("❌ 预览请求失败"); });
-});
+            if (!d.ok) { showToast("❌ " + (d.detail || "无法解析该文件")); return; }
+            var p = d.preview;
+            var msg = "📥 预览：新建 " + p.created + "，更新 " + p.updated +
+                (p.deleted ? "，删除 " + p.deleted + "（导入后不再存在的实体）" : "") +
+                (p.skipped ? "，跳过 " + p.skipped : "") + "；是否执行导入？";
+            if (confirm(msg)) doCommit();
+        }).catch(function() { showToast("❌ 预览请求失败"); });
+    }).catch(function() { showToast("❌ 文件读取失败"); });
+}
+document.getElementById("outline-import-file")?.addEventListener("change", function() { importSettingsFromFile(this); });
+document.getElementById("outline-import-md-file")?.addEventListener("change", function() { importSettingsFromFile(this); });
 
 document.getElementById("import-close-btn")?.addEventListener("click", function() {
     // 运行中关闭窗口：建纲继续后台运行，保存控制台快照以便恢复

@@ -85,15 +85,32 @@ def test_export_json_bundle():
         assert tle["character_ids"] == [char["id"]]
 
 
-def test_export_md_contains_fence():
+def test_export_md_pure_readable():
+    """MD 导出 = 纯人类可读文档，不再内嵌 JSON 标记块，且宽松解析可往返"""
     with SessionLocal() as db:
         _seed(db)
         resp = M.export_settings_bundle(1, fmt="md", db=db)
         md = resp.body.decode("utf-8")
-        assert "```settings-json" in md
+        assert "```settings-json" not in md
         assert "### 青云城 (城池)" in md
         parsed = M._parse_settings_markdown(md)
         assert {lc["name"] for lc in parsed["locations"]} >= {"太荒大陆", "青云城"}
+        # 新字段往返：人物→势力、势力→基地
+        c = next(x for x in parsed["characters"] if x["name"] == "林枫")
+        assert c["faction_name"] == "青云宗" and c["faction_role"] == "弟子"
+        f = next(x for x in parsed["factions"] if x["name"] == "青云宗")
+        assert f["base_location_name"] == "青云城"
+
+
+def test_parse_md_old_fenced_file_compatible():
+    """旧版导出文件（带 ```settings-json 标记块）仍可解析：标记块被跳过，正文照常重建"""
+    with SessionLocal() as db:
+        _seed(db)
+        md = M.export_settings_bundle(1, fmt="md", db=db).body.decode("utf-8")
+        bundle = json.loads(M.export_settings_bundle(1, fmt="json", db=db).body.decode("utf-8"))
+        old_md = "# 旧设定集\n\n```settings-json\n" + json.dumps(bundle, ensure_ascii=False) + "\n```\n\n" + md
+        b = M._parse_settings_markdown(old_md)
+        assert {lc["name"] for lc in b["locations"]} >= {"太荒大陆", "青云城"}
 
 
 def test_import_json_create_and_update():
@@ -137,11 +154,12 @@ def test_import_json_delete_missing():
         assert "林枫" not in cnames
 
 
-def test_import_md_fence_roundtrip():
+def test_import_md_roundtrip():
+    """MD 导出文件用 fmt=md 导入 → 相同内容不增不减"""
     with SessionLocal() as db:
         _seed(db)
         md = M.export_settings_bundle(1, fmt="md", db=db).body.decode("utf-8")
-        d = M.import_settings_bundle(1, M.ImportSettingsReq(content=md, dry_run=False), db=db)
+        d = M.import_settings_bundle(1, M.ImportSettingsReq(content=md, fmt="md", dry_run=False), db=db)
         assert d["ok"] is True
         # 相同内容导入 → 不增不减
         assert d["preview"]["created"] == 0 and d["preview"]["deleted"] == 0
@@ -199,7 +217,7 @@ def test_invalid_content_rejected():
         with pytest.raises(M.HTTPException):
             M.import_settings_bundle(1, M.ImportSettingsReq(content="   ", dry_run=False), db=db)
         with pytest.raises(M.HTTPException):
-            M.import_settings_bundle(1, M.ImportSettingsReq(content="{not json", dry_run=False), db=db)
+            M.import_settings_bundle(1, M.ImportSettingsReq(content="{not json", fmt="json", dry_run=False), db=db)
         with pytest.raises(M.HTTPException):
-            M.import_settings_bundle(1, M.ImportSettingsReq(content="随便一段文字\n没有标题结构", dry_run=False), db=db)
+            M.import_settings_bundle(1, M.ImportSettingsReq(content="随便一段文字\n没有标题结构", fmt="md", dry_run=False), db=db)
 

@@ -2063,8 +2063,10 @@ def export_novel_zip(novel_id: int, db: Session = Depends(get_db)):
 # ═══════════ 设定集导入导出（#T008：MD/JSON 双格式，按名增量 upsert） ═══════════
 # 设计：
 # - 导出 = 全量设定 JSON（novel 配置 + 地点/人物/势力/大纲/时间线），每实体携带 id + name 稳定锚点
-# - MD 导出 = 人类可读文档 + 嵌入 ```settings-json 标记块（可机读），解析优先取标记块，缺失时宽松解析标题/字段行
-# - 导入 = 按名 upsert（同 manage_world_element 语义）：同名实体更新字段，缺失的创建；时间线按 time_label+event_type 匹配；
+# - MD 导出 = 纯人类可读文档（无内嵌 JSON 块），便于手改后重新导入；导入时宽松解析标题/字段行
+#   （容忍旧版导出文件中残留的 ```settings-json 标记块，直接跳过）
+# - 导入 = 前端按格式分流（fmt=json/md），JSON 只接受 JSON，MD 走宽松解析；
+#   按名 upsert（同 manage_world_element 语义）：同名实体更新字段，缺失的创建；时间线按 time_label+event_type 匹配；
 #   父级（outline/location）按导入集内名称解析，缺失回退已有同名，再缺失则不挂父级
 # - 导入不推进 current_tick（时钟由作者手动控制）
 
@@ -2155,16 +2157,11 @@ def _collect_settings_bundle(db: Session, novel: Novel) -> dict:
 
 
 def _render_settings_markdown(bundle: dict) -> str:
-    """人类可读 MD + 嵌入机读标记块（导入时优先解析标记块）"""
-    meta = json.dumps(bundle, ensure_ascii=False, indent=2)
+    """纯人类可读 MD（无内嵌 JSON 块），供作者手改后重新导入"""
     lines: list[str] = [
         "# 📖 设定集",
         "",
         f"> 项目: {bundle['novel']['title']}　|　导出: {bundle['exported_at']}",
-        "",
-        "```" + _SETTINGS_JSON_FENCE,
-        meta,
-        "```",
         "",
     ]
     if bundle["locations"]:
@@ -2185,6 +2182,11 @@ def _render_settings_markdown(bundle: dict) -> str:
             if c["description"]:
                 lines.append(f"*{c['description']}*")
             lines.append(f"状态: {c['status']}")
+            if c["faction_name"]:
+                if c["faction_role"]:
+                    lines.append(f"势力: {c['faction_name']} ({c['faction_role']})")
+                else:
+                    lines.append(f"势力: {c['faction_name']}")
             if isinstance(c["attributes"], dict):
                 for group, fields in c["attributes"].items():
                     if isinstance(fields, dict):
@@ -2198,6 +2200,8 @@ def _render_settings_markdown(bundle: dict) -> str:
             lines.append(f"### {f['name']}")
             if f["description"]:
                 lines.append(f"*{f['description']}*")
+            if f["base_location_name"]:
+                lines.append(f"基地: {f['base_location_name']}")
             lines.append("")
     if bundle["outlines"]:
         lines += ["## 📋 大纲", ""]
@@ -2216,15 +2220,7 @@ def _render_settings_markdown(bundle: dict) -> str:
 
 
 def _parse_settings_markdown(md: str) -> dict:
-    """宽松解析 — 优先机读标记块；缺失时从标题/字段行重建（容忍手改）"""
-    m = re.search(r"```" + _SETTINGS_JSON_FENCE + r"[ \t]*\n(.*?)```", md, re.DOTALL)
-    if m:
-        try:
-            fenced = json.loads(m.group(1))
-            if isinstance(fenced, dict) and fenced.get("format") == "novel-assist-settings":
-                return fenced
-        except json.JSONDecodeError:
-            pass  # 标记块损坏 → 回退宽松解析
+    """宽松解析 — 从标题/字段行重建实体（容忍手改；跳过旧版残留的 ```settings-json 标记块）"""
     if not md.lstrip().startswith("#"):
         raise ValueError("无法识别的设定集：缺少标题行")
     title = md.lstrip().splitlines()[0].lstrip("#").strip() or "导入项目"
@@ -2236,6 +2232,7 @@ def _parse_settings_markdown(md: str) -> dict:
     }
     section = None
     cur: dict = {}
+    in_fence = False
 
     def flush():
         if cur:
@@ -2246,6 +2243,13 @@ def _parse_settings_markdown(md: str) -> dict:
 
     for raw in md.splitlines():
         line = raw.rstrip()
+        if in_fence:
+            if line.strip().startswith("```"):
+                in_fence = False
+            continue
+        if line.strip() == "```" + _SETTINGS_JSON_FENCE:
+            in_fence = True
+            continue
         h2 = re.match(r"^##\s+(.+)$", line)
         if h2:
             flush()
@@ -2289,6 +2293,16 @@ def _parse_settings_markdown(md: str) -> dict:
             if sm:
                 cur["status"] = sm.group(1).strip()
                 continue
+            gm = re.match(r"^势力[:：]\s*(.+)$", t)
+            if gm:
+                v = gm.group(1).strip()
+                mm = re.match(r"^(.*?)\s*[\(（]([^\)）]+)[\)）]\s*$", v)
+                if mm:
+                    cur["faction_name"] = mm.group(1).strip()
+                    cur["faction_role"] = mm.group(2).strip()
+                else:
+                    cur["faction_name"] = v
+                continue
             if t.startswith("###") is False and t.startswith("*") and t.endswith("*") and len(t) > 2:
                 cur["description"] = t[1:-1]
                 continue
@@ -2300,6 +2314,11 @@ def _parse_settings_markdown(md: str) -> dict:
         elif t.startswith("*") and t.endswith("*") and len(t) > 2:
             cur["description"] = t[1:-1]
             continue
+        if section == "势力":
+            bm = re.match(r"^基地[:：]\s*(.+)$", t)
+            if bm:
+                cur["base_location_name"] = bm.group(1).strip()
+                continue
         fm = re.match(r"^-\s*\*\*(.+?)\*\*\s*[:：]\s*(.+)$", t)
         if fm:
             cur.setdefault("attributes", {})[fm.group(1).strip()] = fm.group(2).strip()
@@ -2550,6 +2569,7 @@ def export_settings_bundle(novel_id: int, fmt: str = "json", db: Session = Depen
 
 class ImportSettingsReq(BaseModel):
     content: str
+    fmt: str = "json"
     dry_run: bool = False
 
 
@@ -2561,22 +2581,26 @@ def import_settings_bundle(novel_id: int, req: ImportSettingsReq, db: Session = 
     content = (req.content or "").strip()
     if not content:
         raise HTTPException(400, "导入内容为空")
-    if content.startswith("{") or content.startswith("["):
-        try:
-            bundle = json.loads(content)
-        except json.JSONDecodeError:
-            raise HTTPException(400, "JSON 解析失败")
-    else:
+    if req.fmt == "md":
         try:
             bundle = _parse_settings_markdown(content)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        return _finalize_settings_import(db, novel, bundle, req.dry_run)
+    try:
+        bundle = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "JSON 解析失败")
+    return _finalize_settings_import(db, novel, bundle, req.dry_run)
+
+
+def _finalize_settings_import(db: Session, novel: Novel, bundle, dry_run: bool) -> dict:
     if not isinstance(bundle, dict) or not (bundle.get("locations") or bundle.get("characters")
                                            or bundle.get("outlines") or bundle.get("timeline")
                                            or bundle.get("factions")):
         raise HTTPException(400, "未识别到任何可导入的设定实体")
     stats = _upsert_settings_bundle(db, novel, bundle)
-    if req.dry_run:
+    if dry_run:
         db.rollback()
         return {"ok": True, "dry_run": True, "preview": stats}
     db.commit()
