@@ -5,9 +5,19 @@
 返回：统一 JSON 字符串（避免 mcp 2.x -> list 注解丢失列表的陷阱）
 排除：本软件 LLM 调用相关功能（见设计稿 §5）
 """
+# ruff: noqa: E402  （自定位 chdir/sys.path 必须发生在 backend 相关 import 之前）
 import enum
 import json
+import os
+import sys
 from typing import Any
+
+# ── 自定位（全局任意工作区可用；非硬编码，跟随 mcp_server.py 物理位置）──
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))   # .../NovelAssist/backend
+_NOVELASSIST_DIR = os.path.dirname(_BACKEND_DIR)           # .../NovelAssist
+if _NOVELASSIST_DIR not in sys.path:
+    sys.path.insert(0, _NOVELASSIST_DIR)
+os.chdir(_NOVELASSIST_DIR)  # database.py 以 os.path.abspath(".") 定位 .data/novel.db
 
 from fastapi import HTTPException
 from mcp.server.mcpserver import MCPServer

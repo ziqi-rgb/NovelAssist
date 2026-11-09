@@ -1,8 +1,0 @@
-# NovelAssist 工作区配置
-# MCP 只声明在本工作区，不进全局 config.toml（见 #T010 设计稿 §10.1）
-
-[[plugins]]
-name = "novelassist-mcp"
-command = "H:\AI\AI Maker Tools\writer\.venv\Scripts\python.exe"
-args = ["-m", "backend.mcp_server"]
-cwd = "H:\AI\AI Maker Tools\writer\NovelAssist"
