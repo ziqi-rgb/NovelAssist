@@ -2329,18 +2329,14 @@ function truncateChat(btnElement) {
 document.getElementById("clear-memory-btn")?.addEventListener("click", clearCopilotChat);
 document.getElementById("outline-export-btn")?.addEventListener("click", async function() {
     if (!currentNovelId) return;
-    showToast("⏳ 正在编译全量小说设定集...");
+    showToast("⏳ 正在导出 MD 设定集（含机读标记块）...");
     try {
-        var res2 = await fetch("/api/outlines/export-markdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ novel_id: currentNovelId }) });
-        if (res2.ok) {
-            var d2 = await res2.json();
-            var blob = new Blob([d2.markdown], { type: "text/markdown;charset=utf-8;" });
-            var url = URL.createObjectURL(blob);
-            var link = document.createElement("a"); link.href = url; link.setAttribute("download", "全景大纲设定集.md");
-            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-            showToast("📤 设定集 Markdown 下载成功！");
-        }
-    } catch (e2) { console.error(e2); }
+        var res = await fetch("/api/novels/" + currentNovelId + "/export-settings?fmt=md");
+        if (res.ok) {
+            downloadSettingsFile(await res.text(), "设定集.md", "text/markdown;charset=utf-8;");
+            showToast("📤 MD 设定集下载成功！");
+        } else { showToast("❌ 导出失败"); }
+    } catch (e) { console.error(e); showToast("❌ 导出失败"); }
 });
 /* ═══════════ 设定集导入导出（#T008） ═══════════ */
 function downloadSettingsFile(text, filename, mime) {
